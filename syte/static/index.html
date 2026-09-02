@@ -985,91 +985,218 @@
 
               <!-- 3. DOMAINS TAB (Exact match to media_1788169957679.jpg) -->
               <div class="svc-tab-panel" id="svc-panel-domains" data-svc-panel="domains">
-                <section class="svc-domains-screen" aria-label="Project domains">
-                  <!-- Header Section -->
-                  <div class="svc-env-screen-header">
-                    <div class="svc-env-header-text">
-                      <span class="svc-section-tag">DOMAINS</span>
-                      <h2 class="svc-env-title">Custom Domains</h2>
-                      <p class="svc-env-sub">Connect and manage domains with automatic SSL certificates.</p>
-                    </div>
-                    <div class="svc-env-header-actions" style="display: flex; gap: 8px;">
-                      <button type="button" class="btn-learn-more" id="svc-domain-learn-more-btn" onclick="openDomainsDocsModal()">
-                        <span>Learn more</span><i data-lucide="external-link"></i>
+                <!-- Subview 1: Domains List (Default) -->
+                <div id="svc-domains-subview-list" class="svc-domains-subview">
+                  <section class="svc-domains-screen" aria-label="Project domains">
+                    <!-- Search & Filter Controls (Top) -->
+                    <div class="svc-domain-search-row" style="margin-top: 4px;">
+                      <div class="svc-search-input-wrap">
+                        <i data-lucide="search"></i>
+                        <input id="svc-domain-search-input" type="search" placeholder="Search domains..." autocomplete="off">
+                      </div>
+                      <button type="button" class="btn-domain-filter" id="svc-domain-filter-btn" title="Domain filters">
+                        <i data-lucide="sliders-horizontal"></i>
                       </button>
-                      <button type="button" class="btn-learn-more" id="svc-domain-certificates-btn" onclick="openCertificatesModal()">
-                        <i data-lucide="badge-check"></i><span>Certificates</span>
-                      </button>
-                      <button type="button" class="btn-env-add-icon" id="svc-domain-add-toggle-btn" onclick="openDomainAddModal()" title="Connect Domain">
+                      <button type="button" class="btn-domain-filter" id="svc-domain-quick-add-btn" onclick="showDomainSubview('add')" title="Add Domain">
                         <i data-lucide="plus"></i>
                       </button>
                     </div>
-                  </div>
 
-                  <!-- 3 Stats Pill Cards (1 Domain > | 0 Active > | 1 Pending >) -->
-                  <div class="svc-domain-stats-grid">
-                    <div class="svc-domain-stat-pill" id="svc-stat-pill-total">
-                      <div class="svc-stat-pill-left">
-                        <span class="svc-stat-icon-circle"><i data-lucide="globe"></i></span>
-                        <div class="svc-stat-text-wrap">
-                          <strong id="svc-domain-stat-total-num">1</strong>
-                          <span id="svc-domain-stat-total-label">Domain</span>
+                    <!-- 3 Stats Pill Cards (Below Search) -->
+                    <div class="svc-domain-stats-grid">
+                      <div class="svc-domain-stat-pill" id="svc-stat-pill-total">
+                        <div class="svc-stat-pill-left">
+                          <span class="svc-stat-icon-circle"><i data-lucide="globe"></i></span>
+                          <div class="svc-stat-text-wrap">
+                            <strong id="svc-domain-stat-total-num">1</strong>
+                            <span id="svc-domain-stat-total-label">Domain</span>
+                          </div>
+                        </div>
+                        <i data-lucide="chevron-right" class="svc-stat-chevron"></i>
+                      </div>
+
+                      <div class="svc-domain-stat-pill" id="svc-stat-pill-active">
+                        <div class="svc-stat-pill-left">
+                          <span class="svc-stat-dot-green"></span>
+                          <div class="svc-stat-text-wrap">
+                            <strong id="svc-domain-stat-active-num">1</strong>
+                            <span>Active</span>
+                          </div>
+                        </div>
+                        <i data-lucide="chevron-right" class="svc-stat-chevron"></i>
+                      </div>
+
+                      <div class="svc-domain-stat-pill" id="svc-stat-pill-pending">
+                        <div class="svc-stat-pill-left">
+                          <span class="svc-stat-dot-amber"></span>
+                          <div class="svc-stat-text-wrap">
+                            <strong id="svc-domain-stat-pending-num">0</strong>
+                            <span>Pending</span>
+                          </div>
+                        </div>
+                        <i data-lucide="chevron-right" class="svc-stat-chevron"></i>
+                      </div>
+                    </div>
+
+                    <!-- Domain Cards List Container -->
+                    <div class="svc-domains-card-list" id="svc-domains-card-list">
+                      <!-- Populated dynamically by renderServiceDomainsList -->
+                    </div>
+
+                    <!-- Bottom "Connect your domain" Prompt Card -->
+                    <div class="svc-connect-domain-prompt-card">
+                      <div class="svc-prompt-plus-circle">
+                        <i data-lucide="plus"></i>
+                      </div>
+                      <h3 class="svc-prompt-title">Connect your domain</h3>
+                      <p class="svc-prompt-sub">Add a custom domain to make your project available at your own address.</p>
+                      <button type="button" class="btn-trigger-build" onclick="showDomainSubview('add')">
+                        <i data-lucide="plus"></i><span>Add Domain</span>
+                      </button>
+                    </div>
+                  </section>
+                </div>
+
+                <!-- Subview 2: Add Domain (In-Page Subview) -->
+                <div id="svc-domains-subview-add" class="svc-domains-subview hidden">
+                  <div class="svc-fw-page-card">
+                    <div class="svc-sheet-drag-handle"></div>
+                    <header class="svc-clean-dialog-header">
+                      <div class="svc-dialog-title-wrap">
+                        <div class="svc-sheet-icon-circle">
+                          <i data-lucide="globe"></i>
+                        </div>
+                        <div>
+                          <h3 class="svc-sheet-main-title">Add Custom Domain</h3>
+                          <p class="svc-sheet-sub-title">Connect your domain with automatic SSL certificates.</p>
                         </div>
                       </div>
-                      <i data-lucide="chevron-right" class="svc-stat-chevron"></i>
-                    </div>
+                      <button type="button" class="svc-modal-close-icon-btn" onclick="showDomainSubview('list')" aria-label="Close">
+                        <i data-lucide="x"></i>
+                      </button>
+                    </header>
 
-                    <div class="svc-domain-stat-pill" id="svc-stat-pill-active">
-                      <div class="svc-stat-pill-left">
-                        <span class="svc-stat-dot-green"></span>
-                        <div class="svc-stat-text-wrap">
-                          <strong id="svc-domain-stat-active-num">0</strong>
-                          <span>Active</span>
+                    <form id="svc-inpage-form-add-domain" class="svc-sheet-form-body" onsubmit="handleInPageAddDomain(event)">
+                      <!-- Domain input -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Domain name</strong>
+                          <span class="svc-fw-section-desc">Enter the domain or subdomain to connect.</span>
+                        </div>
+                        <div class="svc-fw-counter-input-box">
+                          <input type="text" id="svc-inpage-domain-input" class="svc-fw-styled-input" placeholder="e.g. app.mydomain.com" autocomplete="off" spellcheck="false" required>
                         </div>
                       </div>
-                      <i data-lucide="chevron-right" class="svc-stat-chevron"></i>
-                    </div>
 
-                    <div class="svc-domain-stat-pill" id="svc-stat-pill-pending">
-                      <div class="svc-stat-pill-left">
-                        <span class="svc-stat-dot-amber"></span>
-                        <div class="svc-stat-text-wrap">
-                          <strong id="svc-domain-stat-pending-num">1</strong>
-                          <span>Pending</span>
+                      <!-- Target Environment -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Target environment</strong>
+                          <span class="svc-fw-section-desc">Choose which environment this domain routes to.</span>
+                        </div>
+                        <div class="svc-fw-segmented-toggle-bar">
+                          <button type="button" class="svc-fw-seg-btn active" data-domain-env="production" onclick="this.parentElement.querySelectorAll('.svc-fw-seg-btn').forEach(b=>b.classList.remove('active')); this.classList.add('active');">Production</button>
+                          <button type="button" class="svc-fw-seg-btn" data-domain-env="preview" onclick="this.parentElement.querySelectorAll('.svc-fw-seg-btn').forEach(b=>b.classList.remove('active')); this.classList.add('active');">Preview</button>
                         </div>
                       </div>
-                      <i data-lucide="chevron-right" class="svc-stat-chevron"></i>
-                    </div>
-                  </div>
 
-                  <!-- Search & Filter Controls -->
-                  <div class="svc-domain-search-row">
-                    <div class="svc-search-input-wrap">
-                      <i data-lucide="search"></i>
-                      <input id="svc-domain-search-input" type="search" placeholder="Search domains..." autocomplete="off">
-                    </div>
-                    <button type="button" class="btn-domain-filter" id="svc-domain-filter-btn" title="Domain filters">
-                      <i data-lucide="sliders-horizontal"></i>
-                    </button>
-                  </div>
+                      <!-- DNS Guidance Callout -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-callout-box info-callout">
+                          <i data-lucide="info"></i>
+                          <span>Point your domain's A record directly to <b>45.135.148.5</b> or add a CNAME record pointing to <b>sycord.site</b>.</span>
+                        </div>
+                      </div>
 
-                  <!-- Domain Cards List Container -->
-                  <div class="svc-domains-card-list" id="svc-domains-card-list">
-                    <!-- Populated dynamically by renderServiceDomainsList -->
+                      <!-- Footer -->
+                      <div class="svc-sheet-footer">
+                        <button type="button" class="btn-sheet-cancel" onclick="showDomainSubview('list')">Cancel</button>
+                        <button type="submit" class="btn-sheet-primary" id="svc-inpage-add-domain-submit-btn">Connect Domain</button>
+                      </div>
+                    </form>
                   </div>
+                </div>
 
-                  <!-- Bottom "Connect your domain" Prompt Card (Matching Screenshot) -->
-                  <div class="svc-connect-domain-prompt-card">
-                    <div class="svc-prompt-plus-circle">
-                      <i data-lucide="plus"></i>
-                    </div>
-                    <h3 class="svc-prompt-title">Connect your domain</h3>
-                    <p class="svc-prompt-sub">Add a custom domain to make your project available at your own address.</p>
-                    <button type="button" class="btn-trigger-build" onclick="openDomainAddModal()">
-                      <i data-lucide="plus"></i><span>Add Domain</span>
-                    </button>
+                <!-- Subview 3: Edit Domain (In-Page Subview) -->
+                <div id="svc-domains-subview-edit" class="svc-domains-subview hidden">
+                  <div class="svc-fw-page-card">
+                    <div class="svc-sheet-drag-handle"></div>
+                    <header class="svc-clean-dialog-header">
+                      <div class="svc-dialog-title-wrap">
+                        <div class="svc-sheet-icon-circle">
+                          <i data-lucide="globe"></i>
+                        </div>
+                        <div>
+                          <h3 class="svc-sheet-main-title" id="svc-edit-domain-title">Edit Domain</h3>
+                          <p class="svc-sheet-sub-title">Manage routing, SSL, and configuration for this domain.</p>
+                        </div>
+                      </div>
+                      <button type="button" class="svc-modal-close-icon-btn" onclick="showDomainSubview('list')" aria-label="Close">
+                        <i data-lucide="x"></i>
+                      </button>
+                    </header>
+
+                    <form id="svc-inpage-form-edit-domain" class="svc-sheet-form-body" onsubmit="handleInPageEditDomain(event)">
+                      <!-- Domain Name Display -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Domain</strong>
+                          <span class="svc-fw-section-desc">Configured custom domain name.</span>
+                        </div>
+                        <div class="svc-fw-counter-input-box">
+                          <input type="text" id="svc-edit-domain-name-input" class="svc-fw-styled-input" readonly>
+                        </div>
+                      </div>
+
+                      <!-- Status Row -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Status & SSL</strong>
+                          <span class="svc-fw-section-desc">Current DNS and automated certificate state.</span>
+                        </div>
+                        <div class="svc-fw-toggle-card inline-toggle" style="background:#f4f4f5; border-radius:10px; padding:10px 14px;">
+                          <div class="svc-fw-toggle-info">
+                            <strong class="svc-fw-toggle-title" id="svc-edit-domain-status-label">Valid Configuration</strong>
+                            <span class="svc-fw-toggle-desc" id="svc-edit-domain-ssl-label">Automated TLS certificate active</span>
+                          </div>
+                          <span class="svc-state-pill is-active" id="svc-edit-domain-pill">Active</span>
+                        </div>
+                      </div>
+
+                      <!-- Environment Target -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Target Environment</strong>
+                          <span class="svc-fw-section-desc">Branch environment traffic routing.</span>
+                        </div>
+                        <div class="svc-fw-select-wrap-block">
+                          <select id="svc-edit-domain-env-select" class="svc-fw-styled-select">
+                            <option value="production" selected>Production</option>
+                            <option value="preview">Preview</option>
+                          </select>
+                          <i data-lucide="chevron-down" class="svc-fw-select-chevron"></i>
+                        </div>
+                      </div>
+
+                      <!-- Danger Zone: Disconnect -->
+                      <div class="svc-fw-section-card" style="border-color: #fee2e2; background: #fff5f5;">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title" style="color: #dc2626;">Danger Zone</strong>
+                          <span class="svc-fw-section-desc">Disconnecting this domain will immediately disable traffic to this project.</span>
+                        </div>
+                        <button type="button" class="btn-bulk-action btn-bulk-delete" id="svc-inpage-domain-delete-btn" style="width:100%; justify-content:center; padding:10px; background:#ef4444; color:#fff; border-radius:10px; font-weight:700;" onclick="handleInPageDeleteDomain()">
+                          <i data-lucide="trash-2"></i><span>Disconnect Domain</span>
+                        </button>
+                      </div>
+
+                      <!-- Footer -->
+                      <div class="svc-sheet-footer">
+                        <button type="button" class="btn-sheet-cancel" onclick="showDomainSubview('list')">Cancel</button>
+                        <button type="submit" class="btn-sheet-primary">Save Changes</button>
+                      </div>
+                    </form>
                   </div>
-                </section>
+                </div>
               </div>
 
               <!-- 4. ENVIRONMENT VARIABLES TAB (Exact match to media_1788171283140.jpg) -->
@@ -1887,94 +2014,233 @@
 
               <!-- 6. REDIRECTS TAB (Exact match to media_1788169123183.jpg) -->
               <div class="svc-tab-panel" id="svc-panel-redirects" data-svc-panel="redirects">
-                <section class="svc-redirects-screen" aria-label="Project HTTP Redirects">
-                  <!-- Header Section -->
-                  <div class="svc-redirects-header">
-                    <div class="svc-redirects-header-text">
-                      <span class="svc-section-tag">NETWORK</span>
-                      <h2 class="svc-redirects-title">HTTP Redirects</h2>
-                      <p class="svc-redirects-sub">Forward incoming request paths to custom paths or external URLs (301 / 302).</p>
+                <!-- Subview 1: Redirects List (Default) -->
+                <div id="svc-redirects-subview-list" class="svc-redirects-subview">
+                  <section class="svc-redirects-screen" aria-label="Project HTTP Redirects">
+                    <!-- Header Section -->
+                    <div class="svc-redirects-header">
+                      <div class="svc-redirects-header-text">
+                        <span class="svc-section-tag">NETWORK</span>
+                        <h2 class="svc-redirects-title">HTTP Redirects</h2>
+                        <p class="svc-redirects-sub">Forward incoming request paths to custom paths or external URLs (301 / 302).</p>
+                      </div>
+                      <div class="svc-redirects-header-actions">
+                        <button type="button" class="btn-learn-more" id="svc-redirect-learn-more-btn" onclick="openRedirectDocsModal()">
+                          <i data-lucide="external-link"></i><span>Learn more</span>
+                        </button>
+                      </div>
                     </div>
-                    <div class="svc-redirects-header-actions">
-                      <button type="button" class="btn-learn-more" id="svc-redirect-learn-more-btn" onclick="openRedirectDocsModal()">
-                        <i data-lucide="external-link"></i><span>Learn more</span>
+
+                    <!-- Action Bar: Add Redirect, Test URL, Import/Export -->
+                    <div class="svc-redirects-action-bar">
+                      <button type="button" class="btn-trigger-build" id="svc-redirect-add-open-btn" onclick="showRedirectSubview('add')">
+                        <i data-lucide="plus"></i><span>Add Redirect</span>
+                      </button>
+                      <button type="button" class="shadcn-btn shadcn-btn-outline" id="svc-redirect-test-open-btn" onclick="openRedirectTestModal()">
+                        <i data-lucide="flask-conical"></i><span>Test URL</span>
+                      </button>
+                      <button type="button" class="shadcn-btn shadcn-btn-outline" id="svc-redirect-io-open-btn" onclick="openRedirectIOModal()">
+                        <i data-lucide="arrow-down-up"></i><span>Import / Export</span>
                       </button>
                     </div>
-                  </div>
 
-                  <!-- Action Bar: Add Redirect, Test URL, Import/Export -->
-                  <div class="svc-redirects-action-bar">
-                    <button type="button" class="btn-trigger-build" id="svc-redirect-add-open-btn" onclick="openAddRedirectModal()">
-                      <i data-lucide="plus"></i><span>Add Redirect</span>
-                    </button>
-                    <button type="button" class="shadcn-btn shadcn-btn-outline" id="svc-redirect-test-open-btn" onclick="openRedirectTestModal()">
-                      <i data-lucide="flask-conical"></i><span>Test URL</span>
-                    </button>
-                    <button type="button" class="shadcn-btn shadcn-btn-outline" id="svc-redirect-io-open-btn" onclick="openRedirectIOModal()">
-                      <i data-lucide="arrow-down-up"></i><span>Import / Export</span>
-                    </button>
-                  </div>
+                    <!-- Search & Filter Controls -->
+                    <div class="svc-redirects-filter-bar">
+                      <div class="svc-search-input-wrap">
+                        <i data-lucide="search"></i>
+                        <input type="text" id="svc-redirects-search-input" placeholder="Search redirects..." autocomplete="off">
+                      </div>
+                      <div class="svc-filter-select-wrap">
+                        <select id="svc-redirects-filter-status" class="svc-filter-dropdown" aria-label="Filter by status">
+                          <option value="">All status</option>
+                          <option value="active">Active</option>
+                          <option value="disabled">Disabled</option>
+                        </select>
+                        <select id="svc-redirects-filter-code" class="svc-filter-dropdown" aria-label="Filter by status code">
+                          <option value="">All codes</option>
+                          <option value="301">301 - Permanent</option>
+                          <option value="302">302 - Temporary</option>
+                          <option value="307">307 - Preserving</option>
+                          <option value="308">308 - Perm Preserving</option>
+                        </select>
+                      </div>
+                    </div>
 
-                  <!-- Search & Filter Controls -->
-                  <div class="svc-redirects-filter-bar">
-                    <div class="svc-search-input-wrap">
-                      <i data-lucide="search"></i>
-                      <input type="text" id="svc-redirects-search-input" placeholder="Search redirects..." autocomplete="off">
+                    <!-- Statistics Overview Row -->
+                    <div class="svc-redirects-stats-grid" id="svc-redirects-stats-grid">
+                      <div class="svc-redirect-stat-card">
+                        <span class="svc-stat-label">Total Redirects</span>
+                        <strong class="svc-stat-value" id="svc-stat-total">0</strong>
+                      </div>
+                      <div class="svc-redirect-stat-card">
+                        <span class="svc-stat-label">Active</span>
+                        <strong class="svc-stat-value stat-green" id="svc-stat-active">0</strong>
+                      </div>
+                      <div class="svc-redirect-stat-card">
+                        <span class="svc-stat-label">Disabled</span>
+                        <strong class="svc-stat-value stat-gray" id="svc-stat-disabled">0</strong>
+                      </div>
+                      <div class="svc-redirect-stat-card">
+                        <span class="svc-stat-label">Requests Redirected</span>
+                        <strong class="svc-stat-value stat-blue" id="svc-stat-requests">0</strong>
+                      </div>
                     </div>
-                    <div class="svc-filter-select-wrap">
-                      <select id="svc-redirects-filter-status" class="svc-filter-dropdown" aria-label="Filter by status">
-                        <option value="">All status</option>
-                        <option value="active">Active</option>
-                        <option value="disabled">Disabled</option>
-                      </select>
-                      <select id="svc-redirects-filter-code" class="svc-filter-dropdown" aria-label="Filter by status code">
-                        <option value="">All codes</option>
-                        <option value="301">301 - Permanent</option>
-                        <option value="302">302 - Temporary</option>
-                        <option value="307">307 - Preserving</option>
-                        <option value="308">308 - Perm Preserving</option>
-                      </select>
-                    </div>
-                  </div>
 
-                  <!-- Statistics Overview Row -->
-                  <div class="svc-redirects-stats-grid" id="svc-redirects-stats-grid">
-                    <div class="svc-redirect-stat-card">
-                      <span class="svc-stat-label">Total Redirects</span>
-                      <strong class="svc-stat-value" id="svc-stat-total">0</strong>
+                    <!-- Bulk Actions Toolbar (Conditional) -->
+                    <div class="svc-redirects-bulk-bar hidden" id="svc-redirects-bulk-bar">
+                      <div class="svc-bulk-left">
+                        <input type="checkbox" id="svc-redirect-select-all" class="svc-checkbox">
+                        <span id="svc-bulk-count-label">0 selected</span>
+                      </div>
+                      <div class="svc-bulk-actions">
+                        <button type="button" class="btn-bulk-action" id="svc-bulk-enable-btn"><i data-lucide="check"></i> Enable</button>
+                        <button type="button" class="btn-bulk-action" id="svc-bulk-disable-btn"><i data-lucide="pause"></i> Disable</button>
+                        <button type="button" class="btn-bulk-action btn-bulk-delete" id="svc-bulk-delete-btn"><i data-lucide="trash-2"></i> Delete</button>
+                      </div>
                     </div>
-                    <div class="svc-redirect-stat-card">
-                      <span class="svc-stat-label">Active</span>
-                      <strong class="svc-stat-value stat-green" id="svc-stat-active">0</strong>
-                    </div>
-                    <div class="svc-redirect-stat-card">
-                      <span class="svc-stat-label">Disabled</span>
-                      <strong class="svc-stat-value stat-gray" id="svc-stat-disabled">0</strong>
-                    </div>
-                    <div class="svc-redirect-stat-card">
-                      <span class="svc-stat-label">Requests Redirected</span>
-                      <strong class="svc-stat-value stat-blue" id="svc-stat-requests">0</strong>
-                    </div>
-                  </div>
 
-                  <!-- Bulk Actions Toolbar (Conditional) -->
-                  <div class="svc-redirects-bulk-bar hidden" id="svc-redirects-bulk-bar">
-                    <div class="svc-bulk-left">
-                      <input type="checkbox" id="svc-redirect-select-all" class="svc-checkbox">
-                      <span id="svc-bulk-count-label">0 selected</span>
+                    <!-- Redirects List Container -->
+                    <div class="svc-redirects-list" id="svc-redirects-list">
+                      <p class="hint">Loading redirect rules…</p>
                     </div>
-                    <div class="svc-bulk-actions">
-                      <button type="button" class="btn-bulk-action" id="svc-bulk-enable-btn"><i data-lucide="check"></i> Enable</button>
-                      <button type="button" class="btn-bulk-action" id="svc-bulk-disable-btn"><i data-lucide="pause"></i> Disable</button>
-                      <button type="button" class="btn-bulk-action btn-bulk-delete" id="svc-bulk-delete-btn"><i data-lucide="trash-2"></i> Delete</button>
-                    </div>
-                  </div>
+                  </section>
+                </div>
 
-                  <!-- Redirects List Container -->
-                  <div class="svc-redirects-list" id="svc-redirects-list">
-                    <p class="hint">Loading redirect rules…</p>
+                <!-- Subview 2: Add Redirect (Exact copy of media_1788379626064.jpg) -->
+                <div id="svc-redirects-subview-add" class="svc-redirects-subview hidden">
+                  <div class="svc-fw-page-card">
+                    <div class="svc-sheet-drag-handle"></div>
+                    <header class="svc-clean-dialog-header">
+                      <div class="svc-dialog-title-wrap">
+                        <div>
+                          <h3 class="svc-sheet-main-title">Add Redirect</h3>
+                          <p class="svc-sheet-sub-title">Create a redirect rule to forward requests to a different destination.</p>
+                        </div>
+                      </div>
+                      <button type="button" class="svc-modal-close-icon-btn" onclick="showRedirectSubview('list')" aria-label="Close">
+                        <i data-lucide="x"></i>
+                      </button>
+                    </header>
+
+                    <form id="svc-inpage-form-add-redirect" class="svc-sheet-form-body" onsubmit="handleInPageAddRedirect(event)">
+                      <!-- 1. Source Section -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Source</strong>
+                          <span class="svc-fw-section-desc">The path or URL to match.</span>
+                        </div>
+                        <div class="svc-fw-grouped-input">
+                          <span class="svc-fw-group-prefix" id="svc-redirect-source-domain-prefix">sycord.site</span>
+                          <input type="text" id="svc-inpage-redirect-source" class="svc-fw-group-text-input" placeholder="/old-path" autocomplete="off" spellcheck="false" required>
+                        </div>
+                      </div>
+
+                      <!-- 2. Destination Section -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Destination</strong>
+                          <span class="svc-fw-section-desc">Where the request should be redirected.</span>
+                        </div>
+                        <div class="svc-fw-grouped-input">
+                          <div class="svc-fw-group-select-wrap">
+                            <select id="svc-inpage-redirect-dest-proto" class="svc-fw-group-select">
+                              <option value="https://" selected>https://</option>
+                              <option value="http://">http://</option>
+                            </select>
+                            <i data-lucide="chevron-down"></i>
+                          </div>
+                          <input type="text" id="svc-inpage-redirect-dest" class="svc-fw-group-text-input" placeholder="example.com/new-path" autocomplete="off" spellcheck="false" required>
+                        </div>
+                      </div>
+
+                      <!-- 3. Redirect Type Section -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Redirect type</strong>
+                          <span class="svc-fw-section-desc">Choose the HTTP status code.</span>
+                        </div>
+                        <div class="svc-fw-status-cards-row" role="radiogroup" aria-label="Redirect status code">
+                          <div class="svc-fw-status-card is-active" data-redirect-code="301" role="radio" aria-checked="true" onclick="selectRedirectCode(this, '301')">
+                            <strong>301</strong>
+                            <span>Permanent</span>
+                          </div>
+                          <div class="svc-fw-status-card" data-redirect-code="302" role="radio" aria-checked="false" onclick="selectRedirectCode(this, '302')">
+                            <strong>302</strong>
+                            <span>Temporary</span>
+                          </div>
+                          <div class="svc-fw-status-card" data-redirect-code="307" role="radio" aria-checked="false" onclick="selectRedirectCode(this, '307')">
+                            <strong>307</strong>
+                            <span>Temporary</span>
+                          </div>
+                          <div class="svc-fw-status-card" data-redirect-code="308" role="radio" aria-checked="false" onclick="selectRedirectCode(this, '308')">
+                            <strong>308</strong>
+                            <span>Permanent</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- 4. Options Section -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Options</strong>
+                          <span class="svc-fw-section-desc">Configure additional settings.</span>
+                        </div>
+                        <div class="svc-fw-option-card">
+                          <div class="svc-fw-option-left">
+                            <div class="svc-fw-option-icon-sq">
+                              <i data-lucide="globe"></i>
+                            </div>
+                            <div class="svc-fw-option-text">
+                              <strong class="svc-fw-option-title">Preserve query parameters</strong>
+                              <span class="svc-fw-option-desc">Keep the original query string (e.g. ?id=123)</span>
+                            </div>
+                          </div>
+                          <label class="svc-apple-switch">
+                            <input type="checkbox" id="svc-inpage-redirect-preserve-query" checked>
+                            <span class="svc-apple-slider"></span>
+                          </label>
+                        </div>
+
+                        <div class="svc-fw-option-card">
+                          <div class="svc-fw-option-left">
+                            <div class="svc-fw-option-icon-sq">
+                              <i data-lucide="link"></i>
+                            </div>
+                            <div class="svc-fw-option-text">
+                              <strong class="svc-fw-option-title">Normalize trailing slash</strong>
+                              <span class="svc-fw-option-desc">Match both with and without trailing slash</span>
+                            </div>
+                          </div>
+                          <label class="svc-apple-switch">
+                            <input type="checkbox" id="svc-inpage-redirect-normalize-slash">
+                            <span class="svc-apple-slider"></span>
+                          </label>
+                        </div>
+                      </div>
+
+                      <!-- 5. Rule Name (optional) Section -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Rule name (optional)</strong>
+                          <span class="svc-fw-section-desc">A name to identify this redirect.</span>
+                        </div>
+                        <div class="svc-fw-counter-input-box">
+                          <input type="text" id="svc-inpage-redirect-name" class="svc-fw-styled-input" maxlength="64" placeholder="e.g. Old docs to new docs" oninput="document.getElementById('svc-inpage-redirect-name-count').textContent = this.value.length + '/64'">
+                          <span class="svc-fw-counter-tag" id="svc-inpage-redirect-name-count">0/64</span>
+                        </div>
+                      </div>
+
+                      <!-- Footer -->
+                      <div class="svc-sheet-footer">
+                        <button type="button" class="btn-sheet-cancel" onclick="showRedirectSubview('list')">Cancel</button>
+                        <button type="submit" class="btn-sheet-primary" style="display:inline-flex; align-items:center; justify-content:center; gap:8px;">
+                          <i data-lucide="corner-down-right"></i>
+                          <span>Create Redirect</span>
+                        </button>
+                      </div>
+                    </form>
                   </div>
-                </section>
+                </div>
               </div>
 
               <!-- 9. SETTINGS TAB (Exact match to media_1788171912849.jpg) -->

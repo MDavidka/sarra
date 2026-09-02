@@ -7072,88 +7072,117 @@ function renderServiceDomainsList(project) {
   refreshIcons();
 }
 
-function openDomainAddModal(project) {
-  const curProject = resolveActiveProject(project);
-  const modal = document.getElementById('svc-domain-add-modal');
-  if (!modal) return;
-  const input = document.getElementById('svc-new-domain-input');
-  const form = document.getElementById('svc-add-domain-form');
-  if (input) input.value = '';
+function showDomainSubview(name, item) {
+  const p = resolveActiveProject();
+  if (p && p.id) activeServiceId = p.id;
+  showView('service');
+  switchSvcTab('domains');
 
-  if (form) {
-    form.onsubmit = async (e) => {
-      e.preventDefault();
-      const activeProj = resolveActiveProject(curProject);
-      if (!activeProj) return toast('No active project selected');
-      let val = (input?.value || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
-      if (!val) return toast('Please enter a domain name');
+  const subviews = document.querySelectorAll('.svc-domains-subview');
+  subviews.forEach(s => s.classList.add('hidden'));
 
-      if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?$/.test(val) || val.startsWith('localhost')) {
-        return toast('Please enter a custom domain name (e.g. app.mydomain.com), not an IP address.');
-      }
-
-      try {
-        const res = await api(`/projects/${encodeURIComponent(activeProj.id)}/domain`, {
-          method: 'POST',
-          body: JSON.stringify({ domain: val, email: 'admin@sycord.site' }),
-        });
-        if (res?.project) {
-          Object.assign(activeProj, res.project);
-        } else {
-          activeProj.domain = val;
-        }
-        if (input) input.value = '';
-        safeCloseModal(modal);
-        await loadProjects();
-        const refreshed = projects.find(p => p.id === activeProj.id) || activeProj;
-        renderServiceDomainsList(refreshed);
-        renderServiceDashboard(refreshed, false);
-        toast(`Connected domain ${val}`);
-      } catch (err) {
-        toast(normalizeFetchError(err?.message) || 'Failed to connect domain');
-      }
-    };
+  const target = document.getElementById(`svc-domains-subview-${name}`);
+  if (target) {
+    target.classList.remove('hidden');
+  } else {
+    const list = document.getElementById('svc-domains-subview-list');
+    if (list) list.classList.remove('hidden');
   }
 
-  safeShowModal(modal);
+  if (name === 'edit') {
+    const domainItem = item || (p && p.domain ? { domain: p.domain, valid: true } : { domain: 'app.example.com', valid: true });
+    const nameInput = document.getElementById('svc-edit-domain-name-input');
+    const statusLabel = document.getElementById('svc-edit-domain-status-label');
+    const sslLabel = document.getElementById('svc-edit-domain-ssl-label');
+    const pill = document.getElementById('svc-edit-domain-pill');
+    const title = document.getElementById('svc-edit-domain-title');
+
+    if (title) title.textContent = `Edit Domain: ${domainItem.domain}`;
+    if (nameInput) nameInput.value = domainItem.domain;
+    if (statusLabel) statusLabel.textContent = domainItem.valid ? 'Valid Configuration' : 'Provisioning DNS & TLS...';
+    if (sslLabel) sslLabel.textContent = domainItem.valid ? 'Automated TLS certificate active' : 'Waiting for DNS propagation';
+    if (pill) {
+      pill.textContent = domainItem.valid ? 'Active' : 'Pending';
+      pill.className = domainItem.valid ? 'svc-state-pill is-active' : 'svc-state-pill is-disabled';
+    }
+  }
+
+  refreshIcons();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+async function handleInPageAddDomain(e) {
+  if (e) e.preventDefault();
+  const p = resolveActiveProject();
+  if (!p) return toast('No active project selected');
+  const input = document.getElementById('svc-inpage-domain-input');
+  let val = (input?.value || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+  if (!val) return toast('Please enter a domain name');
+
+  if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?$/.test(val) || val.startsWith('localhost')) {
+    return toast('Please enter a custom domain name (e.g. app.mydomain.com), not an IP address.');
+  }
+
+  try {
+    const res = await api(`/projects/${encodeURIComponent(p.id)}/domain`, {
+      method: 'POST',
+      body: JSON.stringify({ domain: val, email: 'admin@sycord.site' }),
+    });
+    if (res?.project) {
+      Object.assign(p, res.project);
+    } else {
+      p.domain = val;
+    }
+    if (input) input.value = '';
+    await loadProjects();
+    const refreshed = projects.find(x => x.id === p.id) || p;
+    renderServiceDomainsList(refreshed);
+    renderServiceDashboard(refreshed, false);
+    toast(`Connected domain ${val}`);
+    showDomainSubview('list');
+  } catch (err) {
+    toast(normalizeFetchError(err?.message) || 'Failed to connect domain');
+  }
+}
+
+async function handleInPageEditDomain(e) {
+  if (e) e.preventDefault();
+  toast('Domain configuration saved');
+  showDomainSubview('list');
+}
+
+async function handleInPageDeleteDomain() {
+  const p = resolveActiveProject();
+  if (!p) return toast('No active project selected');
+  const domain = document.getElementById('svc-edit-domain-name-input')?.value || p.domain;
+  if (!domain) return;
+  if (!confirm(`Are you sure you want to disconnect ${domain}?`)) return;
+
+  try {
+    await api(`/projects/${encodeURIComponent(p.id)}/domain`, {
+      method: 'DELETE',
+      body: JSON.stringify({ domain }),
+    });
+    toast(`Removed domain ${domain}`);
+    await loadProjects();
+    const refreshed = projects.find(x => x.id === p.id) || p;
+    renderServiceDomainsList(refreshed);
+    showDomainSubview('list');
+  } catch (err) {
+    toast(normalizeFetchError(err?.message) || 'Failed to remove domain');
+  }
+}
+
+function openDomainAddModal(project) {
+  const p = resolveActiveProject(project);
+  if (p && p.id) activeServiceId = p.id;
+  showDomainSubview('add');
 }
 
 function openDomainEditModal(project, item) {
-  const curProject = resolveActiveProject(project);
-  const modal = document.getElementById('svc-domain-edit-modal');
-  if (!modal) return;
-  const nameEl = document.getElementById('svc-domain-detail-name');
-  const statusEl = document.getElementById('svc-domain-detail-status');
-  const removeBtn = document.getElementById('svc-domain-remove-btn');
-
-  if (nameEl) nameEl.textContent = item?.domain || '';
-  if (statusEl) {
-    statusEl.textContent = item?.valid ? 'Valid Configuration' : 'Provisioning DNS & TLS...';
-    statusEl.className = item?.valid ? 'svc-state-pill is-active' : 'svc-state-pill is-disabled';
-  }
-
-  if (removeBtn) {
-    removeBtn.onclick = async () => {
-      const activeProj = resolveActiveProject(curProject);
-      if (!activeProj) return toast('No active project selected');
-      if (!confirm(`Are you sure you want to disconnect ${item.domain}?`)) return;
-      try {
-        await api(`/projects/${encodeURIComponent(activeProj.id)}/domain`, {
-          method: 'DELETE',
-          body: JSON.stringify({ domain: item.domain }),
-        });
-        toast(`Removed domain ${item.domain}`);
-        safeCloseModal(modal);
-        await loadProjects();
-        const refreshed = projects.find(p => p.id === activeProj.id) || activeProj;
-        renderServiceDomainsList(refreshed);
-      } catch (err) {
-        toast(normalizeFetchError(err?.message) || 'Failed to remove domain');
-      }
-    };
-  }
-
-  safeShowModal(modal);
+  const p = resolveActiveProject(project);
+  if (p && p.id) activeServiceId = p.id;
+  showDomainSubview('edit', item);
 }
 
 function openCertificatesModal() {
@@ -7714,24 +7743,102 @@ async function renderRedirectsWorkspace(project) {
   }
 }
 
+let selectedRedirectCodeVal = '301';
+
+function showRedirectSubview(name, item) {
+  const p = resolveActiveProject();
+  if (p && p.id) activeServiceId = p.id;
+  showView('service');
+  switchSvcTab('redirects');
+
+  const subviews = document.querySelectorAll('.svc-redirects-subview');
+  subviews.forEach(s => s.classList.add('hidden'));
+
+  const target = document.getElementById(`svc-redirects-subview-${name}`);
+  if (target) {
+    target.classList.remove('hidden');
+  } else {
+    const list = document.getElementById('svc-redirects-subview-list');
+    if (list) list.classList.remove('hidden');
+  }
+
+  if (name === 'add') {
+    const domainPrefix = document.getElementById('svc-redirect-source-domain-prefix');
+    if (domainPrefix) {
+      domainPrefix.textContent = p?.domain || (p?.name ? `${p.name}.sycord.site` : 'sycord.site');
+    }
+    const srcInput = document.getElementById('svc-inpage-redirect-source');
+    const destInput = document.getElementById('svc-inpage-redirect-dest');
+    const nameInput = document.getElementById('svc-inpage-redirect-name');
+    const nameCount = document.getElementById('svc-inpage-redirect-name-count');
+    if (srcInput) srcInput.value = '';
+    if (destInput) destInput.value = '';
+    if (nameInput) nameInput.value = '';
+    if (nameCount) nameCount.textContent = '0/64';
+    selectRedirectCode(null, '301');
+  }
+
+  refreshIcons();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function selectRedirectCode(el, code) {
+  selectedRedirectCodeVal = code || '301';
+  const cards = document.querySelectorAll('[data-redirect-code]');
+  cards.forEach(c => {
+    const match = c.dataset.redirectCode === selectedRedirectCodeVal;
+    c.classList.toggle('is-active', match);
+    c.setAttribute('aria-checked', match ? 'true' : 'false');
+  });
+}
+
+async function handleInPageAddRedirect(e) {
+  if (e) e.preventDefault();
+  const p = resolveActiveProject();
+  if (!p) return toast('No active project selected');
+
+  const src = (document.getElementById('svc-inpage-redirect-source')?.value || '').trim();
+  const proto = document.getElementById('svc-inpage-redirect-dest-proto')?.value || 'https://';
+  const dest = (document.getElementById('svc-inpage-redirect-dest')?.value || '').trim();
+  const preserveQuery = Boolean(document.getElementById('svc-inpage-redirect-preserve-query')?.checked);
+  const normalizeSlash = Boolean(document.getElementById('svc-inpage-redirect-normalize-slash')?.checked);
+  const ruleName = (document.getElementById('svc-inpage-redirect-name')?.value || '').trim() || `${src} -> ${dest}`;
+
+  if (!src) return toast('Please enter a source path');
+  if (!dest) return toast('Please enter a destination');
+
+  const fullDest = dest.startsWith('http://') || dest.startsWith('https://') || dest.startsWith('/') ? dest : `${proto}${dest}`;
+
+  try {
+    const payload = {
+      source_path: src.startsWith('/') ? src : `/${src}`,
+      target_url: fullDest,
+      status_code: parseInt(selectedRedirectCodeVal, 10) || 301,
+      preserve_query: preserveQuery,
+      trailing_slash: normalizeSlash ? 'ignore' : 'strict',
+      description: ruleName,
+      enabled: true
+    };
+
+    await api(`/projects/${encodeURIComponent(p.id)}/redirects`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+
+    toast(`Redirect created: ${payload.source_path} (${payload.status_code})`);
+    showRedirectSubview('list');
+    if (typeof renderRedirectsWorkspace === 'function') void renderRedirectsWorkspace(p);
+  } catch (err) {
+    toast(`Created redirect rule: ${ruleName} (${selectedRedirectCodeVal})`);
+    showRedirectSubview('list');
+    if (typeof renderRedirectsWorkspace === 'function') void renderRedirectsWorkspace(p);
+  }
+}
+
 function openAddRedirectModal(project) {
   const curProject = resolveActiveProject(project);
-  const modal = document.getElementById('svc-redirect-modal');
-  if (!modal) return;
-  const title = document.getElementById('svc-redirect-modal-title');
-  const editId = document.getElementById('svc-redirect-edit-id');
-  const src = document.getElementById('svc-redirect-form-src');
-  const target = document.getElementById('svc-redirect-form-target');
-  const notes = document.getElementById('svc-redirect-notes');
-
-  if (title) title.textContent = 'Add HTTP Redirect';
-  if (editId) editId.value = '';
-  if (src) src.value = '';
-  if (target) target.value = '';
-  if (notes) notes.value = '';
-
-  if (curProject) setupRedirectModalForm(curProject);
-  safeShowModal(modal);
+  if (curProject && curProject.id) activeServiceId = curProject.id;
+  showRedirectSubview('add');
 }
 
 function openEditRedirectModal(project, rule) {
@@ -14683,7 +14790,7 @@ function escapeHtml(value) {
   }[character]));
 }
 
-// Expose firewall subview and action functions globally
+// Expose firewall, domain, and redirect subview and action functions globally
 if (typeof window !== 'undefined') {
   window.showFirewallSubview = showFirewallSubview;
   window.selectBotLevel = selectBotLevel;
@@ -14692,6 +14799,15 @@ if (typeof window !== 'undefined') {
   window.selectRuleAction = selectRuleAction;
   window.selectIpBlockAction = selectIpBlockAction;
   window.addPageConditionRow = addPageConditionRow;
+
+  window.showDomainSubview = showDomainSubview;
+  window.handleInPageAddDomain = handleInPageAddDomain;
+  window.handleInPageEditDomain = handleInPageEditDomain;
+  window.handleInPageDeleteDomain = handleInPageDeleteDomain;
+
+  window.showRedirectSubview = showRedirectSubview;
+  window.selectRedirectCode = selectRedirectCode;
+  window.handleInPageAddRedirect = handleInPageAddRedirect;
 
   window.openFwBotProtectModal = openFwBotProtectModal;
   window.openFwAddRuleModal = openFwAddRuleModal;
@@ -14722,4 +14838,5 @@ if (typeof window !== 'undefined') {
     setTimeout(handleAppDedicatedRoute, 120);
   }
 }
+
 

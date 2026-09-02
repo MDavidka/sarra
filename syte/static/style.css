@@ -17030,4 +17030,175 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   }
 }
 
+/* ========================================================
+   Grouped Inputs & Status Cards (Add Redirect UI media_1788379626064.jpg)
+   ======================================================== */
+.svc-fw-grouped-input {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  border: 1px solid #e4e4e7;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #ffffff;
+  transition: border-color 0.15s ease;
+}
+
+.svc-fw-grouped-input:focus-within {
+  border-color: #18181b;
+}
+
+.svc-fw-group-prefix {
+  background: #f4f4f5;
+  color: #71717a;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 10px 14px;
+  border-right: 1px solid #e4e4e7;
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.svc-fw-group-select-wrap {
+  position: relative;
+  background: #ffffff;
+  border-right: 1px solid #e4e4e7;
+  display: flex;
+  align-items: center;
+}
+
+.svc-fw-group-select {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: none;
+  padding: 10px 28px 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #18181b;
+  cursor: pointer;
+  outline: none;
+}
+
+.svc-fw-group-select-wrap svg {
+  position: absolute;
+  right: 8px;
+  width: 14px;
+  height: 14px;
+  color: #71717a;
+  pointer-events: none;
+}
+
+.svc-fw-group-text-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  padding: 10px 14px;
+  font-size: 13.5px;
+  color: #18181b;
+  background: transparent;
+  width: 100%;
+}
+
+.svc-fw-status-cards-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.svc-fw-status-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 6px;
+  border-radius: 12px;
+  border: 1.5px solid #e4e4e7;
+  background: #ffffff;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+  text-align: center;
+}
+
+.svc-fw-status-card strong {
+  font-size: 14px;
+  font-weight: 800;
+  color: #18181b;
+}
+
+.svc-fw-status-card span {
+  font-size: 11px;
+  color: #71717a;
+  margin-top: 2px;
+}
+
+.svc-fw-status-card.is-active {
+  background: #09090b !important;
+  border-color: #09090b !important;
+}
+
+.svc-fw-status-card.is-active strong,
+.svc-fw-status-card.is-active span {
+  color: #ffffff !important;
+}
+
+.svc-fw-option-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  background: #ffffff;
+  border: 1px solid #f0f0f2;
+  border-radius: 14px;
+  margin-bottom: 8px;
+}
+
+.svc-fw-option-card:last-child {
+  margin-bottom: 0;
+}
+
+.svc-fw-option-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.svc-fw-option-icon-sq {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: #f4f4f5;
+  color: #18181b;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.svc-fw-option-icon-sq svg {
+  width: 17px;
+  height: 17px;
+}
+
+.svc-fw-option-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.svc-fw-option-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #09090b;
+}
+
+.svc-fw-option-desc {
+  font-size: 11.5px;
+  color: #71717a;
+}
+
+
 
