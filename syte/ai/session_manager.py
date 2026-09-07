@@ -19,6 +19,12 @@ from syte.database import get_project, update_project
 logger = logging.getLogger("syte.ai.session_manager")
 
 
+# Per-subscriber queue capacity. Bounded so a slow client cannot balloon
+# memory. When the queue fills, the oldest queued event is dropped and a
+# ``stream_gap`` control frame is queued once so the client can backfill.
+_SUBSCRIBER_QUEUE_MAX = 256
+
+
 class ProjectAISession:
     """Manages the lifecycle and live event streams of an autonomous agent for a project."""
 
@@ -28,12 +34,21 @@ class ProjectAISession:
         self.current_turn = 0
         self.active_task: Optional[asyncio.Task] = None
         self.event_buffer: List[Dict[str, Any]] = []
+        # Track the oldest event-id still queued per subscriber so we can
+        # populate `stream_gap.last_id` after an overflow drop.
         self.subscribers: List[asyncio.Queue] = []
+        self.subscriber_head_id: Dict[int, int] = {}
+        self._next_event_id = 1
         self.active_plan: Optional[Dict[str, Any]] = None
         self.pending_question: Optional[Dict[str, Any]] = None
         self.answer_queue: asyncio.Queue = asyncio.Queue()
         self.last_activity = time.time()
         self.lock = asyncio.Lock()
+
+    def _allocate_event_id(self) -> int:
+        eid = self._next_event_id
+        self._next_event_id += 1
+        return eid
 
     def add_event(self, event: Dict[str, Any]) -> None:
         """Record event in buffer and broadcast to all active SSE listener queues."""
@@ -59,21 +74,47 @@ class ProjectAISession:
                         if notes:
                             s["notes"] = notes
 
-        # Keep last 300 events in memory ring buffer
-        self.event_buffer.append(event)
+        # Assign a monotonically-increasing id so clients can dedupe on
+        # reconnect with `since_id`. Stored alongside the event in the buffer.
+        eid = self._allocate_event_id()
+        event_with_id = {**event, "id": eid}
+
+        # Keep last 300 events in memory ring buffer (id stays attached)
+        self.event_buffer.append(event_with_id)
         if len(self.event_buffer) > 300:
             self.event_buffer.pop(0)
 
-        # Broadcast to active subscriber queues
-        dead_subs = []
+        # Broadcast to active subscriber queues with bounded backpressure.
+        # Slow clients have their oldest queued event dropped and receive a
+        # one-shot ``stream_gap`` so they can backfill via the polling mirror.
+        # We coalesce: a single gap covers a burst of drops so the queue is
+        # never dominated by gap frames under sustained overflow.
         for q in list(self.subscribers):
-            try:
-                q.put_nowait(event)
-            except Exception:
-                dead_subs.append(q)
-        for dead in dead_subs:
-            if dead in self.subscribers:
-                self.subscribers.remove(dead)
+            dropped = 0
+            while True:
+                try:
+                    q.put_nowait(event_with_id)
+                    break
+                except asyncio.QueueFull:
+                    try:
+                        q.get_nowait()
+                        dropped += 1
+                    except Exception:
+                        break
+            if dropped:
+                gap = {
+                    "event": "stream_gap",
+                    "dropped": dropped,
+                    "last_id": eid,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+                # Always replace the oldest queued event with the gap so the
+                # signal survives sustained overflow (queue is bounded).
+                try:
+                    q.get_nowait()
+                    q.put_nowait(gap)
+                except Exception:
+                    pass
 
     async def wait_for_user_answer(self, question_data: Dict[str, Any], timeout: float = 300.0) -> Dict[str, Any]:
         """Pause agent turn until the user provides an answer or secret from the UI."""
@@ -215,19 +256,35 @@ class AIAgentSessionManager:
 
             session.active_task = asyncio.create_task(_run_background_loop())
 
-    async def subscribe(self, project_id: str, replay: bool = False) -> AsyncGenerator[Dict[str, Any], None]:
-        """Subscribe to live streaming events with keepalive heartbeat, optionally replaying recent buffer."""
+    async def subscribe(
+        self,
+        project_id: str,
+        replay: bool = False,
+        since_id: Optional[int] = None,
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """Subscribe to live streaming events with keepalive heartbeat.
+
+        ``since_id``: when set with ``replay=True``, only replay events with
+        ``id > since_id``. Keeps the backlog window small on reconnect so
+        delta-oriented clients don't re-download the full recent history.
+
+        The per-subscriber queue is bounded (see ``_SUBSCRIBER_QUEUE_MAX``);
+        overflow drops the oldest queued event and emits a ``stream_gap``
+        control frame so the client can backfill via the polling mirror.
+        """
         session = self.get_or_create_session(project_id)
-        q: asyncio.Queue = asyncio.Queue()
+        q: asyncio.Queue = asyncio.Queue(maxsize=_SUBSCRIBER_QUEUE_MAX)
         session.subscribers.append(q)
 
-        # 1. Optionally replay existing buffered events
-        if replay:
-            for past_event in list(session.event_buffer):
-                yield past_event
-
-        # 2. Stream live events as they occur with 10s keepalive heartbeats
         try:
+            # 1. Optionally replay events with id > since_id from buffer
+            if replay:
+                for past_event in list(session.event_buffer):
+                    eid = past_event.get("id") or 0
+                    if since_id is None or eid > since_id:
+                        yield past_event
+
+            # 2. Stream live events as they occur with 10s keepalive heartbeats
             while True:
                 try:
                     event = await asyncio.wait_for(q.get(), timeout=10.0)

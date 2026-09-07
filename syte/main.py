@@ -2735,9 +2735,13 @@ async def api_preview_logs_stream(project_id: str, request: Request, live: bool 
     if key:
         await auth.verify_api_token_from_request(request)
     return StreamingResponse(
-        stream_preview_logs(project_id, live_only=live),
+        stream_preview_logs(project_id, live_only=live, request=request),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 
@@ -2907,9 +2911,14 @@ async def api_logs_stream(project_id: str, request: Request, live: bool = False)
             project_id,
             project.get("deploy_type", "shell"),
             live_only=live,
+            request=request,
         ),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 
