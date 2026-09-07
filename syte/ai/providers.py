@@ -1,6 +1,12 @@
 """Unified multi-provider AI client for Syte Autonomous AI Builder.
 
 Supports OpenAI, Anthropic, Google Gemini, DeepSeek, OpenRouter, and Local Ollama/vLLM endpoints.
+
+Streaming uses a shared pooled ``httpx.AsyncClient`` (HTTP/2 + keep-alive) so
+provider tokens are consumed directly on the event loop. The previous
+``urllib`` implementation hopped to a worker thread for **every SSE line**,
+adding per-token scheduling latency and preventing connection reuse between
+turns — the dominant cost on the chat hot path.
 """
 
 from __future__ import annotations
@@ -10,8 +16,8 @@ import json
 import logging
 import os
 from typing import Any, AsyncGenerator, Dict, List, Optional
-import urllib.request
-import urllib.error
+
+import httpx
 
 logger = logging.getLogger("syte.ai.providers")
 
@@ -40,6 +46,40 @@ def _clean_api_key(key: str) -> str:
     if k.lower().startswith("bearer "):
         k = k[7:].strip()
     return k
+
+
+# ---------------------------------------------------------------------------
+# Shared pooled HTTP client (HTTP/2 + keep-alive) for provider SSE streams.
+# Reusing TLS connections across turns removes a full handshake (~50-300 ms)
+# from every token stream start.
+# ---------------------------------------------------------------------------
+
+_STREAM_TIMEOUT = httpx.Timeout(None, connect=10.0, read=120.0, write=30.0, pool=10.0)
+_http_client: Optional[httpx.AsyncClient] = None
+_http_client_loop_id: Optional[int] = None
+
+
+def _get_http_client() -> httpx.AsyncClient:
+    global _http_client, _http_client_loop_id
+    loop_id = id(asyncio.get_running_loop())
+    if _http_client is None or _http_client.is_closed or _http_client_loop_id != loop_id:
+        _http_client = httpx.AsyncClient(
+            http2=True,
+            timeout=_STREAM_TIMEOUT,
+            limits=httpx.Limits(max_connections=100, max_keepalive_connections=20, keepalive_expiry=60.0),
+            follow_redirects=True,
+        )
+        _http_client_loop_id = loop_id
+    return _http_client
+
+
+async def close_http_client() -> None:
+    """Close the shared client (lifespan shutdown)."""
+    global _http_client, _http_client_loop_id
+    if _http_client is not None and not _http_client.is_closed:
+        await _http_client.aclose()
+    _http_client = None
+    _http_client_loop_id = None
 
 
 def _resolve_api_key(provider: str, explicit_key: str = "") -> str:
@@ -337,93 +377,86 @@ class UnifiedAIClient:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
 
-        def _blocking_post(post_url: str, post_payload: dict, post_headers: dict, post_timeout: int = 180):
-            req = urllib.request.Request(
-                post_url,
-                data=json.dumps(post_payload).encode("utf-8"),
-                headers=post_headers,
-                method="POST",
-            )
-            return urllib.request.urlopen(req, timeout=post_timeout)
+        client = _get_http_client()
 
-        response = None
+        async def _open_stream(request_url: str, request_payload: dict) -> tuple[Optional[httpx.Response], str, int]:
+            """POST the stream request; return (response, error_message, error_status)."""
+            try:
+                response = await client.send(
+                    client.build_request("POST", request_url, json=request_payload, headers=headers),
+                    stream=True,
+                )
+            except httpx.HTTPError as exc:
+                return None, f"Connection failed: {exc}", 0
+            except Exception as exc:  # payload/serialization or transport surprises
+                return None, f"Connection failed: {exc}", 0
+            if response.status_code < 400:
+                return response, "", 0
+            err_body = (await response.aread()).decode("utf-8", errors="replace")
+            err_code = response.status_code
+            await response.aclose()
+            err_msg = f"HTTP {err_code}: {response.reason_phrase or ''}"
+            if err_body:
+                try:
+                    parsed = json.loads(err_body)
+                    if isinstance(parsed, dict) and "error" in parsed:
+                        err_val = parsed["error"]
+                        if isinstance(err_val, dict) and "message" in err_val:
+                            err_msg = f"{self.provider.upper()} Error (HTTP {err_code}): {err_val['message']}"
+                        elif isinstance(err_val, str):
+                            err_msg = f"{self.provider.upper()} Error (HTTP {err_code}): {err_val}"
+                except Exception:
+                    err_msg = f"HTTP {err_code}: {err_body}"
+            if err_code in (401, 403):
+                err_msg = f"{err_msg} — Please verify your API key and permissions in AI Settings."
+            return None, err_msg, err_code
+
+        response: Optional[httpx.Response] = None
         last_err_msg = "Unknown error"
         for attempt in range(3):
-            try:
-                response = await asyncio.to_thread(_blocking_post, url, payload, headers, 180)
+            response, last_err_msg, err_code = await _open_stream(url, payload)
+            if response is not None:
                 break
-            except urllib.error.HTTPError as err:
-                # If 404 or 400 on custom Vertex endpoint, attempt seamless fallback to Google Generative Language
-                if (err.code in (404, 400)) and (self.provider in ("vertex", "gemini") or "googleapis.com" in (url or "")):
-                    fallback_url = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
-                    if fallback_url != url:
-                        fallback_payload = dict(payload)
-                        fallback_payload["model"] = _normalize_google_model(self.model)
-                        try:
-                            response = await asyncio.to_thread(_blocking_post, fallback_url, fallback_payload, headers, 180)
-                            break
-                        except Exception:
-                            response = None
-
-                if err.code in (429, 502, 503, 504) and attempt < 2:
-                    await asyncio.sleep(1.5 * (attempt + 1))
-                    continue
-
-                if response is None:
-                    err_body = err.read().decode("utf-8", errors="replace")
-                    err_msg = f"HTTP {err.code}: {err.reason}"
-                    if err_body:
-                        try:
-                            parsed = json.loads(err_body)
-                            if isinstance(parsed, dict) and "error" in parsed:
-                                err_val = parsed["error"]
-                                if isinstance(err_val, dict) and "message" in err_val:
-                                    err_msg = f"{self.provider.upper()} Error (HTTP {err.code}): {err_val['message']}"
-                                elif isinstance(err_val, str):
-                                    err_msg = f"{self.provider.upper()} Error (HTTP {err.code}): {err_val}"
-                        except Exception:
-                            err_msg = f"HTTP {err.code}: {err_body}"
-                    if err.code in (401, 403):
-                        err_msg = f"{err_msg} — Please verify your API key and permissions in AI Settings."
-                    last_err_msg = err_msg
-                    break
-            except Exception as exc:
-                last_err_msg = f"Connection failed: {str(exc)}"
-                if attempt < 2:
-                    await asyncio.sleep(1.5 * (attempt + 1))
-                    continue
-                break
+            # If 404 or 400 on custom Vertex endpoint, seamless fallback to Google Generative Language
+            if err_code in (404, 400) and (
+                self.provider in ("vertex", "gemini") or "googleapis.com" in (url or "")
+            ):
+                fallback_url = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+                if fallback_url != url:
+                    fallback_payload = dict(payload)
+                    fallback_payload["model"] = _normalize_google_model(self.model)
+                    response, fb_err, _fb_code = await _open_stream(fallback_url, fallback_payload)
+                    if response is not None:
+                        break
+                    last_err_msg = fb_err or last_err_msg
+            if err_code in (429, 502, 503, 504) and attempt < 2:
+                await asyncio.sleep(1.5 * (attempt + 1))
+                continue
+            if "Connection failed" in last_err_msg and attempt < 2:
+                await asyncio.sleep(1.5 * (attempt + 1))
+                continue
+            break
 
         if response is None:
             yield {"type": "error", "content": last_err_msg}
             return
 
-        # Read SSE Stream in real time line by line
+        # Consume the provider SSE stream directly on the event loop — no
+        # thread hop per line, so each token reaches the client as soon as
+        # the provider flushes it.
         tool_calls_acc: dict[int, dict[str, Any]] = {}
 
-        def _read_single_line():
-            try:
-                line_bytes = response.readline()
-                if not line_bytes:
-                    return None
-                return line_bytes.decode("utf-8", errors="replace")
-            except Exception:
-                return None
-
-        while True:
-            line = await asyncio.to_thread(_read_single_line)
-            if line is None:
-                break
-
-            line_str = line.strip()
-            if not line_str or line_str.startswith(":"):
-                continue
-            if line_str == "data: [DONE]":
-                break
-            if line_str.startswith("data: "):
-                raw_json = line_str[6:]
+        try:
+            async for line in response.aiter_lines():
+                line_str = line.strip()
+                if not line_str or line_str.startswith(":"):
+                    continue
+                if line_str == "data: [DONE]":
+                    break
+                if not line_str.startswith("data: "):
+                    continue
                 try:
-                    chunk_data = json.loads(raw_json)
+                    chunk_data = json.loads(line_str[6:])
                 except json.JSONDecodeError:
                     continue
 
@@ -477,6 +510,8 @@ class UnifiedAIClient:
                                 tool_calls_acc[idx]["function"]["name"] += f_name
                             if f_args:
                                 tool_calls_acc[idx]["function"]["arguments"] += f_args
+        finally:
+            await response.aclose()
 
         # Yield any accumulated tool calls with repaired JSON arguments
         if tool_calls_acc:
@@ -529,49 +564,77 @@ class UnifiedAIClient:
         if system_prompt:
             payload["system"] = system_prompt
 
-        def _blocking_post():
-            req = urllib.request.Request(
-                url,
-                data=json.dumps(payload).encode("utf-8"),
-                headers=headers,
-                method="POST",
-            )
-            return urllib.request.urlopen(req, timeout=180)
-
-        try:
-            response = await asyncio.to_thread(_blocking_post)
-        except urllib.error.HTTPError as err:
-            err_body = err.read().decode("utf-8", errors="replace")
-            err_msg = f"Anthropic HTTP {err.code}: {err.reason}"
+        def _map_anthropic_error(err_code: int, err_body: str) -> str:
+            err_msg = f"Anthropic HTTP {err_code}"
             if err_body:
                 try:
                     parsed = json.loads(err_body)
                     if isinstance(parsed, dict) and "error" in parsed:
                         err_val = parsed["error"]
                         if isinstance(err_val, dict) and "message" in err_val:
-                            err_msg = f"Anthropic Error (HTTP {err.code}): {err_val['message']}"
+                            err_msg = f"Anthropic Error (HTTP {err_code}): {err_val['message']}"
                         elif isinstance(err_val, str):
-                            err_msg = f"Anthropic Error (HTTP {err.code}): {err_val}"
+                            err_msg = f"Anthropic Error (HTTP {err_code}): {err_val}"
                 except Exception:
-                    err_msg = f"Anthropic HTTP {err.code}: {err_body}"
-            yield {"type": "error", "content": err_msg}
-            return
-        except Exception as exc:
-            yield {"type": "error", "content": f"Anthropic connection failed: {str(exc)}"}
+                    err_msg = f"Anthropic HTTP {err_code}: {err_body}"
+            return err_msg
+
+        client = _get_http_client()
+        response: Optional[httpx.Response] = None
+        last_err_msg = "Unknown error"
+        for attempt in range(3):
+            try:
+                response = await client.send(
+                    client.build_request("POST", url, json=payload, headers=headers),
+                    stream=True,
+                )
+            except httpx.HTTPError as exc:
+                last_err_msg = f"Anthropic connection failed: {exc}"
+                if attempt < 2:
+                    await asyncio.sleep(1.5 * (attempt + 1))
+                    continue
+                break
+            except Exception as exc:
+                last_err_msg = f"Anthropic connection failed: {exc}"
+                break
+            if response.status_code < 400:
+                break
+            err_body = (await response.aread()).decode("utf-8", errors="replace")
+            err_code = response.status_code
+            await response.aclose()
+            response = None
+            last_err_msg = _map_anthropic_error(err_code, err_body)
+            if err_code in (429, 502, 503, 504) and attempt < 2:
+                await asyncio.sleep(1.5 * (attempt + 1))
+                continue
+            break
+
+        if response is None:
+            yield {"type": "error", "content": last_err_msg}
             return
 
-        while True:
-            line_bytes = await asyncio.to_thread(response.readline)
-            if not line_bytes:
-                break
-            line = line_bytes.decode("utf-8", errors="replace").strip()
-            if line.startswith("data: "):
+        try:
+            async for line in response.aiter_lines():
+                line = line.strip()
+                if not line.startswith("data:"):
+                    continue
                 try:
-                    data = json.loads(line[6:])
-                    event_type = data.get("type")
-                    if event_type == "content_block_delta":
-                        delta = data.get("delta") or {}
-                        if delta.get("type") == "text_delta":
-                            yield {"type": "token", "content": delta.get("text", "")}
+                    data = json.loads(line[5:])
                 except json.JSONDecodeError:
                     continue
+                event_type = data.get("type")
+                if event_type == "content_block_delta":
+                    delta = data.get("delta") or {}
+                    delta_type = delta.get("type")
+                    if delta_type == "text_delta" and delta.get("text"):
+                        yield {"type": "token", "content": delta["text"]}
+                    elif delta_type == "thinking_delta" and delta.get("thinking"):
+                        yield {"type": "thought", "content": delta["thinking"]}
+                elif event_type == "message_stop":
+                    break
+                elif event_type == "error":
+                    err = data.get("error") or {}
+                    yield {"type": "error", "content": f"Anthropic stream error: {err.get('message') or err}"}
+                    break
+        finally:
+            await response.aclose()

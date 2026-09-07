@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from syte.ai.engine import AIAgentEngine
 from syte.ai.providers import UnifiedAIClient
 from syte.auth import verify_operator_session_or_token
+from syte.sse_core import SSE_HEADERS
 from syte.database import (
     clear_ai_chat_history,
     get_ai_builder_settings,
@@ -221,8 +222,17 @@ async def get_project_ai_session(project_id: str):
 
 
 @router.get("/api/projects/{project_id}/ai/events")
-async def stream_project_ai_events(project_id: str, replay: bool = False):
-    """Reconnect or subscribe to live AI agent SSE event stream."""
+async def stream_project_ai_events(
+    project_id: str,
+    replay: bool = False,
+    since_id: int = 0,
+):
+    """Reconnect or subscribe to live AI agent SSE event stream.
+
+    Legacy surface for the GUI; the dedicated optimized window is
+    ``GET /api/stream/projects/{project_id}/events`` (see
+    ``docs/ai-chat-streaming.md``).
+    """
     if project_id != "global":
         project = await get_project(project_id)
         if not project:
@@ -230,22 +240,16 @@ async def stream_project_ai_events(project_id: str, replay: bool = False):
 
     async def sse_event_broadcaster():
         try:
-            async for event_payload in session_manager.subscribe(project_id, replay=replay):
-                event_name = event_payload.get("event", "message")
-                data_str = json.dumps(event_payload)
-                yield f"event: {event_name}\ndata: {data_str}\n\n"
+            async for frame in session_manager.subscribe(project_id, replay=replay, since_id=since_id):
+                yield frame
         except Exception as exc:
             err_data = json.dumps({"event": "error", "error": str(exc)})
-            yield f"event: error\ndata: {err_data}\n\n"
+            yield f"event: error\ndata: {err_data}\n\n".encode("utf-8")
 
     return StreamingResponse(
         sse_event_broadcaster(),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
+        headers=SSE_HEADERS,
     )
 
 
@@ -285,6 +289,11 @@ async def project_ai_chat_stream(
 
     overrides = body.model_dump(exclude_none=True)
 
+    # Capture the replay cursor before starting so the stream contains
+    # exactly this turn's events (no stale replay, no missed fast turns).
+    session = session_manager.get_or_create_session(project_id)
+    since_id = session.last_event_id
+
     # Start or attach background task
     await session_manager.start_turn(
         project_id=project_id,
@@ -294,22 +303,16 @@ async def project_ai_chat_stream(
 
     async def sse_generator():
         try:
-            async for event_payload in session_manager.subscribe(project_id, replay=False):
-                event_name = event_payload.get("event", "message")
-                data_str = json.dumps(event_payload)
-                yield f"event: {event_name}\ndata: {data_str}\n\n"
+            async for frame in session_manager.subscribe(project_id, replay=False, since_id=since_id):
+                yield frame
         except Exception as exc:
             err_data = json.dumps({"event": "error", "error": str(exc)})
-            yield f"event: error\ndata: {err_data}\n\n"
+            yield f"event: error\ndata: {err_data}\n\n".encode("utf-8")
 
     return StreamingResponse(
         sse_generator(),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
+        headers=SSE_HEADERS,
     )
 
 

@@ -1,22 +1,60 @@
 """Persistent Background AI Agent Session Manager for Syte.
 
-Maintains running agent tasks on the host VM across browser tab switches, page refreshes,
-and disconnections. Handles multi-client event broadcasting, interactive user input gates,
-and state synchronization.
+Maintains running agent tasks on the host VM across browser tab switches, page
+refreshes, and disconnections. Handles multi-client event broadcasting,
+interactive user input gates, and state synchronization.
+
+Streaming hot path (see ``syte/sse_core.py``):
+
+* Events are JSON-encoded **once** per emit and fanned out as immutable
+  ``bytes`` SSE frames to every subscriber — N clients no longer pay N
+  serializations.
+* ``token_delta`` / ``thought_delta`` are coalesced by a :class:`DeltaBatcher`
+  (≤ 32 deltas / 500 chars / 15 ms idle window) so per-token frames never
+  flood the socket, while the first burst still lands within one scheduler
+  tick.
+* Every event carries a monotonic per-session ``id`` so clients can reconnect
+  with ``?since_id=`` and replay exactly the gap — no duplicate or lost
+  frames inside the retained ring window.
+* Subscriber queues are bounded; overflow drops the oldest queued frame and
+  surfaces a ``stream_gap`` control frame instead of blocking the agent.
 """
 
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
-import json
 import logging
 import time
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from collections import deque
+from typing import Any, AsyncIterator, Deque, Dict, List, Optional, Tuple
 
 from syte.database import get_project, update_project
+from syte.sse_core import (
+    HEARTBEAT_FRAME,
+    HEARTBEAT_SECONDS,
+    HOT_DELTA_EVENTS,
+    RETRY_FRAME,
+    SUBSCRIBER_QUEUE_SIZE,
+    DeltaBatcher,
+    encode_sse_frame,
+    stream_gap_frame,
+    utc_now_iso,
+)
 
 logger = logging.getLogger("syte.ai.session_manager")
+
+EVENT_BUFFER_SIZE = 300
+TERMINAL_EVENTS = frozenset({"session_idle", "done", "cancelled", "error"})
+
+
+class Subscriber:
+    """Bounded fan-out queue for one live SSE connection."""
+
+    __slots__ = ("queue", "dropped")
+
+    def __init__(self) -> None:
+        self.queue: asyncio.Queue = asyncio.Queue(maxsize=SUBSCRIBER_QUEUE_SIZE)
+        self.dropped = 0
 
 
 class ProjectAISession:
@@ -27,22 +65,59 @@ class ProjectAISession:
         self.is_running = False
         self.current_turn = 0
         self.active_task: Optional[asyncio.Task] = None
-        self.event_buffer: List[Dict[str, Any]] = []
-        self.subscribers: List[asyncio.Queue] = []
         self.active_plan: Optional[Dict[str, Any]] = None
         self.pending_question: Optional[Dict[str, Any]] = None
         self.answer_queue: asyncio.Queue = asyncio.Queue()
         self.last_activity = time.time()
         self.lock = asyncio.Lock()
 
-    def add_event(self, event: Dict[str, Any]) -> None:
-        """Record event in buffer and broadcast to all active SSE listener queues."""
-        self.last_activity = time.time()
-        if "timestamp" not in event:
-            event["timestamp"] = datetime.now(timezone.utc).isoformat()
+        # Monotonic per-session event id (starts at 1; 0 means "no events seen").
+        self._next_seq = 0
+        # Ring of (seq, sse_frame_bytes, event_dict) — the replay window.
+        self._ring: Deque[Tuple[int, bytes, Dict[str, Any]]] = deque(maxlen=EVENT_BUFFER_SIZE)
+        self._subs: List[Subscriber] = []
+        self._batcher = DeltaBatcher(self._broadcast)
 
-        # Update active plan in memory if plan events occur
-        evt_type = event.get("event")
+    # ------------------------------------------------------------------
+    # Event ingest / fan-out
+    # ------------------------------------------------------------------
+
+    @property
+    def event_buffer(self) -> List[Dict[str, Any]]:
+        """Compatibility view of the retained replay window (for diagnostics)."""
+        return [evt for _seq, _frame, evt in self._ring]
+
+    @property
+    def subscribers(self) -> List[Subscriber]:
+        return self._subs
+
+    @property
+    def last_event_id(self) -> int:
+        return self._next_seq
+
+    def add_event(self, event: Dict[str, Any]) -> None:
+        """Record + broadcast one agent event.
+
+        Hot deltas are coalesced; cold events flush pending deltas first so
+        frame order on the wire matches causal order (deltas → tool call →
+        done). The event dict must not be mutated after this call — the same
+        object is shared with every subscriber and the replay ring.
+        """
+        self.last_activity = time.time()
+        if str(event.get("event") or "") in HOT_DELTA_EVENTS and isinstance(event.get("delta"), str):
+            self._batcher.push(event)
+            return
+        self._batcher.flush_all()
+        self._broadcast(event)
+
+    def _broadcast(self, event: Dict[str, Any]) -> None:
+        evt_type = str(event.get("event") or "message")
+
+        if "timestamp" not in event:
+            event["timestamp"] = utc_now_iso()
+
+        # Mirror plan state in memory so reconnecting clients can rehydrate
+        # the plan without replaying every tool result.
         if evt_type == "tool_call_result":
             tool_name = event.get("tool_name")
             result = event.get("result") or {}
@@ -59,21 +134,100 @@ class ProjectAISession:
                         if notes:
                             s["notes"] = notes
 
-        # Keep last 300 events in memory ring buffer
-        self.event_buffer.append(event)
-        if len(self.event_buffer) > 300:
-            self.event_buffer.pop(0)
+        self._next_seq += 1
+        seq = self._next_seq
+        event["id"] = seq
+        frame = encode_sse_frame(event, event_id=seq)
 
-        # Broadcast to active subscriber queues
-        dead_subs = []
-        for q in list(self.subscribers):
+        # Transient per-turn chatter is excluded from the replay window so a
+        # reconnect never re-downloads a whole previous turn's token stream.
+        if evt_type not in ("token_delta", "thought_delta", "status"):
+            self._ring.append((seq, frame, event))
+
+        for sub in list(self._subs):
             try:
-                q.put_nowait(event)
+                sub.queue.put_nowait((frame, event))
+            except asyncio.QueueFull:
+                try:
+                    sub.queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
+                sub.dropped += 1
+                try:
+                    sub.queue.put_nowait((frame, event))
+                except asyncio.QueueFull:
+                    pass
             except Exception:
-                dead_subs.append(q)
-        for dead in dead_subs:
-            if dead in self.subscribers:
-                self.subscribers.remove(dead)
+                pass
+
+    # ------------------------------------------------------------------
+    # Subscription (SSE)
+    # ------------------------------------------------------------------
+
+    async def subscribe(self, since_id: int = 0, replay: bool = False) -> AsyncIterator[bytes]:
+        """Async generator of ready-to-send SSE ``bytes`` frames.
+
+        ``since_id`` replays only events newer than the client's last seen id
+        (browser ``Last-Event-ID`` semantics). ``replay=True`` with
+        ``since_id=0`` replays the whole retained window.
+        """
+        if replay and since_id <= 0:
+            since_id = -1  # replay everything in the ring
+
+        sub = Subscriber()
+        self._subs.append(sub)
+        try:
+            yield RETRY_FRAME
+
+            ring = list(self._ring)
+            if since_id > 0 and ring and since_id < ring[0][0] - 1:
+                yield stream_gap_frame(
+                    dropped=ring[0][0] - since_id - 1,
+                    last_id=max(ring[0][0] - 1, 0),
+                    reason="replay_window_expired",
+                )
+            for seq, frame, _evt in ring:
+                if seq > since_id:
+                    yield frame
+
+            # If the session already ended (last cold event terminal) and no
+            # turn is running, close now instead of holding a connection that
+            # can never produce more frames — clients reconnect per turn.
+            if ring and not self.is_running:
+                last_cold = ring[-1][2]
+                if str(last_cold.get("event") or "") in TERMINAL_EVENTS:
+                    return
+
+            while True:
+                try:
+                    frame, event = await asyncio.wait_for(sub.queue.get(), timeout=HEARTBEAT_SECONDS)
+                except asyncio.TimeoutError:
+                    yield HEARTBEAT_FRAME
+                    continue
+
+                if sub.dropped:
+                    dropped, sub.dropped = sub.dropped, 0
+                    yield stream_gap_frame(dropped=dropped, last_id=max(self._next_seq - 1, 0))
+
+                yield frame
+
+                evt_type = str(event.get("event") or "") if event else ""
+                if evt_type in TERMINAL_EVENTS and not self.is_running:
+                    # Give the turn loop a beat to enqueue any trailing cold
+                    # events, then close so the client's EventSource can
+                    # reconnect (or stop) on a clean end-of-stream.
+                    await asyncio.sleep(0.05)
+                    while not sub.queue.empty():
+                        frame, _event = sub.queue.get_nowait()
+                        yield frame
+                    break
+        finally:
+            if sub in self._subs:
+                self._subs.remove(sub)
+
+    # ------------------------------------------------------------------
+    # Interactive question gate
+    # ------------------------------------------------------------------
 
     async def wait_for_user_answer(self, question_data: Dict[str, Any], timeout: float = 300.0) -> Dict[str, Any]:
         """Pause agent turn until the user provides an answer or secret from the UI."""
@@ -89,7 +243,6 @@ class ProjectAISession:
         self.add_event({
             "event": "user_input_required",
             "question_data": question_data,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
         })
 
         try:
@@ -111,7 +264,8 @@ class ProjectAISession:
 
     def clear(self) -> None:
         """Reset the session buffers, plan, and pending questions."""
-        self.event_buffer.clear()
+        self._batcher.clear()
+        self._ring.clear()
         self.active_plan = None
         self.pending_question = None
         while not self.answer_queue.empty():
@@ -120,16 +274,22 @@ class ProjectAISession:
             except Exception:
                 break
 
+    def get_events_since(self, since_id: int = 0, limit: int = 200) -> List[Dict[str, Any]]:
+        """Polling mirror of the replay window: cold events with ``id > since_id``."""
+        events = [evt for seq, _frame, evt in self._ring if seq > since_id]
+        return events[-limit:] if limit > 0 else events
+
     def get_status_summary(self) -> Dict[str, Any]:
         """Return high-level summary of active session."""
         return {
             "project_id": self.project_id,
             "is_running": self.is_running,
             "current_turn": self.current_turn,
+            "last_event_id": self._next_seq,
             "active_plan": self.active_plan,
             "pending_question": self.pending_question,
-            "events_in_buffer": len(self.event_buffer),
-            "subscribers_count": len(self.subscribers),
+            "events_in_buffer": len(self._ring),
+            "subscribers_count": len(self._subs),
             "last_activity": self.last_activity,
         }
 
@@ -137,13 +297,13 @@ class ProjectAISession:
 class AIAgentSessionManager:
     """Singleton managing background agent runs across all projects on Syte."""
 
-    _instance: Optional[AIAgentSessionManager] = None
+    _instance: Optional["AIAgentSessionManager"] = None
 
     def __init__(self):
         self.sessions: Dict[str, ProjectAISession] = {}
 
     @classmethod
-    def get_instance(cls) -> AIAgentSessionManager:
+    def get_instance(cls) -> "AIAgentSessionManager":
         if cls._instance is None:
             cls._instance = AIAgentSessionManager()
         return cls._instance
@@ -168,7 +328,6 @@ class AIAgentSessionManager:
             session.add_event({
                 "event": "stopped",
                 "message": "AI execution stopped by user.",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
             })
             return {"ok": True, "stopped": True, "message": "Agent execution stopped."}
         return {"ok": True, "stopped": False, "message": "No active agent task running."}
@@ -190,11 +349,16 @@ class AIAgentSessionManager:
 
             session.is_running = True
             session.current_turn += 1
-            # Filter out old transient token deltas from buffer to prevent replay bloat
-            session.event_buffer = [
-                e for e in session.event_buffer
-                if e.get("event") not in ("token_delta", "thought_delta", "status")
-            ]
+            # Filter out old transient token/status chatter from the replay
+            # window to prevent reconnect bloat on the next subscriber.
+            session._ring = deque(
+                [
+                    entry
+                    for entry in session._ring
+                    if str(entry[2].get("event") or "") not in ("token_delta", "thought_delta", "status")
+                ],
+                maxlen=EVENT_BUFFER_SIZE,
+            )
 
             async def _run_background_loop():
                 engine = AIAgentEngine(project_id, session=session)
@@ -211,40 +375,20 @@ class AIAgentSessionManager:
                     session.add_event({"event": "error", "error": str(exc)})
                 finally:
                     session.is_running = False
-                    session.add_event({"event": "session_idle", "timestamp": datetime.now(timezone.utc).isoformat()})
+                    session.add_event({"event": "session_idle"})
 
             session.active_task = asyncio.create_task(_run_background_loop())
 
-    async def subscribe(self, project_id: str, replay: bool = False) -> AsyncGenerator[Dict[str, Any], None]:
-        """Subscribe to live streaming events with keepalive heartbeat, optionally replaying recent buffer."""
+    async def subscribe(
+        self,
+        project_id: str,
+        replay: bool = False,
+        since_id: int = 0,
+    ) -> AsyncIterator[bytes]:
+        """Subscribe to live SSE byte frames for a project's agent session."""
         session = self.get_or_create_session(project_id)
-        q: asyncio.Queue = asyncio.Queue()
-        session.subscribers.append(q)
-
-        # 1. Optionally replay existing buffered events
-        if replay:
-            for past_event in list(session.event_buffer):
-                yield past_event
-
-        # 2. Stream live events as they occur with 10s keepalive heartbeats
-        try:
-            while True:
-                try:
-                    event = await asyncio.wait_for(q.get(), timeout=10.0)
-                    yield event
-                    if event.get("event") == "done" and not session.is_running:
-                        await asyncio.sleep(0.05)
-                        break
-                except asyncio.TimeoutError:
-                    # Emit periodic keepalive event so reverse proxies/browsers never timeout
-                    yield {
-                        "event": "ping",
-                        "is_running": session.is_running,
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                    }
-        finally:
-            if q in session.subscribers:
-                session.subscribers.remove(q)
+        async for frame in session.subscribe(since_id=since_id, replay=replay):
+            yield frame
 
     async def handle_user_answer(self, project_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Handle submission of general questions or secure environment variables."""

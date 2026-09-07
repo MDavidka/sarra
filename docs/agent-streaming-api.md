@@ -1,5 +1,10 @@
 # Syte Agent Streaming API
 
+> For the **AI Builder chat stream** (`/api/stream/*`, `/api/projects/{id}/ai/*`)
+> and the per-tool streaming contract, see
+> [ai-chat-streaming.md](ai-chat-streaming.md). This document covers the
+> Sycord cloud-agent activity API.
+
 ## Overview
 
 Syte's cloud agent emits real-time events via Server-Sent Events (SSE) at:
