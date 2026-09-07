@@ -113,6 +113,11 @@ async def lifespan(app: FastAPI):
     branch_check_stop.set()
     backup_stop.set()
     supervisor.stop_supervisor()
+    from syte.ai.providers import close_http_client
+    try:
+        await close_http_client()
+    except Exception:
+        pass
     task.cancel()
     try:
         await backup_task
@@ -185,6 +190,8 @@ app.include_router(platform_api.router, prefix="/api")
 app.include_router(share_api.router, prefix="/api")
 from syte.ai.router import router as ai_router
 app.include_router(ai_router)
+from syte.stream_api import router as stream_router
+app.include_router(stream_router)
 
 
 class CreateTokenRequest(BaseModel):

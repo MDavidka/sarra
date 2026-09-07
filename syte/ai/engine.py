@@ -9,6 +9,9 @@ import asyncio
 import json
 import logging
 import re
+import time
+import uuid
+from datetime import datetime, timezone
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from syte.ai.providers import UnifiedAIClient
@@ -21,6 +24,42 @@ from syte.database import (
 )
 
 logger = logging.getLogger("syte.ai.engine")
+
+# Large payload fields are truncated for the *streamed* tool_call_result only;
+# the full result still goes to the model context and the DB verbatim. This
+# keeps SSE frames small so tool bursts never starve token deltas of socket
+# bandwidth.
+_BRIEF_TRUNCATE_FIELDS = ("content", "stdout", "stderr", "output", "tree", "diff")
+_BRIEF_MAX_CHARS = 2000
+_BRIEF_MAX_LIST_ITEMS = 40
+
+
+def _brief_stream_result(result: Dict[str, Any]) -> Dict[str, Any]:
+    """Return a wire-light copy of a tool result for SSE streaming."""
+    if not isinstance(result, dict):
+        return result
+    brief: Dict[str, Any] = {}
+    for key, value in result.items():
+        if isinstance(value, str) and key in _BRIEF_TRUNCATE_FIELDS and len(value) > _BRIEF_MAX_CHARS:
+            brief[key] = value[:1200] + f"\n…[truncated {len(value)} chars for stream]…\n" + value[-400:]
+        elif isinstance(value, list) and key in ("logs", "files", "matches", "results") and len(value) > _BRIEF_MAX_LIST_ITEMS:
+            brief[key] = value[-_BRIEF_MAX_LIST_ITEMS:]
+            brief[f"{key}_total"] = len(value)
+        else:
+            brief[key] = value
+    return brief
+
+
+def _brief_arguments(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Keep streamed tool arguments small (file content is never needed live)."""
+    if not isinstance(arguments, dict):
+        return arguments
+    brief = dict(arguments)
+    content = brief.get("content")
+    if isinstance(content, str) and len(content) > 400:
+        brief["content"] = content[:400] + f"\n…[{len(content)} chars total]…"
+        brief["content_bytes"] = len(content)
+    return brief
 
 
 def extract_text_tool_calls(text: str) -> List[Dict[str, Any]]:
@@ -104,9 +143,14 @@ class AIAgentEngine:
         settings_override: Optional[Dict[str, Any]] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """Execute a full autonomous agent turn with streaming output and tool execution."""
+        # One request id per turn ties every event (deltas, tool calls,
+        # lifecycle) to this run so clients can group/deduplicate streams.
+        request_id = f"req-{uuid.uuid4().hex[:12]}"
+        turn_started = time.monotonic()
+
         # 1. Save incoming user message
         await save_ai_chat_message(self.project_id, role="user", content=user_message)
-        yield {"event": "user_message_received", "content": user_message}
+        yield {"event": "user_message_received", "content": user_message, "request_id": request_id}
 
         # 2. Load project context
         if self.project_id == "global":
@@ -239,10 +283,8 @@ class AIAgentEngine:
             turn_tokens = ""
             turn_thoughts = ""
             turn_tool_calls: List[Dict[str, Any]] = []
-            from datetime import datetime, timezone
-            now_iso = datetime.now(timezone.utc).isoformat()
 
-            yield {"event": "status", "message": f"Thinking with {client.model}…", "turn": current_turn, "timestamp": now_iso}
+            yield {"event": "status", "message": f"Thinking with {client.model}…", "turn": current_turn, "request_id": request_id}
 
             stream_error = None
             async for chunk in client.stream_chat(
@@ -254,11 +296,13 @@ class AIAgentEngine:
                 if chunk_type == "thought":
                     content = chunk.get("content", "")
                     turn_thoughts += content
-                    yield {"event": "thought_delta", "delta": content, "timestamp": datetime.now(timezone.utc).isoformat()}
+                    # Hot delta: no per-token timestamp — the session batches
+                    # these and stamps one timestamp per merged frame.
+                    yield {"event": "thought_delta", "delta": content, "request_id": request_id, "turn": current_turn}
                 elif chunk_type == "token":
                     content = chunk.get("content", "")
                     turn_tokens += content
-                    yield {"event": "token_delta", "delta": content, "timestamp": datetime.now(timezone.utc).isoformat()}
+                    yield {"event": "token_delta", "delta": content, "request_id": request_id, "turn": current_turn}
                 elif chunk_type == "tool_call":
                     turn_tool_calls.append(chunk)
                 elif chunk_type == "error":
@@ -266,7 +310,7 @@ class AIAgentEngine:
                     if any(t in err_msg.lower() for t in ["timed out", "timeout", "504", "502", "503", "connection reset"]) and current_turn < max_turns:
                         stream_error = err_msg
                         break
-                    yield {"event": "error", "error": err_msg}
+                    yield {"event": "error", "error": err_msg, "request_id": request_id}
                     return
 
             if stream_error:
@@ -274,7 +318,7 @@ class AIAgentEngine:
                     "event": "status",
                     "message": f"Gateway timeout, retrying turn {current_turn}…",
                     "turn": current_turn,
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "request_id": request_id,
                 }
                 await asyncio.sleep(2)
                 current_turn -= 1  # retry turn
@@ -303,8 +347,9 @@ class AIAgentEngine:
                             "event": "tool_call_result",
                             "tool_call_id": "auto_plan_1",
                             "tool_name": "syte_create_plan",
+                            "request_id": request_id,
+                            "turn": current_turn,
                             "result": {"ok": True, "plan": parsed_plan, "message": f"Created implementation plan with {len(parsed_plan.get('steps') or [])} steps."},
-                            "timestamp": datetime.now(timezone.utc).isoformat(),
                         }
 
                 pending_steps = []
@@ -354,7 +399,14 @@ class AIAgentEngine:
 
                 # Everything is completed: save final response and emit done
                 await save_ai_chat_message(self.project_id, role="assistant", content=turn_tokens)
-                yield {"event": "done", "reply": turn_tokens, "timestamp": datetime.now(timezone.utc).isoformat()}
+                yield {
+                    "event": "done",
+                    "reply": turn_tokens,
+                    "request_id": request_id,
+                    "turn": current_turn,
+                    "turn_duration_ms": int((time.monotonic() - turn_started) * 1000),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
                 break
 
             # Save the assistant message with tool calls
@@ -435,6 +487,8 @@ class AIAgentEngine:
                     "tool_name": tool_name,
                     "file_path": file_target,
                     "command": cmd_target,
+                    "request_id": request_id,
+                    "turn": current_turn,
                     "timestamp": now_stamp,
                 }
 
@@ -442,15 +496,19 @@ class AIAgentEngine:
                     "event": "tool_call_start",
                     "tool_call_id": call_id,
                     "tool_name": tool_name,
-                    "arguments": args,
+                    "arguments": _brief_arguments(args),
                     "file_path": file_target,
                     "command": cmd_target,
                     "message": status_msg,
+                    "request_id": request_id,
+                    "turn": current_turn,
                     "timestamp": now_stamp,
                 }
 
                 # Execute tool
+                tool_exec_started = time.monotonic()
                 tool_result = await execute_syte_tool(self.project_id, tool_name, args)
+                tool_duration_ms = int((time.monotonic() - tool_exec_started) * 1000)
 
                 # Check if tool requires interactive user response (questions / env secrets)
                 if tool_result.get("requires_user_input") and self.session:
@@ -461,6 +519,9 @@ class AIAgentEngine:
                         "result": tool_result,
                         "file_path": file_target,
                         "command": cmd_target,
+                        "duration_ms": tool_duration_ms,
+                        "request_id": request_id,
+                        "turn": current_turn,
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     }
                     user_resp = await self.session.wait_for_user_answer(tool_result)
@@ -470,6 +531,8 @@ class AIAgentEngine:
                         "tool_call_id": call_id,
                         "tool_name": tool_name,
                         "user_response": user_resp,
+                        "request_id": request_id,
+                        "turn": current_turn,
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     }
 
@@ -488,9 +551,13 @@ class AIAgentEngine:
                         "event": "tool_call_result",
                         "tool_call_id": call_id,
                         "tool_name": tool_name,
-                        "result": tool_result,
+                        "result": _brief_stream_result(tool_result),
                         "file_path": file_target,
                         "command": cmd_target,
+                        "duration_ms": tool_duration_ms,
+                        "ok": bool(tool_result.get("ok", True)),
+                        "request_id": request_id,
+                        "turn": current_turn,
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     }
 

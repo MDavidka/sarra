@@ -2,20 +2,19 @@
 
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime, timezone
 import json
 import time
-from typing import Any, AsyncGenerator, Dict, Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from syte.ai.engine import AIAgentEngine
-from syte.ai.events import sse_frame
 from syte.ai.providers import UnifiedAIClient
 from syte.auth import verify_operator_session_or_token
+from syte.sse_core import SSE_HEADERS
 from syte.database import (
     clear_ai_chat_history,
     get_ai_builder_settings,
@@ -25,45 +24,6 @@ from syte.database import (
 )
 
 router = APIRouter(tags=["AI Builder"])
-
-
-_SSE_BASE_HEADERS = {
-    "Cache-Control": "no-cache, no-transform",
-    "Connection": "keep-alive",
-    "X-Accel-Buffering": "no",
-}
-
-
-async def _ai_event_stream(
-    project_id: str,
-    request: Request,
-    *,
-    replay: bool,
-    since_id: Optional[int],
-) -> AsyncGenerator[bytes, None]:
-    """Yield typed SSE frames for a project's AI session.
-
-    Yields ``bytes`` directly so Starlette doesn't re-encode per frame, and
-    aborts promptly when the client disconnects so we stop holding a
-    bounded queue in the session.
-    """
-    # 1. Initial retry hint — browsers adopt this as the reconnect delay.
-    yield b"retry: 2000\n\n"
-
-    try:
-        async for event in session_manager.subscribe(project_id, replay=replay, since_id=since_id):
-            # Bail out early if the HTTP client went away (closed tab, proxy timeout).
-            if await request.is_disconnected():
-                break
-            event_id = event.get("id")
-            name = event.get("event", "message")
-            yield sse_frame(name, event, event_id=event_id)
-    except asyncio.CancelledError:
-        # Client closed the connection; let Starlette handle cleanup.
-        raise
-    except Exception as exc:  # noqa: BLE001
-        err = {"event": "error", "error": str(exc)}
-        yield sse_frame("error", err)
 
 
 class AIChatRequest(BaseModel):
@@ -264,81 +224,33 @@ async def get_project_ai_session(project_id: str):
 @router.get("/api/projects/{project_id}/ai/events")
 async def stream_project_ai_events(
     project_id: str,
-    request: Request,
     replay: bool = False,
-    since_id: Optional[int] = None,
+    since_id: int = 0,
 ):
     """Reconnect or subscribe to live AI agent SSE event stream.
 
-    ``since_id`` (combined with ``replay=true``) yields only events with
-    ``id > since_id`` — delta replay that avoids re-downloading the full
-    recent backlog on every reconnect.
+    Legacy surface for the GUI; the dedicated optimized window is
+    ``GET /api/stream/projects/{project_id}/events`` (see
+    ``docs/ai-chat-streaming.md``).
     """
     if project_id != "global":
         project = await get_project(project_id)
         if not project:
             raise HTTPException(404, "Project not found")
+
+    async def sse_event_broadcaster():
+        try:
+            async for frame in session_manager.subscribe(project_id, replay=replay, since_id=since_id):
+                yield frame
+        except Exception as exc:
+            err_data = json.dumps({"event": "error", "error": str(exc)})
+            yield f"event: error\ndata: {err_data}\n\n".encode("utf-8")
 
     return StreamingResponse(
-        _ai_event_stream(project_id, request, replay=replay, since_id=since_id),
+        sse_event_broadcaster(),
         media_type="text/event-stream",
-        headers=_SSE_BASE_HEADERS,
+        headers=SSE_HEADERS,
     )
-
-
-@router.get("/api/projects/{project_id}/agent/activity/stream")
-async def stream_agent_activity(
-    project_id: str,
-    request: Request,
-    replay: bool = True,
-    since_id: Optional[int] = None,
-    session: Optional[str] = None,  # noqa: ARG001 — reserved for session selector
-):
-    """Spec-compliant activity stream documented in ``docs/agent-streaming-api.md``.
-
-    Issues a ``retry: 2000`` hint, replays the bounded backlog filtered by
-    ``since_id``, then yields the live stream with typed frames. Hot-path
-    ``token_delta`` / ``thought_delta`` frames use the minimal-delta wire
-    shape; control frames (``ping``, ``stream_gap``) never belong to the
-    transcript.
-    """
-    if project_id != "global":
-        project = await get_project(project_id)
-        if not project:
-            raise HTTPException(404, "Project not found")
-
-    return StreamingResponse(
-        _ai_event_stream(project_id, request, replay=replay, since_id=since_id),
-        media_type="text/event-stream",
-        headers=_SSE_BASE_HEADERS,
-    )
-
-
-@router.get("/api/projects/{project_id}/agent/activity")
-async def poll_agent_activity(
-    project_id: str,
-    since_id: Optional[int] = None,
-    session: Optional[str] = None,  # noqa: ARG001
-    limit: int = 100,
-):
-    """Polling mirror of the activity stream — backs up SSE reconnects.
-
-    Returns events with ``id > since_id`` (bounded by ``limit``), so the
-    client can backfill after a ``stream_gap`` without re-downloading the
-    full backlog. ``limit`` is capped at 500 to keep payloads bounded.
-    """
-    if project_id != "global":
-        project = await get_project(project_id)
-        if not project:
-            raise HTTPException(404, "Project not found")
-    limit = max(1, min(int(limit), 500))
-    sess = session_manager.get_or_create_session(project_id)
-    buf = sess.event_buffer
-    if since_id is None:
-        events = buf[-limit:]
-    else:
-        events = [e for e in buf if (e.get("id") or 0) > since_id][-limit:]
-    return {"ok": True, "events": events, "session_id": project_id}
 
 
 @router.post("/api/projects/{project_id}/ai/answer")
@@ -367,7 +279,6 @@ async def get_project_ai_skills(project_id: str):
 async def project_ai_chat_stream(
     project_id: str,
     body: AIChatRequest,
-    request: Request,
     _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
 ):
     """Initiate an autonomous AI agent turn with persistent background VM execution and SSE stream."""
@@ -378,6 +289,11 @@ async def project_ai_chat_stream(
 
     overrides = body.model_dump(exclude_none=True)
 
+    # Capture the replay cursor before starting so the stream contains
+    # exactly this turn's events (no stale replay, no missed fast turns).
+    session = session_manager.get_or_create_session(project_id)
+    since_id = session.last_event_id
+
     # Start or attach background task
     await session_manager.start_turn(
         project_id=project_id,
@@ -385,10 +301,18 @@ async def project_ai_chat_stream(
         settings_override=overrides,
     )
 
+    async def sse_generator():
+        try:
+            async for frame in session_manager.subscribe(project_id, replay=False, since_id=since_id):
+                yield frame
+        except Exception as exc:
+            err_data = json.dumps({"event": "error", "error": str(exc)})
+            yield f"event: error\ndata: {err_data}\n\n".encode("utf-8")
+
     return StreamingResponse(
-        _ai_event_stream(project_id, request, replay=False, since_id=None),
+        sse_generator(),
         media_type="text/event-stream",
-        headers=_SSE_BASE_HEADERS,
+        headers=SSE_HEADERS,
     )
 
 
