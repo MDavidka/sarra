@@ -130,7 +130,7 @@
           </div>
           <div class="coolify-nav-section coolify-nav-section-bottom">
             <p class="nav-section-label">Help</p>
-            <a class="nav-sublink" href="/api/"><i data-lucide="book-open"></i><span>Documentation</span></a>
+            <a class="nav-sublink" href="/docs" target="_blank"><i data-lucide="book-open"></i><span>Documentation</span></a>
             <a class="nav-sublink" href="mailto:support@sycord.com"><i data-lucide="life-buoy"></i><span>Support</span></a>
           </div>
           <div class="coolify-account-card">
@@ -263,47 +263,42 @@
           </div>
         </section>
 
-        <!-- AI BUILDER HOME VIEW (Autonomous OpenCode AI Workspace) -->
+        <!-- AI BUILDER HOME VIEW (Autonomous OpenCode AI Workspace - Exact match to media_1788380843870.png) -->
         <section id="view-ai" class="view">
           <div class="svc-ai-workspace" id="svc-ai-workspace">
-            <!-- OpenCode Styled Dark Header -->
+            <!-- Header matching media_1788380843870.png -->
             <header class="svc-ai-header">
               <div class="svc-ai-header-left">
-                <button type="button" class="svc-ai-icon-btn" id="svc-ai-mobile-menu-btn" aria-label="Menu">
+                <button type="button" class="svc-ai-icon-btn" id="svc-ai-mobile-menu-btn" aria-label="Menu" onclick="typeof toggleSidebar === 'function' && toggleSidebar()">
                   <i data-lucide="menu"></i>
                 </button>
-                <div class="svc-ai-session-title" id="svc-ai-session-title">Session</div>
+                <div class="svc-ai-header-title-box">
+                  <span class="svc-ai-session-title">Session</span>
+                  <span class="svc-ai-session-sub">Chat with AI</span>
+                </div>
               </div>
               <div class="svc-ai-header-right">
                 <!-- Repository Pill Selector -->
                 <div class="svc-ai-repo-pill" id="svc-ai-repo-pill-btn" title="Switch project repository">
-                  <span class="svc-ai-repo-name" id="svc-ai-header-repo-name">sarra</span>
-                  <i data-lucide="chevron-down" class="svc-ai-chevron"></i>
                   <i data-lucide="github" class="svc-ai-github-icon"></i>
+                  <span class="svc-ai-repo-name" id="svc-ai-header-repo-name">zsomBro</span>
+                  <i data-lucide="chevron-down" class="svc-ai-chevron"></i>
                   <select id="svc-ai-project-select" class="svc-ai-hidden-select" aria-label="Select Target Project">
                     <!-- Populated dynamically -->
                   </select>
                 </div>
 
-                <!-- Action buttons -->
-                <button type="button" class="svc-ai-icon-btn" id="svc-ai-debug-btn" title="Download AI Diagnostic JSON Bundle">
-                  <i data-lucide="bug"></i>
-                </button>
-                <button type="button" class="svc-ai-icon-btn" id="svc-ai-settings-btn" title="AI Builder Settings & Models">
-                  <i data-lucide="settings-2"></i>
-                </button>
-                <button type="button" class="svc-ai-icon-btn" id="svc-ai-clear-btn" title="Clear chat history">
-                  <i data-lucide="trash-2"></i>
-                </button>
+                <!-- Account Avatar Circle -->
+                <div class="svc-ai-user-avatar" id="svc-ai-user-avatar" title="Account">M</div>
               </div>
             </header>
 
             <!-- Chat Messages Container / OpenCode Activity Stream -->
             <div class="svc-ai-messages-container" id="svc-ai-messages-list">
-              <!-- Populated dynamically -->
+              <!-- Populated dynamically with welcome screen matching screenshot or messages -->
             </div>
 
-            <!-- Bottom Input Composer Card -->
+            <!-- Bottom Input Composer Card (Exact match to media_1788380843870.png) -->
             <footer class="svc-ai-composer-wrapper">
               <div class="svc-ai-slash-menu" id="svc-ai-slash-menu" style="display:none;">
                 <div class="svc-ai-slash-header">
@@ -319,19 +314,26 @@
                 <textarea
                   id="svc-ai-input"
                   class="svc-ai-composer-textarea"
-                  placeholder="Describe what you want to build, debug, or understand. (Type / for commands)"
+                  placeholder="Ask anything about your project..."
                   rows="2"
                   autocomplete="off"
                 ></textarea>
 
                 <div class="svc-ai-composer-bottom-bar">
                   <div class="svc-ai-composer-actions-left">
-                    <button type="button" class="svc-ai-composer-btn" id="svc-ai-attach-btn" title="Attach file or context">
+                    <button type="button" class="svc-ai-composer-btn" id="svc-ai-attach-btn" title="Attach file or context" onclick="document.getElementById('svc-ai-file-upload-input')?.click()">
                       <i data-lucide="paperclip"></i>
                     </button>
+                    <input type="file" id="svc-ai-file-upload-input" style="display:none;" onchange="if (this.files[0]) toast('Attached: ' + this.files[0].name)">
                     <button type="button" class="svc-ai-model-pill" id="svc-ai-model-selector-btn" title="Switch AI model">
-                      <span class="svc-ai-model-provider-icon"><i data-lucide="cpu"></i></span>
-                      <span class="svc-ai-model-name-text" id="svc-ai-input-model-label">gpt-4o</span>
+                      <span class="svc-ai-model-provider-icon">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <circle cx="12" cy="12" r="10"></circle>
+                          <path d="M12 8v8"></path>
+                          <path d="M8 12h8"></path>
+                        </svg>
+                      </span>
+                      <span class="svc-ai-model-name-text" id="svc-ai-input-model-label">GPT-4o</span>
                       <i data-lucide="chevron-down" class="svc-ai-chevron-small"></i>
                     </button>
                   </div>
@@ -985,91 +987,218 @@
 
               <!-- 3. DOMAINS TAB (Exact match to media_1788169957679.jpg) -->
               <div class="svc-tab-panel" id="svc-panel-domains" data-svc-panel="domains">
-                <section class="svc-domains-screen" aria-label="Project domains">
-                  <!-- Header Section -->
-                  <div class="svc-env-screen-header">
-                    <div class="svc-env-header-text">
-                      <span class="svc-section-tag">DOMAINS</span>
-                      <h2 class="svc-env-title">Custom Domains</h2>
-                      <p class="svc-env-sub">Connect and manage domains with automatic SSL certificates.</p>
-                    </div>
-                    <div class="svc-env-header-actions" style="display: flex; gap: 8px;">
-                      <button type="button" class="btn-learn-more" id="svc-domain-learn-more-btn" onclick="openDomainsDocsModal()">
-                        <span>Learn more</span><i data-lucide="external-link"></i>
+                <!-- Subview 1: Domains List (Default) -->
+                <div id="svc-domains-subview-list" class="svc-domains-subview">
+                  <section class="svc-domains-screen" aria-label="Project domains">
+                    <!-- Search & Filter Controls (Top) -->
+                    <div class="svc-domain-search-row" style="margin-top: 4px;">
+                      <div class="svc-search-input-wrap">
+                        <i data-lucide="search"></i>
+                        <input id="svc-domain-search-input" type="search" placeholder="Search domains..." autocomplete="off">
+                      </div>
+                      <button type="button" class="btn-domain-filter" id="svc-domain-filter-btn" title="Domain filters">
+                        <i data-lucide="sliders-horizontal"></i>
                       </button>
-                      <button type="button" class="btn-learn-more" id="svc-domain-certificates-btn" onclick="openCertificatesModal()">
-                        <i data-lucide="badge-check"></i><span>Certificates</span>
-                      </button>
-                      <button type="button" class="btn-env-add-icon" id="svc-domain-add-toggle-btn" onclick="openDomainAddModal()" title="Connect Domain">
+                      <button type="button" class="btn-domain-filter" id="svc-domain-quick-add-btn" onclick="showDomainSubview('add')" title="Add Domain">
                         <i data-lucide="plus"></i>
                       </button>
                     </div>
-                  </div>
 
-                  <!-- 3 Stats Pill Cards (1 Domain > | 0 Active > | 1 Pending >) -->
-                  <div class="svc-domain-stats-grid">
-                    <div class="svc-domain-stat-pill" id="svc-stat-pill-total">
-                      <div class="svc-stat-pill-left">
-                        <span class="svc-stat-icon-circle"><i data-lucide="globe"></i></span>
-                        <div class="svc-stat-text-wrap">
-                          <strong id="svc-domain-stat-total-num">1</strong>
-                          <span id="svc-domain-stat-total-label">Domain</span>
+                    <!-- 3 Stats Pill Cards (Below Search) -->
+                    <div class="svc-domain-stats-grid">
+                      <div class="svc-domain-stat-pill" id="svc-stat-pill-total">
+                        <div class="svc-stat-pill-left">
+                          <span class="svc-stat-icon-circle"><i data-lucide="globe"></i></span>
+                          <div class="svc-stat-text-wrap">
+                            <strong id="svc-domain-stat-total-num">1</strong>
+                            <span id="svc-domain-stat-total-label">Domain</span>
+                          </div>
+                        </div>
+                        <i data-lucide="chevron-right" class="svc-stat-chevron"></i>
+                      </div>
+
+                      <div class="svc-domain-stat-pill" id="svc-stat-pill-active">
+                        <div class="svc-stat-pill-left">
+                          <span class="svc-stat-dot-green"></span>
+                          <div class="svc-stat-text-wrap">
+                            <strong id="svc-domain-stat-active-num">1</strong>
+                            <span>Active</span>
+                          </div>
+                        </div>
+                        <i data-lucide="chevron-right" class="svc-stat-chevron"></i>
+                      </div>
+
+                      <div class="svc-domain-stat-pill" id="svc-stat-pill-pending">
+                        <div class="svc-stat-pill-left">
+                          <span class="svc-stat-dot-amber"></span>
+                          <div class="svc-stat-text-wrap">
+                            <strong id="svc-domain-stat-pending-num">0</strong>
+                            <span>Pending</span>
+                          </div>
+                        </div>
+                        <i data-lucide="chevron-right" class="svc-stat-chevron"></i>
+                      </div>
+                    </div>
+
+                    <!-- Domain Cards List Container -->
+                    <div class="svc-domains-card-list" id="svc-domains-card-list">
+                      <!-- Populated dynamically by renderServiceDomainsList -->
+                    </div>
+
+                    <!-- Bottom "Connect your domain" Prompt Card -->
+                    <div class="svc-connect-domain-prompt-card">
+                      <div class="svc-prompt-plus-circle">
+                        <i data-lucide="plus"></i>
+                      </div>
+                      <h3 class="svc-prompt-title">Connect your domain</h3>
+                      <p class="svc-prompt-sub">Add a custom domain to make your project available at your own address.</p>
+                      <button type="button" class="btn-trigger-build" onclick="showDomainSubview('add')">
+                        <i data-lucide="plus"></i><span>Add Domain</span>
+                      </button>
+                    </div>
+                  </section>
+                </div>
+
+                <!-- Subview 2: Add Domain (In-Page Subview) -->
+                <div id="svc-domains-subview-add" class="svc-domains-subview hidden">
+                  <div class="svc-fw-page-card">
+                    <div class="svc-sheet-drag-handle"></div>
+                    <header class="svc-clean-dialog-header">
+                      <div class="svc-dialog-title-wrap">
+                        <div class="svc-sheet-icon-circle">
+                          <i data-lucide="globe"></i>
+                        </div>
+                        <div>
+                          <h3 class="svc-sheet-main-title">Add Custom Domain</h3>
+                          <p class="svc-sheet-sub-title">Connect your domain with automatic SSL certificates.</p>
                         </div>
                       </div>
-                      <i data-lucide="chevron-right" class="svc-stat-chevron"></i>
-                    </div>
+                      <button type="button" class="svc-modal-close-icon-btn" onclick="showDomainSubview('list')" aria-label="Close">
+                        <i data-lucide="x"></i>
+                      </button>
+                    </header>
 
-                    <div class="svc-domain-stat-pill" id="svc-stat-pill-active">
-                      <div class="svc-stat-pill-left">
-                        <span class="svc-stat-dot-green"></span>
-                        <div class="svc-stat-text-wrap">
-                          <strong id="svc-domain-stat-active-num">0</strong>
-                          <span>Active</span>
+                    <form id="svc-inpage-form-add-domain" class="svc-sheet-form-body" onsubmit="handleInPageAddDomain(event)">
+                      <!-- Domain input -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Domain name</strong>
+                          <span class="svc-fw-section-desc">Enter the domain or subdomain to connect.</span>
+                        </div>
+                        <div class="svc-fw-counter-input-box">
+                          <input type="text" id="svc-inpage-domain-input" class="svc-fw-styled-input" placeholder="e.g. app.mydomain.com" autocomplete="off" spellcheck="false" required>
                         </div>
                       </div>
-                      <i data-lucide="chevron-right" class="svc-stat-chevron"></i>
-                    </div>
 
-                    <div class="svc-domain-stat-pill" id="svc-stat-pill-pending">
-                      <div class="svc-stat-pill-left">
-                        <span class="svc-stat-dot-amber"></span>
-                        <div class="svc-stat-text-wrap">
-                          <strong id="svc-domain-stat-pending-num">1</strong>
-                          <span>Pending</span>
+                      <!-- Target Environment -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Target environment</strong>
+                          <span class="svc-fw-section-desc">Choose which environment this domain routes to.</span>
+                        </div>
+                        <div class="svc-fw-segmented-toggle-bar">
+                          <button type="button" class="svc-fw-seg-btn active" data-domain-env="production" onclick="this.parentElement.querySelectorAll('.svc-fw-seg-btn').forEach(b=>b.classList.remove('active')); this.classList.add('active');">Production</button>
+                          <button type="button" class="svc-fw-seg-btn" data-domain-env="preview" onclick="this.parentElement.querySelectorAll('.svc-fw-seg-btn').forEach(b=>b.classList.remove('active')); this.classList.add('active');">Preview</button>
                         </div>
                       </div>
-                      <i data-lucide="chevron-right" class="svc-stat-chevron"></i>
-                    </div>
-                  </div>
 
-                  <!-- Search & Filter Controls -->
-                  <div class="svc-domain-search-row">
-                    <div class="svc-search-input-wrap">
-                      <i data-lucide="search"></i>
-                      <input id="svc-domain-search-input" type="search" placeholder="Search domains..." autocomplete="off">
-                    </div>
-                    <button type="button" class="btn-domain-filter" id="svc-domain-filter-btn" title="Domain filters">
-                      <i data-lucide="sliders-horizontal"></i>
-                    </button>
-                  </div>
+                      <!-- DNS Guidance Callout -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-callout-box info-callout">
+                          <i data-lucide="info"></i>
+                          <span>Point your domain's A record directly to <b>45.135.148.5</b> or add a CNAME record pointing to <b>sycord.site</b>.</span>
+                        </div>
+                      </div>
 
-                  <!-- Domain Cards List Container -->
-                  <div class="svc-domains-card-list" id="svc-domains-card-list">
-                    <!-- Populated dynamically by renderServiceDomainsList -->
+                      <!-- Footer -->
+                      <div class="svc-sheet-footer">
+                        <button type="button" class="btn-sheet-cancel" onclick="showDomainSubview('list')">Cancel</button>
+                        <button type="submit" class="btn-sheet-primary" id="svc-inpage-add-domain-submit-btn">Connect Domain</button>
+                      </div>
+                    </form>
                   </div>
+                </div>
 
-                  <!-- Bottom "Connect your domain" Prompt Card (Matching Screenshot) -->
-                  <div class="svc-connect-domain-prompt-card">
-                    <div class="svc-prompt-plus-circle">
-                      <i data-lucide="plus"></i>
-                    </div>
-                    <h3 class="svc-prompt-title">Connect your domain</h3>
-                    <p class="svc-prompt-sub">Add a custom domain to make your project available at your own address.</p>
-                    <button type="button" class="btn-trigger-build" onclick="openDomainAddModal()">
-                      <i data-lucide="plus"></i><span>Add Domain</span>
-                    </button>
+                <!-- Subview 3: Edit Domain (In-Page Subview) -->
+                <div id="svc-domains-subview-edit" class="svc-domains-subview hidden">
+                  <div class="svc-fw-page-card">
+                    <div class="svc-sheet-drag-handle"></div>
+                    <header class="svc-clean-dialog-header">
+                      <div class="svc-dialog-title-wrap">
+                        <div class="svc-sheet-icon-circle">
+                          <i data-lucide="globe"></i>
+                        </div>
+                        <div>
+                          <h3 class="svc-sheet-main-title" id="svc-edit-domain-title">Edit Domain</h3>
+                          <p class="svc-sheet-sub-title">Manage routing, SSL, and configuration for this domain.</p>
+                        </div>
+                      </div>
+                      <button type="button" class="svc-modal-close-icon-btn" onclick="showDomainSubview('list')" aria-label="Close">
+                        <i data-lucide="x"></i>
+                      </button>
+                    </header>
+
+                    <form id="svc-inpage-form-edit-domain" class="svc-sheet-form-body" onsubmit="handleInPageEditDomain(event)">
+                      <!-- Domain Name Display -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Domain</strong>
+                          <span class="svc-fw-section-desc">Configured custom domain name.</span>
+                        </div>
+                        <div class="svc-fw-counter-input-box">
+                          <input type="text" id="svc-edit-domain-name-input" class="svc-fw-styled-input" readonly>
+                        </div>
+                      </div>
+
+                      <!-- Status Row -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Status & SSL</strong>
+                          <span class="svc-fw-section-desc">Current DNS and automated certificate state.</span>
+                        </div>
+                        <div class="svc-fw-toggle-card inline-toggle" style="background:#f4f4f5; border-radius:10px; padding:10px 14px;">
+                          <div class="svc-fw-toggle-info">
+                            <strong class="svc-fw-toggle-title" id="svc-edit-domain-status-label">Valid Configuration</strong>
+                            <span class="svc-fw-toggle-desc" id="svc-edit-domain-ssl-label">Automated TLS certificate active</span>
+                          </div>
+                          <span class="svc-state-pill is-active" id="svc-edit-domain-pill">Active</span>
+                        </div>
+                      </div>
+
+                      <!-- Environment Target -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Target Environment</strong>
+                          <span class="svc-fw-section-desc">Branch environment traffic routing.</span>
+                        </div>
+                        <div class="svc-fw-select-wrap-block">
+                          <select id="svc-edit-domain-env-select" class="svc-fw-styled-select">
+                            <option value="production" selected>Production</option>
+                            <option value="preview">Preview</option>
+                          </select>
+                          <i data-lucide="chevron-down" class="svc-fw-select-chevron"></i>
+                        </div>
+                      </div>
+
+                      <!-- Danger Zone: Disconnect -->
+                      <div class="svc-fw-section-card" style="border-color: #fee2e2; background: #fff5f5;">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title" style="color: #dc2626;">Danger Zone</strong>
+                          <span class="svc-fw-section-desc">Disconnecting this domain will immediately disable traffic to this project.</span>
+                        </div>
+                        <button type="button" class="btn-bulk-action btn-bulk-delete" id="svc-inpage-domain-delete-btn" style="width:100%; justify-content:center; padding:10px; background:#ef4444; color:#fff; border-radius:10px; font-weight:700;" onclick="handleInPageDeleteDomain()">
+                          <i data-lucide="trash-2"></i><span>Disconnect Domain</span>
+                        </button>
+                      </div>
+
+                      <!-- Footer -->
+                      <div class="svc-sheet-footer">
+                        <button type="button" class="btn-sheet-cancel" onclick="showDomainSubview('list')">Cancel</button>
+                        <button type="submit" class="btn-sheet-primary">Save Changes</button>
+                      </div>
+                    </form>
                   </div>
-                </section>
+                </div>
               </div>
 
               <!-- 4. ENVIRONMENT VARIABLES TAB (Exact match to media_1788171283140.jpg) -->
@@ -1160,106 +1289,624 @@
 
               <!-- 5. FIREWALL TAB -->
               <div class="svc-tab-panel" id="svc-panel-firewall" data-svc-panel="firewall">
-                <section class="svc-firewall-screen" aria-label="Application firewall boundary">
-                  <!-- Header & Filter Row -->
-                  <div class="svc-firewall-header-group">
-                    <div class="svc-screen-header">
-                      <div class="svc-screen-title-wrap">
-                        <h2>Firewall</h2>
-                        <p class="svc-screen-sub">Layer 7 protection, custom rules, and edge threat mitigations.</p>
+                <!-- Subview 1: Main Firewall Overview (Default) -->
+                <div id="svc-fw-subview-main" class="svc-fw-subview">
+                  <section class="svc-firewall-screen" aria-label="Application firewall boundary">
+                    <!-- Header & Filter Row -->
+                    <div class="svc-firewall-header-group">
+                      <div class="svc-screen-header">
+                        <div class="svc-screen-title-wrap">
+                          <h2>Firewall</h2>
+                          <p class="svc-screen-sub">Layer 7 protection, custom rules, and edge threat mitigations.</p>
+                        </div>
                       </div>
-                    </div>
-                    <div class="svc-firewall-filter-bar">
-                      <div class="svc-pill-select-wrap">
-                        <i data-lucide="calendar" class="select-leading-icon"></i>
-                        <select id="svc-fw-timeframe">
-                          <option value="day">Past Day</option>
-                          <option value="week">Past Week</option>
-                          <option value="month">Past Month</option>
-                        </select>
+                      <div class="svc-firewall-filter-bar">
+                        <div class="svc-pill-select-wrap">
+                          <i data-lucide="calendar" class="select-leading-icon"></i>
+                          <select id="svc-fw-timeframe">
+                            <option value="day">Past Day</option>
+                            <option value="week">Past Week</option>
+                            <option value="month">Past Month</option>
+                          </select>
+                        </div>
+                        <div class="svc-pill-select-wrap">
+                          <i data-lucide="search" class="select-leading-icon"></i>
+                          <select id="svc-fw-view">
+                            <option value="overview">Overview</option>
+                            <option value="rules">Rules</option>
+                            <option value="mitigations">Mitigations</option>
+                          </select>
+                        </div>
                       </div>
-                      <div class="svc-pill-select-wrap">
-                        <i data-lucide="search" class="select-leading-icon"></i>
-                        <select id="svc-fw-view">
-                          <option value="overview">Overview</option>
-                          <option value="rules">Rules</option>
-                          <option value="mitigations">Mitigations</option>
-                        </select>
+
+                      <!-- Firewall Styled Action Buttons Toolbar -->
+                      <div class="svc-firewall-action-toolbar">
+                        <button type="button" class="btn-firewall-action btn-fw-primary" id="svc-fw-add-rule-btn" onclick="showFirewallSubview('add-rule')">
+                          <i data-lucide="plus"></i>
+                          <span>Add Rule</span>
+                        </button>
+                        <button type="button" class="btn-firewall-action btn-fw-outline" id="svc-fw-rate-limit-btn" onclick="showFirewallSubview('rate-limit')">
+                          <i data-lucide="gauge"></i>
+                          <span>Rate Limiting</span>
+                        </button>
+                        <button type="button" class="btn-firewall-action btn-fw-outline" id="svc-fw-bot-protect-btn" onclick="showFirewallSubview('bot')">
+                          <i data-lucide="bot"></i>
+                          <span>Bot Defense</span>
+                        </button>
+                        <button type="button" class="btn-firewall-action btn-fw-outline" id="svc-fw-ip-block-btn" onclick="showFirewallSubview('ip-block')">
+                          <i data-lucide="shield-alert"></i>
+                          <span>IP Blocklist</span>
+                        </button>
                       </div>
                     </div>
 
-                    <!-- Firewall Styled Action Buttons Toolbar -->
-                    <div class="svc-firewall-action-toolbar">
-                      <button type="button" class="btn-firewall-action btn-fw-primary" id="svc-fw-add-rule-btn" onclick="openFwAddRuleModal()">
-                        <i data-lucide="plus"></i>
-                        <span>Add Rule</span>
-                      </button>
-                      <button type="button" class="btn-firewall-action btn-fw-outline" id="svc-fw-rate-limit-btn" onclick="openFwRateLimitModal()">
-                        <i data-lucide="gauge"></i>
-                        <span>Rate Limiting</span>
-                      </button>
-                      <button type="button" class="btn-firewall-action btn-fw-outline" id="svc-fw-bot-protect-btn" onclick="openFwBotProtectModal()">
-                        <i data-lucide="bot"></i>
-                        <span>Bot Defense</span>
-                      </button>
-                      <button type="button" class="btn-firewall-action btn-fw-outline" id="svc-fw-ip-block-btn" onclick="openFwIpBlockModal()">
-                        <i data-lucide="shield-alert"></i>
-                        <span>IP Blocklist</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  <!-- Hero Status Card with Shield -->
-                  <div class="svc-firewall-hero-card">
-                    <div class="svc-firewall-shield-badge">
-                      <i data-lucide="shield-check"></i>
-                    </div>
-                    <h3 class="svc-firewall-hero-title">Firewall is active</h3>
-                    <p class="svc-firewall-hero-subtitle">All systems normal · DDoS & L7 Edge Protection</p>
-                    <div class="svc-firewall-metrics-list">
-                      <div class="svc-fw-stat-row">
-                        <span>System Mitigations</span>
-                        <strong class="text-status-active">Active</strong>
+                    <!-- Hero Status Card with Shield -->
+                    <div class="svc-firewall-hero-card">
+                      <div class="svc-firewall-shield-badge">
+                        <i data-lucide="shield-check"></i>
                       </div>
-                      <div class="svc-fw-stat-row">
-                        <span>Custom Rules</span>
-                        <strong>2 active</strong>
-                      </div>
-                      <div class="svc-fw-stat-row">
-                        <span>Bot Protection</span>
-                        <span class="text-status-active">Active</span>
+                      <h3 class="svc-firewall-hero-title">Firewall is active</h3>
+                      <p class="svc-firewall-hero-subtitle">All systems normal · DDoS & L7 Edge Protection</p>
+                      <div class="svc-firewall-metrics-list">
+                        <div class="svc-fw-stat-row">
+                          <span>System Mitigations</span>
+                          <strong class="text-status-active">Active</strong>
+                        </div>
+                        <div class="svc-fw-stat-row">
+                          <span>Custom Rules</span>
+                          <strong>2 active</strong>
+                        </div>
+                        <div class="svc-fw-stat-row">
+                          <span>Bot Protection</span>
+                          <span class="text-status-active">Active</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <!-- Analytics Metrics Card -->
-                  <div class="svc-firewall-analytics-card">
-                    <div class="svc-fw-metrics-pills">
-                      <span class="svc-fw-metric-pill"><i class="fw-dot dot-blue"></i> Allowed <strong id="fw-metric-allowed">189</strong></span>
-                      <span class="svc-fw-metric-pill"><i class="fw-dot dot-red"></i> Denied <strong id="fw-metric-denied">404</strong></span>
-                      <span class="svc-fw-metric-pill"><i class="fw-dot dot-yellow"></i> Challenged <strong id="fw-metric-challenged">0</strong></span>
+                    <!-- Analytics Metrics Card -->
+                    <div class="svc-firewall-analytics-card">
+                      <div class="svc-fw-metrics-pills">
+                        <span class="svc-fw-metric-pill"><i class="fw-dot dot-blue"></i> Allowed <strong id="fw-metric-allowed">189</strong></span>
+                        <span class="svc-fw-metric-pill"><i class="fw-dot dot-red"></i> Denied <strong id="fw-metric-denied">404</strong></span>
+                        <span class="svc-fw-metric-pill"><i class="fw-dot dot-yellow"></i> Challenged <strong id="fw-metric-challenged">0</strong></span>
+                      </div>
+                      <div class="svc-fw-query-action">
+                        <button type="button" class="btn-firewall-action btn-fw-secondary" id="svc-fw-explore-btn"><i data-lucide="maximize-2"></i><span>Explore query</span></button>
+                      </div>
                     </div>
-                    <div class="svc-fw-query-action">
-                      <button type="button" class="btn-firewall-action btn-fw-secondary" id="svc-fw-explore-btn"><i data-lucide="maximize-2"></i><span>Explore query</span></button>
-                    </div>
-                  </div>
 
-                  <!-- Firewall Rules & Boundaries -->
-                  <div class="svc-firewall-lines-card">
-                    <div class="svc-firewall-line-item">
-                      <strong>Public entry</strong>
-                      <span>HTTPS via configured Caddy domain with automated TLS handshake and header filtering</span>
+                    <!-- Firewall Rules & Boundaries -->
+                    <div class="svc-firewall-lines-card">
+                      <div class="svc-firewall-line-item">
+                        <strong>Public entry</strong>
+                        <span>HTTPS via configured Caddy domain with automated TLS handshake and header filtering</span>
+                      </div>
+                      <div class="svc-firewall-line-item">
+                        <strong>Direct application port</strong>
+                        <span>Direct TCP traffic is isolated on internal bridge; do not publish unless configured</span>
+                      </div>
+                      <div class="svc-firewall-line-item">
+                        <strong>Change control</strong>
+                        <span>Use server-level workspace for host firewall (UFW/iptables) adjustments</span>
+                      </div>
                     </div>
-                    <div class="svc-firewall-line-item">
-                      <strong>Direct application port</strong>
-                      <span>Direct TCP traffic is isolated on internal bridge; do not publish unless configured</span>
-                    </div>
-                    <div class="svc-firewall-line-item">
-                      <strong>Change control</strong>
-                      <span>Use server-level workspace for host firewall (UFW/iptables) adjustments</span>
-                    </div>
+                  </section>
+                </div>
+
+                <!-- Subview 2: Bot Protection (Exact copy of media_1788378523419.jpg) -->
+                <div id="svc-fw-subview-bot" class="svc-fw-subview hidden">
+                  <div class="svc-fw-page-card">
+                    <div class="svc-sheet-drag-handle"></div>
+                    <header class="svc-clean-dialog-header">
+                      <div class="svc-dialog-title-wrap">
+                        <div class="svc-sheet-icon-circle">
+                          <i data-lucide="bot"></i>
+                        </div>
+                        <div>
+                          <h3 class="svc-sheet-main-title">Bot Protection</h3>
+                          <p class="svc-sheet-sub-title">Detect and manage automated traffic, scrapers, and malicious bots.</p>
+                        </div>
+                      </div>
+                      <button type="button" class="svc-modal-close-icon-btn" onclick="showFirewallSubview('main')" aria-label="Close">
+                        <i data-lucide="x"></i>
+                      </button>
+                    </header>
+
+                    <form id="svc-page-form-fw-bot-protect" class="svc-sheet-form-body" onsubmit="event.preventDefault(); toast('Bot protection updated'); showFirewallSubview('main');">
+                      <!-- 1. Enable Bot Protection Toggle Row -->
+                      <div class="svc-fw-toggle-card">
+                        <div class="svc-fw-toggle-info">
+                          <strong class="svc-fw-toggle-title">Enable Bot Protection</strong>
+                          <span class="svc-fw-toggle-desc">Automatically detect and challenge suspicious bots.</span>
+                        </div>
+                        <label class="svc-apple-switch">
+                          <input type="checkbox" id="page-fw-bot-main-toggle" checked>
+                          <span class="svc-apple-slider"></span>
+                        </label>
+                      </div>
+
+                      <!-- 2. Protection Level Section -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Protection level</strong>
+                          <span class="svc-fw-section-desc">Choose how aggressive the bot detection should be.</span>
+                        </div>
+                        <div class="svc-fw-level-cards-row" role="radiogroup" aria-label="Protection level">
+                          <div class="svc-fw-level-card" data-pbot-level="light" role="radio" aria-checked="false" onclick="selectBotLevel(this, 'light')">
+                            <div class="svc-fw-level-text">
+                              <strong class="svc-fw-level-name">Light</strong>
+                              <span class="svc-fw-level-desc">Minimal challenges</span>
+                            </div>
+                            <span class="svc-fw-level-radio"></span>
+                          </div>
+                          <div class="svc-fw-level-card is-active" data-pbot-level="balanced" role="radio" aria-checked="true" onclick="selectBotLevel(this, 'balanced')">
+                            <div class="svc-fw-level-text">
+                              <strong class="svc-fw-level-name">Balanced</strong>
+                              <span class="svc-fw-level-desc">Recommended</span>
+                            </div>
+                            <span class="svc-fw-level-radio"><span class="svc-fw-radio-dot"></span></span>
+                          </div>
+                          <div class="svc-fw-level-card" data-pbot-level="strict" role="radio" aria-checked="false" onclick="selectBotLevel(this, 'strict')">
+                            <div class="svc-fw-level-text">
+                              <strong class="svc-fw-level-name">Strict</strong>
+                              <span class="svc-fw-level-desc">Maximum protection</span>
+                            </div>
+                            <span class="svc-fw-level-radio"></span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- 3. Action for Bots Section -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Action for bots</strong>
+                          <span class="svc-fw-section-desc">Choose what to do with detected bots.</span>
+                        </div>
+                        <div class="svc-fw-level-cards-row" role="radiogroup" aria-label="Action for bots">
+                          <div class="svc-fw-level-card is-active" data-pbot-action="challenge" role="radio" aria-checked="true" onclick="selectBotAction(this, 'challenge')">
+                            <div class="svc-fw-bot-action-left">
+                              <i data-lucide="shield-alert" class="action-icon icon-yellow"></i>
+                              <div class="svc-fw-level-text">
+                                <strong class="svc-fw-level-name">Challenge</strong>
+                                <span class="svc-fw-level-desc">Show verification</span>
+                              </div>
+                            </div>
+                            <span class="svc-fw-level-radio"><span class="svc-fw-radio-dot"></span></span>
+                          </div>
+                          <div class="svc-fw-level-card" data-pbot-action="block" role="radio" aria-checked="false" onclick="selectBotAction(this, 'block')">
+                            <div class="svc-fw-bot-action-left">
+                              <i data-lucide="ban" class="action-icon icon-red"></i>
+                              <div class="svc-fw-level-text">
+                                <strong class="svc-fw-level-name">Block</strong>
+                                <span class="svc-fw-level-desc">Deny access</span>
+                              </div>
+                            </div>
+                            <span class="svc-fw-level-radio"></span>
+                          </div>
+                          <div class="svc-fw-level-card" data-pbot-action="log" role="radio" aria-checked="false" onclick="selectBotAction(this, 'log')">
+                            <div class="svc-fw-bot-action-left">
+                              <i data-lucide="clipboard-list" class="action-icon icon-purple"></i>
+                              <div class="svc-fw-level-text">
+                                <strong class="svc-fw-level-name">Log only</strong>
+                                <span class="svc-fw-level-desc">Monitor only</span>
+                              </div>
+                            </div>
+                            <span class="svc-fw-level-radio"></span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- 4. AI Detection (optional) -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-toggle-card inline-toggle">
+                          <div class="svc-fw-toggle-info">
+                            <strong class="svc-fw-toggle-title">AI detection (optional)</strong>
+                            <span class="svc-fw-toggle-desc">Use advanced detection to identify more sophisticated bots.</span>
+                          </div>
+                          <label class="svc-apple-switch">
+                            <input type="checkbox" id="page-fw-bot-ai-toggle" checked>
+                            <span class="svc-apple-slider"></span>
+                          </label>
+                        </div>
+                        <div class="svc-fw-callout-box info-callout">
+                          <i data-lucide="info"></i>
+                          <span>Uses machine learning to detect headless browsers, scrapers, and automated tools.</span>
+                        </div>
+                      </div>
+
+                      <!-- 5. Allow Verified Bots Toggle -->
+                      <div class="svc-fw-toggle-card">
+                        <div class="svc-fw-toggle-info">
+                          <strong class="svc-fw-toggle-title">Allow verified bots</strong>
+                          <span class="svc-fw-toggle-desc">Allow known good bots (e.g. Google, Bing, Discord) to access your site.</span>
+                        </div>
+                        <label class="svc-apple-switch">
+                          <input type="checkbox" id="page-fw-bot-verified-toggle" checked>
+                          <span class="svc-apple-slider"></span>
+                        </label>
+                      </div>
+
+                      <!-- 6. Custom Allowlist (optional) -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Custom allowlist (optional)</strong>
+                          <span class="svc-fw-section-desc">Add IPs, user agents, or URL patterns to bypass bot protection.</span>
+                        </div>
+                        <button type="button" class="svc-fw-nav-action-row" onclick="const v = prompt('Enter IP, User Agent, or URL pattern to allow:'); if (v) toast('Added to allowlist: ' + v);">
+                          <span class="svc-fw-nav-left"><i data-lucide="plus"></i><span>Add to allowlist</span></span>
+                          <i data-lucide="chevron-right" class="svc-fw-nav-chevron"></i>
+                        </button>
+                      </div>
+
+                      <!-- 7. Blocklist (optional) -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Blocklist (optional)</strong>
+                          <span class="svc-fw-section-desc">Block specific bad bots, user agents, or IP ranges.</span>
+                        </div>
+                        <button type="button" class="svc-fw-nav-action-row" onclick="const v = prompt('Enter bot signature, User Agent, or IP range to block:'); if (v) toast('Added to blocklist: ' + v);">
+                          <span class="svc-fw-nav-left"><i data-lucide="plus"></i><span>Add to blocklist</span></span>
+                          <i data-lucide="chevron-right" class="svc-fw-nav-chevron"></i>
+                        </button>
+                      </div>
+
+                      <!-- 8. Rule Name (optional) -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Rule name (optional)</strong>
+                          <span class="svc-fw-section-desc">Give this configuration a name for reference.</span>
+                        </div>
+                        <div class="svc-fw-counter-input-box">
+                          <input type="text" id="page-fw-bot-rule-name-input" class="svc-fw-styled-input" maxlength="64" value="Bot protection (balanced)" oninput="document.getElementById('page-fw-bot-rule-name-count').textContent = this.value.length + '/64'">
+                          <span class="svc-fw-counter-tag" id="page-fw-bot-rule-name-count">25/64</span>
+                        </div>
+                      </div>
+
+                      <!-- Footer -->
+                      <div class="svc-sheet-footer">
+                        <button type="button" class="btn-sheet-cancel" onclick="showFirewallSubview('main')">Cancel</button>
+                        <button type="submit" class="btn-sheet-primary">Save Changes</button>
+                      </div>
+                    </form>
                   </div>
-                </section>
+                </div>
+
+                <!-- Subview 3: IP Rate Limit (Exact copy of media_1788378523297.jpg) -->
+                <div id="svc-fw-subview-rate-limit" class="svc-fw-subview hidden">
+                  <div class="svc-fw-page-card">
+                    <div class="svc-sheet-drag-handle"></div>
+                    <header class="svc-clean-dialog-header">
+                      <div class="svc-dialog-title-wrap">
+                        <div class="svc-sheet-icon-circle">
+                          <i data-lucide="gauge"></i>
+                        </div>
+                        <div>
+                          <h3 class="svc-sheet-main-title">IP Rate Limit</h3>
+                          <p class="svc-sheet-sub-title">Limit the number of requests from an IP address.</p>
+                        </div>
+                      </div>
+                      <button type="button" class="svc-modal-close-icon-btn" onclick="showFirewallSubview('main')" aria-label="Close">
+                        <i data-lucide="x"></i>
+                      </button>
+                    </header>
+
+                    <form id="svc-page-form-fw-rate-limit" class="svc-sheet-form-body" onsubmit="event.preventDefault(); toast('Rate limit rule created'); showFirewallSubview('main');">
+                      <!-- 1. Action Section -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Action</strong>
+                          <span class="svc-fw-section-desc">What should happen when the limit is exceeded?</span>
+                        </div>
+                        <div class="svc-fw-action-cards-grid" role="radiogroup" aria-label="Rate Limit Action">
+                          <button type="button" class="svc-fw-action-choice-card is-active is-red" data-prl-action="block" role="radio" aria-checked="true" onclick="selectRateLimitAction(this, 'block')">
+                            <i data-lucide="ban" class="action-icon icon-red"></i>
+                            <span>Block</span>
+                          </button>
+                          <button type="button" class="svc-fw-action-choice-card" data-prl-action="challenge" role="radio" aria-checked="false" onclick="selectRateLimitAction(this, 'challenge')">
+                            <i data-lucide="shield-alert" class="action-icon icon-yellow"></i>
+                            <span>Challenge</span>
+                          </button>
+                          <button type="button" class="svc-fw-action-choice-card" data-prl-action="throttle" role="radio" aria-checked="false" onclick="selectRateLimitAction(this, 'throttle')">
+                            <i data-lucide="clock" class="action-icon icon-blue"></i>
+                            <span>Throttle</span>
+                          </button>
+                          <button type="button" class="svc-fw-action-choice-card" data-prl-action="log" role="radio" aria-checked="false" onclick="selectRateLimitAction(this, 'log')">
+                            <i data-lucide="clipboard-list" class="action-icon icon-purple"></i>
+                            <span>Log only</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <!-- 2. Limit Section -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Limit</strong>
+                          <span class="svc-fw-section-desc">Set the number of requests allowed.</span>
+                        </div>
+                        <div class="svc-fw-limit-row">
+                          <div class="svc-fw-limit-col">
+                            <label class="svc-fw-input-mini-label">Requests</label>
+                            <input type="number" class="svc-fw-styled-input" value="100" min="1" max="1000000">
+                          </div>
+                          <div class="svc-fw-limit-col">
+                            <label class="svc-fw-input-mini-label">Per</label>
+                            <div class="svc-fw-select-wrap-block">
+                              <select class="svc-fw-styled-select">
+                                <option value="10 seconds">10 seconds</option>
+                                <option value="1 minute" selected>1 minute</option>
+                                <option value="5 minutes">5 minutes</option>
+                                <option value="1 hour">1 hour</option>
+                              </select>
+                              <i data-lucide="chevron-down" class="svc-fw-select-chevron"></i>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- 3. Scope (optional) Section -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Scope (optional)</strong>
+                          <span class="svc-fw-section-desc">Apply to a specific path or leave empty for all routes.</span>
+                        </div>
+                        <div class="svc-fw-select-wrap-block">
+                          <select class="svc-fw-styled-select">
+                            <option value="All routes" selected>All routes</option>
+                            <option value="/api/*">/api/*</option>
+                            <option value="/login">/login</option>
+                            <option value="/admin/*">/admin/*</option>
+                          </select>
+                          <i data-lucide="chevron-down" class="svc-fw-select-chevron"></i>
+                        </div>
+                        <span class="svc-fw-helper-text">e.g. /api/*, /login, /admin/*</span>
+                      </div>
+
+                      <!-- 4. IP Filtering Section -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">IP filtering (optional)</strong>
+                          <span class="svc-fw-section-desc">Apply to specific IPs or ranges.</span>
+                        </div>
+                        <div class="svc-fw-segmented-toggle-bar">
+                          <button type="button" class="svc-fw-seg-btn active" onclick="this.parentElement.querySelectorAll('.svc-fw-seg-btn').forEach(b=>b.classList.remove('active')); this.classList.add('active'); document.getElementById('page-fw-rl-ip-callout').innerHTML = '<i data-lucide=\'globe\'></i><span>This rule will apply to all IP addresses.</span>'; refreshIcons();">All IPs</button>
+                          <button type="button" class="svc-fw-seg-btn" onclick="this.parentElement.querySelectorAll('.svc-fw-seg-btn').forEach(b=>b.classList.remove('active')); this.classList.add('active'); document.getElementById('page-fw-rl-ip-callout').innerHTML = '<i data-lucide=\'filter\'></i><span>This rule will apply to configured custom IP ranges.</span>'; refreshIcons();">Specific IPs</button>
+                        </div>
+                        <div class="svc-fw-callout-box" id="page-fw-rl-ip-callout">
+                          <i data-lucide="globe"></i>
+                          <span>This rule will apply to all IP addresses.</span>
+                        </div>
+                      </div>
+
+                      <!-- 5. Rule Name Section -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Rule name</strong>
+                          <span class="svc-fw-section-desc">A descriptive name to identify this rule.</span>
+                        </div>
+                        <div class="svc-fw-counter-input-box">
+                          <input type="text" class="svc-fw-styled-input" maxlength="64" placeholder="e.g. Limit API abuse" oninput="document.getElementById('page-fw-rl-name-count').textContent = this.value.length + '/64'">
+                          <span class="svc-fw-counter-tag" id="page-fw-rl-name-count">0/64</span>
+                        </div>
+                      </div>
+
+                      <!-- 6. Notes Section -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Notes (optional)</strong>
+                          <span class="svc-fw-section-desc">Add a note for future reference.</span>
+                        </div>
+                        <div class="svc-fw-counter-input-box">
+                          <textarea class="svc-fw-styled-textarea" maxlength="200" rows="3" placeholder="e.g. Prevents abuse on public API endpoints" oninput="document.getElementById('page-fw-rl-notes-count').textContent = this.value.length + '/200'"></textarea>
+                          <span class="svc-fw-counter-tag" id="page-fw-rl-notes-count">0/200</span>
+                        </div>
+                      </div>
+
+                      <!-- Footer -->
+                      <div class="svc-sheet-footer">
+                        <button type="button" class="btn-sheet-cancel" onclick="showFirewallSubview('main')">Cancel</button>
+                        <button type="submit" class="btn-sheet-primary">Create Rule</button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+
+                <!-- Subview 4: Add Firewall Rule (Exact copy of media_1788378523254.jpg) -->
+                <div id="svc-fw-subview-add-rule" class="svc-fw-subview hidden">
+                  <div class="svc-fw-page-card">
+                    <div class="svc-sheet-drag-handle"></div>
+                    <header class="svc-clean-dialog-header">
+                      <div class="svc-dialog-title-wrap">
+                        <div>
+                          <h3 class="svc-sheet-main-title">Add Firewall Rule</h3>
+                          <p class="svc-sheet-sub-title">Create a rule to control and protect your application at the edge.</p>
+                        </div>
+                      </div>
+                      <button type="button" class="svc-modal-close-icon-btn" onclick="showFirewallSubview('main')" aria-label="Close">
+                        <i data-lucide="x"></i>
+                      </button>
+                    </header>
+
+                    <form id="svc-page-form-fw-add-rule" class="svc-sheet-form-body" onsubmit="event.preventDefault(); toast('Firewall rule created'); showFirewallSubview('main');">
+                      <!-- 1. Action Section -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Action</strong>
+                          <span class="svc-fw-section-desc">What should happen when the rule matches?</span>
+                        </div>
+                        <div class="svc-fw-action-cards-grid" role="radiogroup" aria-label="Rule Action">
+                          <button type="button" class="svc-fw-action-choice-card is-active is-red" data-prule-action="block" role="radio" aria-checked="true" onclick="selectRuleAction(this, 'block')">
+                            <i data-lucide="ban" class="action-icon icon-red"></i>
+                            <span>Block</span>
+                          </button>
+                          <button type="button" class="svc-fw-action-choice-card" data-prule-action="challenge" role="radio" aria-checked="false" onclick="selectRuleAction(this, 'challenge')">
+                            <i data-lucide="shield-alert" class="action-icon icon-yellow"></i>
+                            <span>Challenge</span>
+                          </button>
+                          <button type="button" class="svc-fw-action-choice-card" data-prule-action="allow" role="radio" aria-checked="false" onclick="selectRuleAction(this, 'allow')">
+                            <i data-lucide="check-circle-2" class="action-icon icon-green"></i>
+                            <span>Allow</span>
+                          </button>
+                          <button type="button" class="svc-fw-action-choice-card" data-prule-action="log" role="radio" aria-checked="false" onclick="selectRuleAction(this, 'log')">
+                            <i data-lucide="clipboard-list" class="action-icon icon-purple"></i>
+                            <span>Log only</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <!-- 2. Condition Section -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Condition</strong>
+                          <span class="svc-fw-section-desc">Select what to match against.</span>
+                        </div>
+                        <div class="svc-fw-condition-stack" id="page-fw-rule-condition-stack">
+                          <div class="svc-fw-condition-item">
+                            <div class="svc-fw-inline-row">
+                              <span class="svc-fw-row-label">Field</span>
+                              <div class="svc-fw-row-input-wrap">
+                                <select class="svc-fw-row-select">
+                                  <option value="ip">IP address</option>
+                                  <option value="path">Path / URI</option>
+                                  <option value="header">Header</option>
+                                  <option value="country">Country / Geo</option>
+                                  <option value="user_agent">User Agent</option>
+                                </select>
+                                <i data-lucide="chevron-down" class="svc-fw-row-chevron"></i>
+                              </div>
+                            </div>
+                            <div class="svc-fw-inline-row">
+                              <span class="svc-fw-row-label">Operator</span>
+                              <div class="svc-fw-row-input-wrap">
+                                <select class="svc-fw-row-select">
+                                  <option value="equals">Equals</option>
+                                  <option value="contains">Contains</option>
+                                  <option value="starts_with">Starts with</option>
+                                  <option value="matches_regex">Matches regex</option>
+                                  <option value="in_list">In list</option>
+                                </select>
+                                <i data-lucide="chevron-down" class="svc-fw-row-chevron"></i>
+                              </div>
+                            </div>
+                            <div class="svc-fw-inline-row">
+                              <span class="svc-fw-row-label">Value</span>
+                              <div class="svc-fw-row-input-wrap">
+                                <input type="text" class="svc-fw-row-input" placeholder="e.g. 192.0.2.1" autocomplete="off" spellcheck="false">
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        <button type="button" class="btn-fw-add-condition" onclick="addPageConditionRow()">
+                          <i data-lucide="plus"></i>
+                          <span>Add another condition</span>
+                        </button>
+                      </div>
+
+                      <!-- 3. Rule Name Section -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Rule name</strong>
+                          <span class="svc-fw-section-desc">A descriptive name to identify this rule.</span>
+                        </div>
+                        <div class="svc-fw-counter-input-box">
+                          <input type="text" class="svc-fw-styled-input" maxlength="64" placeholder="e.g. Block suspicious IP" oninput="document.getElementById('page-fw-rule-name-count').textContent = this.value.length + '/64'">
+                          <span class="svc-fw-counter-tag" id="page-fw-rule-name-count">0/64</span>
+                        </div>
+                      </div>
+
+                      <!-- 4. Notes Section -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Notes (optional)</strong>
+                          <span class="svc-fw-section-desc">Add a note for future reference.</span>
+                        </div>
+                        <div class="svc-fw-counter-input-box">
+                          <textarea class="svc-fw-styled-textarea" maxlength="200" rows="3" placeholder="e.g. Blocks abusive IP from incident #123" oninput="document.getElementById('page-fw-rule-notes-count').textContent = this.value.length + '/200'"></textarea>
+                          <span class="svc-fw-counter-tag" id="page-fw-rule-notes-count">0/200</span>
+                        </div>
+                      </div>
+
+                      <!-- Footer -->
+                      <div class="svc-sheet-footer">
+                        <button type="button" class="btn-sheet-cancel" onclick="showFirewallSubview('main')">Cancel</button>
+                        <button type="submit" class="btn-sheet-primary">Create Rule</button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+
+                <!-- Subview 5: IP Access Rule -->
+                <div id="svc-fw-subview-ip-block" class="svc-fw-subview hidden">
+                  <div class="svc-fw-page-card">
+                    <div class="svc-sheet-drag-handle"></div>
+                    <header class="svc-clean-dialog-header">
+                      <div class="svc-dialog-title-wrap">
+                        <div class="svc-sheet-icon-circle">
+                          <i data-lucide="shield-alert"></i>
+                        </div>
+                        <div>
+                          <h3 class="svc-sheet-main-title">IP Access Rule</h3>
+                          <p class="svc-sheet-sub-title">Block, allow, or challenge specific IP addresses or CIDR ranges.</p>
+                        </div>
+                      </div>
+                      <button type="button" class="svc-modal-close-icon-btn" onclick="showFirewallSubview('main')" aria-label="Close">
+                        <i data-lucide="x"></i>
+                      </button>
+                    </header>
+
+                    <form id="svc-page-form-fw-ip-block" class="svc-sheet-form-body" onsubmit="event.preventDefault(); toast('IP access rule created'); showFirewallSubview('main');">
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Action</strong>
+                          <span class="svc-fw-section-desc">What action to take for matching IPs?</span>
+                        </div>
+                        <div class="svc-fw-action-cards-grid" role="radiogroup" aria-label="IP Action">
+                          <button type="button" class="svc-fw-action-choice-card is-active is-red" data-pipb-action="block" role="radio" aria-checked="true" onclick="selectIpBlockAction(this, 'block')">
+                            <i data-lucide="ban" class="action-icon icon-red"></i>
+                            <span>Block</span>
+                          </button>
+                          <button type="button" class="svc-fw-action-choice-card" data-pipb-action="challenge" role="radio" aria-checked="false" onclick="selectIpBlockAction(this, 'challenge')">
+                            <i data-lucide="shield-alert" class="action-icon icon-yellow"></i>
+                            <span>Challenge</span>
+                          </button>
+                          <button type="button" class="svc-fw-action-choice-card" data-pipb-action="allow" role="radio" aria-checked="false" onclick="selectIpBlockAction(this, 'allow')">
+                            <i data-lucide="check-circle-2" class="action-icon icon-green"></i>
+                            <span>Allow</span>
+                          </button>
+                          <button type="button" class="svc-fw-action-choice-card" data-pipb-action="log" role="radio" aria-checked="false" onclick="selectIpBlockAction(this, 'log')">
+                            <i data-lucide="clipboard-list" class="action-icon icon-purple"></i>
+                            <span>Log only</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">IP or CIDR range</strong>
+                          <span class="svc-fw-section-desc">Enter an IPv4, IPv6, or subnet to match.</span>
+                        </div>
+                        <div class="svc-fw-select-wrap-block">
+                          <input type="text" class="svc-fw-styled-input" placeholder="e.g. 203.0.113.195 or 198.51.100.0/24" autocomplete="off" spellcheck="false" required>
+                        </div>
+                      </div>
+
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Rule name</strong>
+                          <span class="svc-fw-section-desc">A label for this IP access rule.</span>
+                        </div>
+                        <div class="svc-fw-counter-input-box">
+                          <input type="text" class="svc-fw-styled-input" maxlength="64" placeholder="e.g. Blocked scraper subnet" oninput="document.getElementById('page-fw-ipb-name-count').textContent = this.value.length + '/64'">
+                          <span class="svc-fw-counter-tag" id="page-fw-ipb-name-count">0/64</span>
+                        </div>
+                      </div>
+
+                      <div class="svc-sheet-footer">
+                        <button type="button" class="btn-sheet-cancel" onclick="showFirewallSubview('main')">Cancel</button>
+                        <button type="submit" class="btn-sheet-primary">Create Rule</button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
               </div>
 
               <!-- 7. SPEED & RESOURCES TAB (Exact match to screenshot in white theme) -->
@@ -1369,94 +2016,233 @@
 
               <!-- 6. REDIRECTS TAB (Exact match to media_1788169123183.jpg) -->
               <div class="svc-tab-panel" id="svc-panel-redirects" data-svc-panel="redirects">
-                <section class="svc-redirects-screen" aria-label="Project HTTP Redirects">
-                  <!-- Header Section -->
-                  <div class="svc-redirects-header">
-                    <div class="svc-redirects-header-text">
-                      <span class="svc-section-tag">NETWORK</span>
-                      <h2 class="svc-redirects-title">HTTP Redirects</h2>
-                      <p class="svc-redirects-sub">Forward incoming request paths to custom paths or external URLs (301 / 302).</p>
+                <!-- Subview 1: Redirects List (Default) -->
+                <div id="svc-redirects-subview-list" class="svc-redirects-subview">
+                  <section class="svc-redirects-screen" aria-label="Project HTTP Redirects">
+                    <!-- Header Section -->
+                    <div class="svc-redirects-header">
+                      <div class="svc-redirects-header-text">
+                        <span class="svc-section-tag">NETWORK</span>
+                        <h2 class="svc-redirects-title">HTTP Redirects</h2>
+                        <p class="svc-redirects-sub">Forward incoming request paths to custom paths or external URLs (301 / 302).</p>
+                      </div>
+                      <div class="svc-redirects-header-actions">
+                        <button type="button" class="btn-learn-more" id="svc-redirect-learn-more-btn" onclick="openRedirectDocsModal()">
+                          <i data-lucide="external-link"></i><span>Learn more</span>
+                        </button>
+                      </div>
                     </div>
-                    <div class="svc-redirects-header-actions">
-                      <button type="button" class="btn-learn-more" id="svc-redirect-learn-more-btn" onclick="openRedirectDocsModal()">
-                        <i data-lucide="external-link"></i><span>Learn more</span>
+
+                    <!-- Action Bar: Add Redirect, Test URL, Import/Export -->
+                    <div class="svc-redirects-action-bar">
+                      <button type="button" class="btn-trigger-build" id="svc-redirect-add-open-btn" onclick="showRedirectSubview('add')">
+                        <i data-lucide="plus"></i><span>Add Redirect</span>
+                      </button>
+                      <button type="button" class="shadcn-btn shadcn-btn-outline" id="svc-redirect-test-open-btn" onclick="openRedirectTestModal()">
+                        <i data-lucide="flask-conical"></i><span>Test URL</span>
+                      </button>
+                      <button type="button" class="shadcn-btn shadcn-btn-outline" id="svc-redirect-io-open-btn" onclick="openRedirectIOModal()">
+                        <i data-lucide="arrow-down-up"></i><span>Import / Export</span>
                       </button>
                     </div>
-                  </div>
 
-                  <!-- Action Bar: Add Redirect, Test URL, Import/Export -->
-                  <div class="svc-redirects-action-bar">
-                    <button type="button" class="btn-trigger-build" id="svc-redirect-add-open-btn" onclick="openAddRedirectModal()">
-                      <i data-lucide="plus"></i><span>Add Redirect</span>
-                    </button>
-                    <button type="button" class="shadcn-btn shadcn-btn-outline" id="svc-redirect-test-open-btn" onclick="openRedirectTestModal()">
-                      <i data-lucide="flask-conical"></i><span>Test URL</span>
-                    </button>
-                    <button type="button" class="shadcn-btn shadcn-btn-outline" id="svc-redirect-io-open-btn" onclick="openRedirectIOModal()">
-                      <i data-lucide="arrow-down-up"></i><span>Import / Export</span>
-                    </button>
-                  </div>
+                    <!-- Search & Filter Controls -->
+                    <div class="svc-redirects-filter-bar">
+                      <div class="svc-search-input-wrap">
+                        <i data-lucide="search"></i>
+                        <input type="text" id="svc-redirects-search-input" placeholder="Search redirects..." autocomplete="off">
+                      </div>
+                      <div class="svc-filter-select-wrap">
+                        <select id="svc-redirects-filter-status" class="svc-filter-dropdown" aria-label="Filter by status">
+                          <option value="">All status</option>
+                          <option value="active">Active</option>
+                          <option value="disabled">Disabled</option>
+                        </select>
+                        <select id="svc-redirects-filter-code" class="svc-filter-dropdown" aria-label="Filter by status code">
+                          <option value="">All codes</option>
+                          <option value="301">301 - Permanent</option>
+                          <option value="302">302 - Temporary</option>
+                          <option value="307">307 - Preserving</option>
+                          <option value="308">308 - Perm Preserving</option>
+                        </select>
+                      </div>
+                    </div>
 
-                  <!-- Search & Filter Controls -->
-                  <div class="svc-redirects-filter-bar">
-                    <div class="svc-search-input-wrap">
-                      <i data-lucide="search"></i>
-                      <input type="text" id="svc-redirects-search-input" placeholder="Search redirects..." autocomplete="off">
+                    <!-- Statistics Overview Row -->
+                    <div class="svc-redirects-stats-grid" id="svc-redirects-stats-grid">
+                      <div class="svc-redirect-stat-card">
+                        <span class="svc-stat-label">Total Redirects</span>
+                        <strong class="svc-stat-value" id="svc-stat-total">0</strong>
+                      </div>
+                      <div class="svc-redirect-stat-card">
+                        <span class="svc-stat-label">Active</span>
+                        <strong class="svc-stat-value stat-green" id="svc-stat-active">0</strong>
+                      </div>
+                      <div class="svc-redirect-stat-card">
+                        <span class="svc-stat-label">Disabled</span>
+                        <strong class="svc-stat-value stat-gray" id="svc-stat-disabled">0</strong>
+                      </div>
+                      <div class="svc-redirect-stat-card">
+                        <span class="svc-stat-label">Requests Redirected</span>
+                        <strong class="svc-stat-value stat-blue" id="svc-stat-requests">0</strong>
+                      </div>
                     </div>
-                    <div class="svc-filter-select-wrap">
-                      <select id="svc-redirects-filter-status" class="svc-filter-dropdown" aria-label="Filter by status">
-                        <option value="">All status</option>
-                        <option value="active">Active</option>
-                        <option value="disabled">Disabled</option>
-                      </select>
-                      <select id="svc-redirects-filter-code" class="svc-filter-dropdown" aria-label="Filter by status code">
-                        <option value="">All codes</option>
-                        <option value="301">301 - Permanent</option>
-                        <option value="302">302 - Temporary</option>
-                        <option value="307">307 - Preserving</option>
-                        <option value="308">308 - Perm Preserving</option>
-                      </select>
-                    </div>
-                  </div>
 
-                  <!-- Statistics Overview Row -->
-                  <div class="svc-redirects-stats-grid" id="svc-redirects-stats-grid">
-                    <div class="svc-redirect-stat-card">
-                      <span class="svc-stat-label">Total Redirects</span>
-                      <strong class="svc-stat-value" id="svc-stat-total">0</strong>
+                    <!-- Bulk Actions Toolbar (Conditional) -->
+                    <div class="svc-redirects-bulk-bar hidden" id="svc-redirects-bulk-bar">
+                      <div class="svc-bulk-left">
+                        <input type="checkbox" id="svc-redirect-select-all" class="svc-checkbox">
+                        <span id="svc-bulk-count-label">0 selected</span>
+                      </div>
+                      <div class="svc-bulk-actions">
+                        <button type="button" class="btn-bulk-action" id="svc-bulk-enable-btn"><i data-lucide="check"></i> Enable</button>
+                        <button type="button" class="btn-bulk-action" id="svc-bulk-disable-btn"><i data-lucide="pause"></i> Disable</button>
+                        <button type="button" class="btn-bulk-action btn-bulk-delete" id="svc-bulk-delete-btn"><i data-lucide="trash-2"></i> Delete</button>
+                      </div>
                     </div>
-                    <div class="svc-redirect-stat-card">
-                      <span class="svc-stat-label">Active</span>
-                      <strong class="svc-stat-value stat-green" id="svc-stat-active">0</strong>
-                    </div>
-                    <div class="svc-redirect-stat-card">
-                      <span class="svc-stat-label">Disabled</span>
-                      <strong class="svc-stat-value stat-gray" id="svc-stat-disabled">0</strong>
-                    </div>
-                    <div class="svc-redirect-stat-card">
-                      <span class="svc-stat-label">Requests Redirected</span>
-                      <strong class="svc-stat-value stat-blue" id="svc-stat-requests">0</strong>
-                    </div>
-                  </div>
 
-                  <!-- Bulk Actions Toolbar (Conditional) -->
-                  <div class="svc-redirects-bulk-bar hidden" id="svc-redirects-bulk-bar">
-                    <div class="svc-bulk-left">
-                      <input type="checkbox" id="svc-redirect-select-all" class="svc-checkbox">
-                      <span id="svc-bulk-count-label">0 selected</span>
+                    <!-- Redirects List Container -->
+                    <div class="svc-redirects-list" id="svc-redirects-list">
+                      <p class="hint">Loading redirect rules…</p>
                     </div>
-                    <div class="svc-bulk-actions">
-                      <button type="button" class="btn-bulk-action" id="svc-bulk-enable-btn"><i data-lucide="check"></i> Enable</button>
-                      <button type="button" class="btn-bulk-action" id="svc-bulk-disable-btn"><i data-lucide="pause"></i> Disable</button>
-                      <button type="button" class="btn-bulk-action btn-bulk-delete" id="svc-bulk-delete-btn"><i data-lucide="trash-2"></i> Delete</button>
-                    </div>
-                  </div>
+                  </section>
+                </div>
 
-                  <!-- Redirects List Container -->
-                  <div class="svc-redirects-list" id="svc-redirects-list">
-                    <p class="hint">Loading redirect rules…</p>
+                <!-- Subview 2: Add Redirect (Exact copy of media_1788379626064.jpg) -->
+                <div id="svc-redirects-subview-add" class="svc-redirects-subview hidden">
+                  <div class="svc-fw-page-card">
+                    <div class="svc-sheet-drag-handle"></div>
+                    <header class="svc-clean-dialog-header">
+                      <div class="svc-dialog-title-wrap">
+                        <div>
+                          <h3 class="svc-sheet-main-title">Add Redirect</h3>
+                          <p class="svc-sheet-sub-title">Create a redirect rule to forward requests to a different destination.</p>
+                        </div>
+                      </div>
+                      <button type="button" class="svc-modal-close-icon-btn" onclick="showRedirectSubview('list')" aria-label="Close">
+                        <i data-lucide="x"></i>
+                      </button>
+                    </header>
+
+                    <form id="svc-inpage-form-add-redirect" class="svc-sheet-form-body" onsubmit="handleInPageAddRedirect(event)">
+                      <!-- 1. Source Section -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Source</strong>
+                          <span class="svc-fw-section-desc">The path or URL to match.</span>
+                        </div>
+                        <div class="svc-fw-grouped-input">
+                          <span class="svc-fw-group-prefix" id="svc-redirect-source-domain-prefix">sycord.site</span>
+                          <input type="text" id="svc-inpage-redirect-source" class="svc-fw-group-text-input" placeholder="/old-path" autocomplete="off" spellcheck="false" required>
+                        </div>
+                      </div>
+
+                      <!-- 2. Destination Section -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Destination</strong>
+                          <span class="svc-fw-section-desc">Where the request should be redirected.</span>
+                        </div>
+                        <div class="svc-fw-grouped-input">
+                          <div class="svc-fw-group-select-wrap">
+                            <select id="svc-inpage-redirect-dest-proto" class="svc-fw-group-select">
+                              <option value="https://" selected>https://</option>
+                              <option value="http://">http://</option>
+                            </select>
+                            <i data-lucide="chevron-down"></i>
+                          </div>
+                          <input type="text" id="svc-inpage-redirect-dest" class="svc-fw-group-text-input" placeholder="example.com/new-path" autocomplete="off" spellcheck="false" required>
+                        </div>
+                      </div>
+
+                      <!-- 3. Redirect Type Section -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Redirect type</strong>
+                          <span class="svc-fw-section-desc">Choose the HTTP status code.</span>
+                        </div>
+                        <div class="svc-fw-status-cards-row" role="radiogroup" aria-label="Redirect status code">
+                          <div class="svc-fw-status-card is-active" data-redirect-code="301" role="radio" aria-checked="true" onclick="selectRedirectCode(this, '301')">
+                            <strong>301</strong>
+                            <span>Permanent</span>
+                          </div>
+                          <div class="svc-fw-status-card" data-redirect-code="302" role="radio" aria-checked="false" onclick="selectRedirectCode(this, '302')">
+                            <strong>302</strong>
+                            <span>Temporary</span>
+                          </div>
+                          <div class="svc-fw-status-card" data-redirect-code="307" role="radio" aria-checked="false" onclick="selectRedirectCode(this, '307')">
+                            <strong>307</strong>
+                            <span>Temporary</span>
+                          </div>
+                          <div class="svc-fw-status-card" data-redirect-code="308" role="radio" aria-checked="false" onclick="selectRedirectCode(this, '308')">
+                            <strong>308</strong>
+                            <span>Permanent</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- 4. Options Section -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Options</strong>
+                          <span class="svc-fw-section-desc">Configure additional settings.</span>
+                        </div>
+                        <div class="svc-fw-option-card">
+                          <div class="svc-fw-option-left">
+                            <div class="svc-fw-option-icon-sq">
+                              <i data-lucide="globe"></i>
+                            </div>
+                            <div class="svc-fw-option-text">
+                              <strong class="svc-fw-option-title">Preserve query parameters</strong>
+                              <span class="svc-fw-option-desc">Keep the original query string (e.g. ?id=123)</span>
+                            </div>
+                          </div>
+                          <label class="svc-apple-switch">
+                            <input type="checkbox" id="svc-inpage-redirect-preserve-query" checked>
+                            <span class="svc-apple-slider"></span>
+                          </label>
+                        </div>
+
+                        <div class="svc-fw-option-card">
+                          <div class="svc-fw-option-left">
+                            <div class="svc-fw-option-icon-sq">
+                              <i data-lucide="link"></i>
+                            </div>
+                            <div class="svc-fw-option-text">
+                              <strong class="svc-fw-option-title">Normalize trailing slash</strong>
+                              <span class="svc-fw-option-desc">Match both with and without trailing slash</span>
+                            </div>
+                          </div>
+                          <label class="svc-apple-switch">
+                            <input type="checkbox" id="svc-inpage-redirect-normalize-slash">
+                            <span class="svc-apple-slider"></span>
+                          </label>
+                        </div>
+                      </div>
+
+                      <!-- 5. Rule Name (optional) Section -->
+                      <div class="svc-fw-section-card">
+                        <div class="svc-fw-section-head">
+                          <strong class="svc-fw-section-title">Rule name (optional)</strong>
+                          <span class="svc-fw-section-desc">A name to identify this redirect.</span>
+                        </div>
+                        <div class="svc-fw-counter-input-box">
+                          <input type="text" id="svc-inpage-redirect-name" class="svc-fw-styled-input" maxlength="64" placeholder="e.g. Old docs to new docs" oninput="document.getElementById('svc-inpage-redirect-name-count').textContent = this.value.length + '/64'">
+                          <span class="svc-fw-counter-tag" id="svc-inpage-redirect-name-count">0/64</span>
+                        </div>
+                      </div>
+
+                      <!-- Footer -->
+                      <div class="svc-sheet-footer">
+                        <button type="button" class="btn-sheet-cancel" onclick="showRedirectSubview('list')">Cancel</button>
+                        <button type="submit" class="btn-sheet-primary" style="display:inline-flex; align-items:center; justify-content:center; gap:8px;">
+                          <i data-lucide="corner-down-right"></i>
+                          <span>Create Redirect</span>
+                        </button>
+                      </div>
+                    </form>
                   </div>
-                </section>
+                </div>
               </div>
 
               <!-- 9. SETTINGS TAB (Exact match to media_1788171912849.jpg) -->
@@ -1910,7 +2696,7 @@
                   <p class="projects-sub">External deployer API for Sycord websites and connected projects</p>
                 </div>
               </div>
-              <a href="/sycord/api/" class="btn-create" style="text-decoration:none">
+              <a href="/docs" target="_blank" class="btn-create" style="text-decoration:none">
                 <i data-lucide="book-open"></i>
                 <span>API Docs</span>
               </a>
@@ -1955,7 +2741,7 @@
           <div class="users-directory-page">
             <div class="users-directory-hero"><div class="users-directory-icon"><i data-lucide="users-round"></i></div><div><p class="dedicated-eyebrow">Administration</p><h1>People & access</h1><p>Manage operators, API access, and the credentials used by automation.</p></div><span class="users-live-badge"><i data-lucide="radio"></i>Live workspace</span></div>
             <div class="users-directory-grid"><div class="users-summary-card"><span>Workspace members</span><strong>Operator</strong><small>Current workspace identity</small></div><div class="users-summary-card"><span>API access</span><strong>Token vault</strong><small>Programmatic credentials</small></div><div class="users-summary-card"><span>Security</span><strong>Protected</strong><small>Tokens can be revoked anytime</small></div></div>
-            <section class="api-key-workspace"><header><div><p>Automation credentials</p><h2>API keys</h2><span>Issue narrowly scoped credentials for CI and external integrations. Each key is shown only once.</span></div><a href="/api/" class="api-key-doc-link">API documentation <i data-lucide="arrow-up-right"></i></a></header><div class="api-key-creator"><label>Key name<input type="text" id="token-name" placeholder="ci-deploy" maxlength="80"></label><label>Expires<input type="datetime-local" id="token-expires-at"></label><fieldset><legend>Allowed actions</legend><label><input type="checkbox" name="token-scope" value="read" checked> Read</label><label><input type="checkbox" name="token-scope" value="write" checked> Write</label><label><input type="checkbox" name="token-scope" value="deploy" checked> Deploy</label><label><input type="checkbox" name="token-scope" value="certificates" checked> Certificates</label><label><input type="checkbox" name="token-scope" value="settings" checked> Settings</label></fieldset><label class="api-key-rate">Rate limit <output id="token-rate-output">60 requests/min</output><input type="range" id="token-rate-limit" min="5" max="240" step="5" value="60"></label><button class="api-key-create" id="create-token-btn"><i data-lucide="key-round"></i><span>Create API key</span></button></div><div id="new-token-box" class="result-box hidden"></div><div id="tokens-list" class="api-key-list"></div></section>
+            <section class="api-key-workspace"><header><div><p>Automation credentials</p><h2>API keys</h2><span>Issue narrowly scoped credentials for CI and external integrations. Each key is shown only once.</span></div><a href="/docs" target="_blank" class="api-key-doc-link">API documentation <i data-lucide="arrow-up-right"></i></a></header><div class="api-key-creator"><label>Key name<input type="text" id="token-name" placeholder="ci-deploy" maxlength="80"></label><label>Expires<input type="datetime-local" id="token-expires-at"></label><fieldset><legend>Allowed actions</legend><label><input type="checkbox" name="token-scope" value="read" checked> Read</label><label><input type="checkbox" name="token-scope" value="write" checked> Write</label><label><input type="checkbox" name="token-scope" value="deploy" checked> Deploy</label><label><input type="checkbox" name="token-scope" value="certificates" checked> Certificates</label><label><input type="checkbox" name="token-scope" value="settings" checked> Settings</label></fieldset><label class="api-key-rate">Rate limit <output id="token-rate-output">60 requests/min</output><input type="range" id="token-rate-limit" min="5" max="240" step="5" value="60"></label><button class="api-key-create" id="create-token-btn"><i data-lucide="key-round"></i><span>Create API key</span></button></div><div id="new-token-box" class="result-box hidden"></div><div id="tokens-list" class="api-key-list"></div></section>
           </div>
         </section>
 
@@ -2289,303 +3075,430 @@
           </div>
         </div>
       </section>
+
   <!-- AI BUILDER SETTINGS MODAL / DRAWER -->
+  <!-- AI BUILDER SETTINGS MODAL (Recreated to match screenshots: Providers list, Add Provider, Skills, Settings) -->
   <div class="svc-ai-settings-modal hidden" id="svc-ai-settings-modal" role="dialog" aria-modal="true" aria-labelledby="svc-ai-settings-title">
     <div class="svc-ai-settings-backdrop" id="svc-ai-settings-backdrop"></div>
-    <div class="svc-ai-settings-dialog">
+    <div class="svc-ai-settings-dialog svc-ai-sheet-card">
+      <!-- Sheet Drag Handle / Pill Indicator -->
+      <div class="svc-ai-sheet-handle"></div>
+
+      <!-- Top Header Card matching screenshots -->
       <header class="svc-ai-settings-header">
         <div class="svc-ai-settings-title-group">
-          <span class="svc-ai-settings-icon"><i data-lucide="settings-2"></i></span>
-          <div>
+          <div class="svc-ai-header-app-icon">
+            <i data-lucide="layers"></i>
+          </div>
+          <div class="svc-ai-header-text-block">
             <h3 id="svc-ai-settings-title">AI Builder Configuration</h3>
-            <p>Configure model providers, API keys, custom endpoints, system prompt, and framework tools.</p>
+            <p id="svc-ai-settings-subtitle">Manage your model providers, skills and settings for this project.</p>
           </div>
         </div>
-        <button type="button" class="svc-ai-settings-close" id="svc-ai-settings-close-btn" aria-label="Close settings">
-          <i data-lucide="x"></i>
-        </button>
+        <div class="svc-ai-header-actions-right">
+          <button type="button" class="svc-ai-settings-close" id="svc-ai-settings-close-btn" aria-label="Close dialog">
+            <i data-lucide="x"></i>
+          </button>
+          <span class="svc-ai-step-badge" id="svc-ai-step-badge">1/3</span>
+        </div>
       </header>
 
-      <div class="svc-ai-modal-tabs">
-        <button type="button" class="svc-ai-modal-tab-btn active" id="svc-ai-tab-btn-onboard" data-tab="onboard">
+      <!-- Segmented Navigation Tabs (Providers / Add Provider / Skills / Settings) -->
+      <nav class="svc-ai-modal-tabs" role="tablist">
+        <button type="button" class="svc-ai-modal-tab-btn active" id="svc-ai-tab-btn-saved" data-tab="saved" role="tab" aria-selected="true">
+          <i data-lucide="box"></i><span>Providers</span>
+        </button>
+        <button type="button" class="svc-ai-modal-tab-btn" id="svc-ai-tab-btn-add" data-tab="add" role="tab" aria-selected="false">
           <i data-lucide="sparkles"></i><span>Add Provider</span>
         </button>
-        <button type="button" class="svc-ai-modal-tab-btn" id="svc-ai-tab-btn-saved" data-tab="saved">
-          <i data-lucide="layers"></i><span>Saved Providers</span>
-          <span class="svc-ai-tab-badge" id="svc-ai-saved-count">0</span>
-        </button>
-        <button type="button" class="svc-ai-modal-tab-btn" id="svc-ai-tab-btn-skills" data-tab="skills">
+        <button type="button" class="svc-ai-modal-tab-btn" id="svc-ai-tab-btn-skills" data-tab="skills" role="tab" aria-selected="false">
           <i data-lucide="book-open"></i><span>Skills</span>
         </button>
-        <button type="button" class="svc-ai-modal-tab-btn" id="svc-ai-tab-btn-advanced" data-tab="advanced">
-          <i data-lucide="sliders"></i><span>Prompt &amp; Params</span>
+        <button type="button" class="svc-ai-modal-tab-btn" id="svc-ai-tab-btn-onboard" data-tab="onboard" role="tab" aria-selected="false">
+          <i data-lucide="settings"></i><span id="svc-ai-tab-edit-label">Settings</span>
         </button>
-      </div>
+      </nav>
 
       <form class="svc-ai-settings-form" id="svc-ai-settings-form">
-        <!-- Error Alert Banner -->
+        <!-- Error / Info Alert Banner -->
         <div class="svc-ai-settings-alert hidden" id="svc-ai-settings-alert" role="alert">
           <i data-lucide="alert-triangle"></i>
           <span id="svc-ai-settings-alert-text"></span>
         </div>
 
         <div class="svc-ai-settings-scroll">
-          <!-- TAB 1: ADD PROVIDER ONBOARDING WIZARD -->
-          <div class="svc-ai-tab-panel" id="svc-ai-panel-onboard">
-            <!-- Step 1: Provider Selection Grid -->
-            <fieldset class="svc-ai-form-section">
-              <legend><i data-lucide="cpu"></i><span>Step 1: Choose Provider Type</span></legend>
-              <div class="svc-ai-provider-tiles-grid" id="svc-ai-provider-tiles">
-                <div class="svc-ai-provider-tile active" data-provider="vertex">
-                  <div class="svc-ai-tile-icon-wrap google"><i data-lucide="sparkles"></i></div>
-                  <div class="svc-ai-tile-info">
-                    <strong>Google Vertex AI / Gemini</strong>
-                    <small>Gemini 2.0 Flash, Flash-Lite, Pro</small>
-                  </div>
-                  <i data-lucide="check" class="svc-ai-tile-check"></i>
+          <!-- ========================================== -->
+          <!-- SCREEN 1: MODEL PROVIDERS LIST (Screenshot 1) -->
+          <!-- ========================================== -->
+          <div class="svc-ai-tab-panel" id="svc-ai-panel-saved">
+            <div class="svc-ai-section-title-row">
+              <div>
+                <h4 class="svc-ai-panel-title">Model Providers</h4>
+                <p class="svc-ai-panel-desc">Manage your saved model providers for this project. Switch between them or edit their configuration.</p>
+              </div>
+              <button type="button" class="svc-ai-btn-black-pill" id="svc-ai-add-new-provider-btn">
+                <i data-lucide="plus"></i><span>Add Provider</span>
+              </button>
+            </div>
+
+            <!-- List of Saved Provider Cards -->
+            <div class="svc-ai-providers-stack" id="svc-ai-saved-providers-list">
+              <!-- Rendered dynamically from saved providers -->
+            </div>
+
+            <!-- Callout Note at Bottom -->
+            <div class="svc-ai-info-callout">
+              <i data-lucide="info"></i>
+              <div>
+                <strong>Providers are saved per project</strong>
+                <span>Only providers added here will be available in the AI Builder for this project.</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- ========================================== -->
+          <!-- SCREEN 2: ADD / SELECT PROVIDER (Screenshot 2) -->
+          <!-- ========================================== -->
+          <div class="svc-ai-tab-panel hidden" id="svc-ai-panel-add">
+            <div class="svc-ai-section-title-row">
+              <div>
+                <h4 class="svc-ai-panel-title">Select Provider</h4>
+                <p class="svc-ai-panel-desc">Choose the AI model provider.</p>
+              </div>
+            </div>
+
+            <!-- 8 Tiles Grid (OpenAI, Anthropic, Google, Mistral, Cohere, Together, Groq, Custom) -->
+            <div class="svc-ai-provider-grid-8" id="svc-ai-provider-grid">
+              <button type="button" class="svc-ai-prov-choice-tile active" data-prov="openai">
+                <div class="svc-ai-prov-choice-check"><i data-lucide="check"></i></div>
+                <div class="svc-ai-tile-icon-box openai" id="tile-icon-openai"></div>
+                <span class="svc-ai-tile-label">OpenAI</span>
+              </button>
+              <button type="button" class="svc-ai-prov-choice-tile" data-prov="anthropic">
+                <div class="svc-ai-prov-choice-check"><i data-lucide="check"></i></div>
+                <div class="svc-ai-tile-icon-box anthropic" id="tile-icon-anthropic"></div>
+                <span class="svc-ai-tile-label">Anthropic</span>
+              </button>
+              <button type="button" class="svc-ai-prov-choice-tile" data-prov="google">
+                <div class="svc-ai-prov-choice-check"><i data-lucide="check"></i></div>
+                <div class="svc-ai-tile-icon-box google" id="tile-icon-google"></div>
+                <span class="svc-ai-tile-label">Google</span>
+              </button>
+              <button type="button" class="svc-ai-prov-choice-tile" data-prov="mistral">
+                <div class="svc-ai-prov-choice-check"><i data-lucide="check"></i></div>
+                <div class="svc-ai-tile-icon-box mistral" id="tile-icon-mistral"></div>
+                <span class="svc-ai-tile-label">Mistral</span>
+              </button>
+              <button type="button" class="svc-ai-prov-choice-tile" data-prov="cohere">
+                <div class="svc-ai-prov-choice-check"><i data-lucide="check"></i></div>
+                <div class="svc-ai-tile-icon-box cohere" id="tile-icon-cohere"></div>
+                <span class="svc-ai-tile-label">Cohere</span>
+              </button>
+              <button type="button" class="svc-ai-prov-choice-tile" data-prov="together">
+                <div class="svc-ai-prov-choice-check"><i data-lucide="check"></i></div>
+                <div class="svc-ai-tile-icon-box together" id="tile-icon-together"></div>
+                <span class="svc-ai-tile-label">Together</span>
+              </button>
+              <button type="button" class="svc-ai-prov-choice-tile" data-prov="groq">
+                <div class="svc-ai-prov-choice-check"><i data-lucide="check"></i></div>
+                <div class="svc-ai-tile-icon-box groq" id="tile-icon-groq"></div>
+                <span class="svc-ai-tile-label">Groq</span>
+              </button>
+              <button type="button" class="svc-ai-prov-choice-tile" data-prov="custom">
+                <div class="svc-ai-prov-choice-check"><i data-lucide="check"></i></div>
+                <div class="svc-ai-tile-icon-box custom">
+                  <i data-lucide="more-horizontal"></i>
                 </div>
-                <div class="svc-ai-provider-tile" data-provider="openai">
-                  <div class="svc-ai-tile-icon-wrap openai"><i data-lucide="bot"></i></div>
-                  <div class="svc-ai-tile-info">
-                    <strong>OpenAI</strong>
-                    <small>GPT-4o, GPT-4o-mini, o3-mini</small>
-                  </div>
-                  <i data-lucide="check" class="svc-ai-tile-check"></i>
-                </div>
-                <div class="svc-ai-provider-tile" data-provider="anthropic">
-                  <div class="svc-ai-tile-icon-wrap anthropic"><i data-lucide="message-square"></i></div>
-                  <div class="svc-ai-tile-info">
-                    <strong>Anthropic Claude</strong>
-                    <small>Claude 3.7 Sonnet, 3.5 Haiku</small>
-                  </div>
-                  <i data-lucide="check" class="svc-ai-tile-check"></i>
-                </div>
-                <div class="svc-ai-provider-tile" data-provider="deepseek">
-                  <div class="svc-ai-tile-icon-wrap deepseek"><i data-lucide="zap"></i></div>
-                  <div class="svc-ai-tile-info">
-                    <strong>DeepSeek</strong>
-                    <small>DeepSeek-R1, DeepSeek-V3</small>
-                  </div>
-                  <i data-lucide="check" class="svc-ai-tile-check"></i>
-                </div>
-                <div class="svc-ai-provider-tile" data-provider="openrouter">
-                  <div class="svc-ai-tile-icon-wrap openrouter"><i data-lucide="globe"></i></div>
-                  <div class="svc-ai-tile-info">
-                    <strong>OpenRouter / Groq</strong>
-                    <small>Llama 3.3, Qwen 2.5, GLM-5.2</small>
-                  </div>
-                  <i data-lucide="check" class="svc-ai-tile-check"></i>
-                </div>
-                <div class="svc-ai-provider-tile" data-provider="ollama">
-                  <div class="svc-ai-tile-icon-wrap ollama"><i data-lucide="terminal"></i></div>
-                  <div class="svc-ai-tile-info">
-                    <strong>Local Ollama</strong>
-                    <small>Local models on localhost:11434</small>
-                  </div>
-                  <i data-lucide="check" class="svc-ai-tile-check"></i>
-                </div>
-                <div class="svc-ai-provider-tile" data-provider="custom">
-                  <div class="svc-ai-tile-icon-wrap custom"><i data-lucide="settings"></i></div>
-                  <div class="svc-ai-tile-info">
-                    <strong>Custom Endpoint</strong>
-                    <small>OpenAI-Compatible self-hosted API</small>
-                  </div>
-                  <i data-lucide="check" class="svc-ai-tile-check"></i>
+                <span class="svc-ai-tile-label">Custom</span>
+              </button>
+            </div>
+
+            <div class="svc-ai-edit-fields-card-group">
+              <!-- Provider Name -->
+              <div class="svc-ai-field-block">
+                <label class="svc-ai-field-label" for="svc-ai-provider-name-input">Provider Name</label>
+                <span class="svc-ai-field-sub">A custom name to identify this provider.</span>
+                <div class="svc-ai-counter-input-wrap">
+                  <input type="text" id="svc-ai-provider-name-input" class="svc-ai-styled-input" placeholder="OpenAI" value="OpenAI" maxlength="32">
+                  <span class="svc-ai-counter-text" id="svc-ai-prov-name-count">6/32</span>
                 </div>
               </div>
-              <input type="hidden" id="svc-ai-setting-provider" value="vertex">
-            </fieldset>
 
-            <!-- Step 2: Model Selection -->
-            <fieldset class="svc-ai-form-section">
-              <legend><i data-lucide="box"></i><span>Step 2: Model Selection</span></legend>
-              <div class="svc-ai-form-field">
-                <label for="svc-ai-setting-model">Selected Model ID</label>
-                <input id="svc-ai-setting-model" placeholder="Enter or select model" list="svc-ai-preset-models" autocomplete="off" required value="gemini-2.0-flash">
-                <datalist id="svc-ai-preset-models">
-                  <option value="gemini-2.0-flash">
-                  <option value="gemini-2.0-flash-lite">
-                  <option value="gemini-1.5-pro">
-                  <option value="gpt-4o">
-                  <option value="gpt-4o-mini">
-                  <option value="o3-mini">
-                  <option value="claude-3-7-sonnet">
-                  <option value="claude-3-5-sonnet-20241022">
-                  <option value="deepseek-chat">
-                  <option value="deepseek-reasoner">
-                  <option value="z-ai/glm-5.2:free">
-                  <option value="meta-llama/llama-3.3-70b-instruct">
-                  <option value="qwen/qwen-2.5-coder-32b-instruct">
-                </datalist>
-              </div>
-
-              <!-- 1-Click Preset Model Chips -->
-              <div class="svc-ai-preset-chips-wrap">
-                <label>Popular Presets for Selected Provider:</label>
-                <div class="svc-ai-preset-chips-list" id="svc-ai-preset-chips-list"></div>
-              </div>
-            </fieldset>
-
-            <!-- Step 3: Credentials & Base URL -->
-            <fieldset class="svc-ai-form-section">
-              <legend><i data-lucide="key-round"></i><span>Step 3: API Key &amp; Endpoint</span></legend>
-              <div class="svc-ai-form-field">
-                <label for="svc-ai-setting-apikey">API Key / Token</label>
-                <div class="svc-ai-apikey-input-wrap">
-                  <input id="svc-ai-setting-apikey" type="password" placeholder="AIzaSy... / sk-..." autocomplete="new-password">
-                  <button type="button" class="svc-ai-toggle-key-btn" id="svc-ai-toggle-key-visibility" title="Show/Hide API Key">
-                    <i data-lucide="eye"></i>
+              <!-- API Key -->
+              <div class="svc-ai-field-block">
+                <label class="svc-ai-field-label" for="svc-ai-setting-apikey">API Key</label>
+                <span class="svc-ai-field-sub">Your API key will be encrypted and stored securely.</span>
+                <div class="svc-ai-key-input-wrap">
+                  <span class="svc-ai-input-prefix-icon"><i data-lucide="key"></i></span>
+                  <input type="password" id="svc-ai-setting-apikey" class="svc-ai-styled-input with-prefix" placeholder="sk-..." autocomplete="new-password">
+                  <button type="button" class="svc-ai-key-eye-btn" id="svc-ai-toggle-key-visibility" title="Show/Hide Key">
+                    <i data-lucide="eye-off"></i>
                   </button>
                 </div>
-                <small class="hint">API keys are encrypted and stored safely on the host server.</small>
               </div>
 
-              <div class="svc-ai-form-field">
-                <label for="svc-ai-setting-baseurl">Custom Base URL (Optional)</label>
-                <input id="svc-ai-setting-baseurl" placeholder="Leave empty for default provider endpoint" autocomplete="off">
-                <small class="hint" id="svc-ai-baseurl-hint">Leave blank for official Google Vertex / AI Studio API.</small>
+              <!-- Base URL (optional) -->
+              <div class="svc-ai-field-block">
+                <label class="svc-ai-field-label" for="svc-ai-setting-baseurl">Base URL (optional)</label>
+                <span class="svc-ai-field-sub">Only needed for custom endpoints or self-hosted models.</span>
+                <div class="svc-ai-key-input-wrap">
+                  <span class="svc-ai-input-prefix-icon"><i data-lucide="link-2"></i></span>
+                  <input type="text" id="svc-ai-setting-baseurl" class="svc-ai-styled-input with-prefix" placeholder="https://api.openai.com/v1" autocomplete="off">
+                </div>
               </div>
 
-              <div class="svc-ai-test-row">
-                <button type="button" class="btn-pill btn-secondary" id="svc-ai-test-connection-btn">
-                  <i data-lucide="zap"></i><span>Test Connection</span>
-                </button>
-                <button type="button" class="btn-pill btn-primary" id="svc-ai-quick-save-btn">
-                  <i data-lucide="check"></i><span>Save &amp; Activate Provider</span>
-                </button>
-                <span class="svc-ai-test-status" id="svc-ai-test-status"></span>
+              <!-- Default Model -->
+              <div class="svc-ai-field-block">
+                <label class="svc-ai-field-label" for="svc-ai-setting-model">Default Model</label>
+                <span class="svc-ai-field-sub">The model to use by default.</span>
+                <div class="svc-ai-model-select-wrap">
+                  <span class="svc-ai-input-prefix-icon"><i data-lucide="box"></i></span>
+                  <input type="text" id="svc-ai-setting-model" class="svc-ai-styled-input with-prefix" placeholder="gpt-4o" value="gpt-4o" required>
+                  <select id="svc-ai-model-preset-dropdown" class="svc-ai-styled-select with-prefix hidden"></select>
+                </div>
               </div>
-            </fieldset>
+
+              <!-- Description (optional) -->
+              <div class="svc-ai-field-block">
+                <div class="svc-ai-field-top-row">
+                  <div>
+                    <label class="svc-ai-field-label" for="svc-ai-provider-desc-input">Description (optional)</label>
+                    <span class="svc-ai-field-sub">A short description for this provider.</span>
+                  </div>
+                </div>
+                <div class="svc-ai-textarea-wrap">
+                  <textarea id="svc-ai-provider-desc-input" class="svc-ai-styled-textarea" rows="2" placeholder="e.g. Main OpenAI account for production use." maxlength="100"></textarea>
+                  <span class="svc-ai-counter-text-bottom" id="svc-ai-desc-count">0/100</span>
+                </div>
+              </div>
+            </div>
           </div>
 
-          <!-- TAB 2: SAVED PROVIDERS & MODELS LIST -->
-          <div class="svc-ai-tab-panel hidden" id="svc-ai-panel-saved">
-            <div class="svc-ai-saved-providers-header">
+          <!-- ========================================== -->
+          <!-- SCREEN 3: MODEL SKILLS (Screenshot 3) -->
+          <!-- ========================================== -->
+          <div class="svc-ai-tab-panel hidden" id="svc-ai-panel-skills">
+            <div class="svc-ai-section-title-row">
               <div>
-                <strong>Saved Model Providers</strong>
-                <p class="hint" style="margin:2px 0 0;">Switch between saved providers and models with 1 click.</p>
+                <h4 class="svc-ai-panel-title">Model Skills</h4>
+                <p class="svc-ai-panel-desc">Control what this model can do. Enable or disable skills based on your needs.</p>
               </div>
-              <button type="button" class="btn-pill btn-secondary btn-sm" id="svc-ai-add-new-provider-btn">
-                <i data-lucide="plus"></i><span>Add New Provider</span>
+              <button type="button" class="svc-ai-btn-outline-pill" id="svc-ai-select-all-skills-btn">
+                <i data-lucide="layout-grid"></i><span>Select All</span>
               </button>
             </div>
 
-            <div class="svc-ai-saved-providers-list" id="svc-ai-saved-providers-list">
+            <!-- Skills List with Colored Icon Cards & iOS Switches -->
+            <div class="svc-ai-skills-list-group" id="svc-ai-skills-catalog">
               <!-- Rendered dynamically -->
             </div>
-          </div>
 
-          <!-- TAB 3: AGENT SKILLS & CUSTOMIZATION -->
-          <div class="svc-ai-tab-panel hidden" id="svc-ai-panel-skills">
-            <div class="svc-ai-saved-providers-header">
+            <!-- Callout Note at Bottom -->
+            <div class="svc-ai-info-callout">
+              <i data-lucide="info"></i>
               <div>
-                <strong>Agent Skills &amp; Domain Blueprints</strong>
-                <p class="hint" style="margin:2px 0 0;">Modular skills, engineering guidelines, and design systems active for this agent.</p>
+                <span>Skills availability depends on the model and provider. Some features may require additional configuration.</span>
               </div>
-              <button type="button" class="btn-pill btn-ghost btn-sm" id="svc-ai-refresh-skills-btn">
-                <i data-lucide="refresh-cw"></i><span>Refresh Skills</span>
-              </button>
             </div>
-
-            <div class="svc-ai-skills-grid" id="svc-ai-skills-catalog" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-top: 12px;">
-              <!-- Dynamic skill cards rendered via JS -->
-            </div>
-
-            <fieldset class="svc-ai-form-section" style="margin-top: 20px;">
-              <legend><i data-lucide="sparkles"></i><span>Custom Skill &amp; Engineering Rules</span></legend>
-              <div class="svc-ai-form-field">
-                <label for="svc-ai-custom-skills-input">Project-Specific Rules &amp; Guidelines</label>
-                <textarea id="svc-ai-custom-skills-input" rows="4" placeholder="Enter custom coding standards, tech stack rules, design system guidelines, or constraints for this project..."></textarea>
-                <span class="hint">These instructions are automatically injected into the agent's context alongside active skills.</span>
-              </div>
-            </fieldset>
           </div>
 
-          <!-- TAB 4: HYPERPARAMETERS & SYSTEM INSTRUCTIONS -->
-          <div class="svc-ai-tab-panel hidden" id="svc-ai-panel-advanced">
-          <fieldset class="svc-ai-form-section">
-            <legend><i data-lucide="sliders"></i><span>Model Hyperparameters</span></legend>
-            <div class="svc-ai-form-grid">
-              <div class="svc-ai-form-field">
-                <label for="svc-ai-setting-temp">Temperature (<span id="svc-ai-temp-val">0.7</span>)</label>
-                <input id="svc-ai-setting-temp" type="range" min="0" max="1.5" step="0.05" value="0.7">
-              </div>
-              <div class="svc-ai-form-field">
-                <label for="svc-ai-setting-maxtokens">Max Output Tokens (<span id="svc-ai-maxtokens-val">4096</span>)</label>
-                <input id="svc-ai-setting-maxtokens" type="range" min="512" max="16384" step="512" value="4096">
+          <!-- ========================================== -->
+          <!-- SCREEN 4: EDIT MODEL PROVIDER / SETTINGS (Screenshot 1) -->
+          <!-- ========================================== -->
+          <div class="svc-ai-tab-panel hidden" id="svc-ai-panel-onboard">
+            <div class="svc-ai-section-title-row">
+              <div>
+                <h4 class="svc-ai-panel-title">General Settings</h4>
+                <p class="svc-ai-panel-desc">Fine-tune how this provider behaves.</p>
               </div>
             </div>
-            <div class="svc-ai-form-field">
-              <label for="svc-ai-setting-thinking">Thinking / Reasoning Level</label>
-              <select id="svc-ai-setting-thinking">
-                <option value="none">None (Fast responses)</option>
-                <option value="low">Low reasoning budget</option>
-                <option value="medium" selected>Medium (Balanced autonomous execution)</option>
-                <option value="high">High (Deep reasoning / Complex architecture)</option>
-              </select>
-            </div>
-          </fieldset>
 
-          <!-- Section 3: Autonomous System Prompt -->
-          <fieldset class="svc-ai-form-section">
-            <legend><i data-lucide="sparkles"></i><span>System Instructions & Persona</span></legend>
-            <div class="svc-ai-form-field">
-              <label for="svc-ai-setting-prompt">System Prompt</label>
-              <textarea id="svc-ai-setting-prompt" rows="4" placeholder="Enter system instructions for the AI Builder..."></textarea>
-            </div>
-          </fieldset>
+            <div class="svc-ai-form-card-group">
+              <!-- Target Provider hidden or select -->
+              <input type="hidden" id="svc-ai-setting-provider" value="openai">
 
-          <!-- Section 4: Syte Framework Tool Permissions -->
-          <fieldset class="svc-ai-form-section">
-            <legend><i data-lucide="shield-check"></i><span>Syte Framework Tools & Access</span></legend>
-            <div class="svc-ai-tools-list">
-              <label class="svc-ai-tool-item">
-                <input type="checkbox" checked disabled>
-                <div>
-                  <strong>Workspace File System (Read, Write, Edit, Search)</strong>
-                  <small>Allows the AI to inspect and modify project source code in the VM workspace.</small>
+              <!-- 1. Model Alias / Model ID with character count -->
+              <div class="svc-ai-setting-card">
+                <div class="svc-ai-card-left">
+                  <div class="svc-ai-card-icon"><i data-lucide="tag"></i></div>
+                  <div class="svc-ai-card-text">
+                    <strong class="svc-ai-card-label">Model Alias</strong>
+                    <span class="svc-ai-card-sub">A short name used in chats and UI.</span>
+                  </div>
                 </div>
-              </label>
-              <label class="svc-ai-tool-item">
-                <input type="checkbox" checked disabled>
-                <div>
-                  <strong>Terminal Shell Execution (Bash)</strong>
-                  <small>Allows the AI to run build commands, tests, package installs, and git operations.</small>
+                <div class="svc-ai-card-right-input">
+                  <div class="svc-ai-counter-input-wrap">
+                    <input type="text" id="svc-ai-setting-alias" class="svc-ai-styled-input" placeholder="GPT-4o" maxlength="64" value="gpt-4o">
+                    <span class="svc-ai-counter-text" id="svc-ai-model-count">6/32</span>
+                  </div>
                 </div>
-              </label>
-              <label class="svc-ai-tool-item">
-                <input type="checkbox" checked disabled>
-                <div>
-                  <strong>Syte Deployment Pipeline</strong>
-                  <small>Allows the AI to trigger zero-downtime builds, restart services, and check status.</small>
+              </div>
+
+              <!-- 2. Default System Prompt -->
+              <div class="svc-ai-setting-card vertical">
+                <div class="svc-ai-card-top-row">
+                  <div class="svc-ai-card-left">
+                    <div class="svc-ai-card-icon"><i data-lucide="globe"></i></div>
+                    <div class="svc-ai-card-text">
+                      <strong class="svc-ai-card-label">Default System Prompt</strong>
+                      <span class="svc-ai-card-sub">Used as a base instruction for all chats.</span>
+                    </div>
+                  </div>
+                  <span class="svc-ai-counter-text" id="svc-ai-prompt-count">0/2000</span>
                 </div>
-              </label>
-              <label class="svc-ai-tool-item">
-                <input type="checkbox" checked disabled>
-                <div>
-                  <strong>Diagnostics, Deployment Logs & Router Logs</strong>
-                  <small>Allows the AI to read stdout/stderr logs and diagnose runtime HTTP traffic errors.</small>
+                <textarea id="svc-ai-setting-prompt" class="svc-ai-styled-textarea" rows="3" placeholder="You are a helpful AI assistant embedded in the Syte platform..." maxlength="2000"></textarea>
+              </div>
+
+              <!-- 3. Temperature Slider -->
+              <div class="svc-ai-setting-card slider-card">
+                <div class="svc-ai-card-top-row">
+                  <div class="svc-ai-card-left">
+                    <div class="svc-ai-card-icon"><i data-lucide="thermometer"></i></div>
+                    <div class="svc-ai-card-text">
+                      <strong class="svc-ai-card-label">Temperature</strong>
+                      <span class="svc-ai-card-sub">Controls randomness. Lower = more focused.</span>
+                    </div>
+                  </div>
+                  <div class="svc-ai-val-box">
+                    <input type="number" id="svc-ai-temp-box" class="svc-ai-mini-num-input" value="0.7" step="0.05" min="0" max="2.0">
+                  </div>
                 </div>
-              </label>
-              <label class="svc-ai-tool-item">
-                <input type="checkbox" checked disabled>
-                <div>
-                  <strong>Infrastructure, Domains & Environment Variables</strong>
-                  <small>Allows the AI to configure custom hostnames, TLS certificates, and secrets.</small>
+                <div class="svc-ai-range-slider-wrap">
+                  <input type="range" id="svc-ai-setting-temp" class="svc-ai-blue-slider" min="0" max="1.5" step="0.05" value="0.7">
                 </div>
-              </label>
+              </div>
+
+              <!-- 4. Max Tokens -->
+              <div class="svc-ai-setting-card">
+                <div class="svc-ai-card-left">
+                  <div class="svc-ai-card-icon"><i data-lucide="database"></i></div>
+                  <div class="svc-ai-card-text">
+                    <strong class="svc-ai-card-label">Max Tokens</strong>
+                    <span class="svc-ai-card-sub">Maximum length of the response.</span>
+                  </div>
+                </div>
+                <div class="svc-ai-val-box">
+                  <input type="number" id="svc-ai-setting-maxtokens" class="svc-ai-mini-num-input" value="4096" min="256" max="128000" step="256">
+                </div>
+              </div>
+
+              <!-- 5. Top P -->
+              <div class="svc-ai-setting-card">
+                <div class="svc-ai-card-left">
+                  <div class="svc-ai-card-icon"><i data-lucide="clock"></i></div>
+                  <div class="svc-ai-card-text">
+                    <strong class="svc-ai-card-label">Top P</strong>
+                    <span class="svc-ai-card-sub">Nucleus sampling. Higher = more diverse.</span>
+                  </div>
+                </div>
+                <div class="svc-ai-val-box">
+                  <input type="number" id="svc-ai-setting-topp" class="svc-ai-mini-num-input" value="1.0" min="0.1" max="1.0" step="0.05">
+                </div>
+              </div>
             </div>
-          </fieldset>
+
+            <!-- Accordion: Advanced Options -->
+            <div class="svc-ai-advanced-accordion">
+              <button type="button" class="svc-ai-accordion-header" id="svc-ai-adv-toggle-btn">
+                <div>
+                  <strong class="svc-ai-adv-title">Advanced Options</strong>
+                  <span class="svc-ai-adv-desc">Additional configuration for this provider.</span>
+                </div>
+                <i data-lucide="chevron-up" class="svc-ai-adv-chevron"></i>
+              </button>
+
+              <div class="svc-ai-adv-content" id="svc-ai-adv-content">
+                <!-- Org ID -->
+                <div class="svc-ai-adv-row">
+                  <div class="svc-ai-card-left">
+                    <div class="svc-ai-card-icon"><i data-lucide="shield"></i></div>
+                    <div class="svc-ai-card-text">
+                      <strong class="svc-ai-card-label">Use Organization ID</strong>
+                      <span class="svc-ai-card-sub">Set an organization ID (if applicable).</span>
+                    </div>
+                  </div>
+                  <label class="svc-apple-switch">
+                    <input type="checkbox" id="svc-ai-adv-org-toggle">
+                    <span class="svc-apple-slider"></span>
+                  </label>
+                </div>
+
+                <!-- Request Logging -->
+                <div class="svc-ai-adv-row">
+                  <div class="svc-ai-card-left">
+                    <div class="svc-ai-card-icon"><i data-lucide="bar-chart-2"></i></div>
+                    <div class="svc-ai-card-text">
+                      <strong class="svc-ai-card-label">Enable Request Logging</strong>
+                      <span class="svc-ai-card-sub">Log requests and responses for debugging.</span>
+                    </div>
+                  </div>
+                  <label class="svc-apple-switch">
+                    <input type="checkbox" id="svc-ai-adv-logging-toggle" checked>
+                    <span class="svc-apple-slider"></span>
+                  </label>
+                </div>
+
+                <!-- Request Timeout -->
+                <div class="svc-ai-adv-row">
+                  <div class="svc-ai-card-left">
+                    <div class="svc-ai-card-icon"><i data-lucide="clock"></i></div>
+                    <div class="svc-ai-card-text">
+                      <strong class="svc-ai-card-label">Request Timeout</strong>
+                      <span class="svc-ai-card-sub">Time in seconds before the request fails.</span>
+                    </div>
+                  </div>
+                  <div class="svc-ai-val-box">
+                    <input type="number" id="svc-ai-adv-timeout" class="svc-ai-mini-num-input" value="60" min="5" max="300">
+                  </div>
+                </div>
+
+                <!-- Automatic Retries -->
+                <div class="svc-ai-adv-row">
+                  <div class="svc-ai-card-left">
+                    <div class="svc-ai-card-icon"><i data-lucide="refresh-cw"></i></div>
+                    <div class="svc-ai-card-text">
+                      <strong class="svc-ai-card-label">Automatic Retries</strong>
+                      <span class="svc-ai-card-sub">Retry failed requests automatically.</span>
+                    </div>
+                  </div>
+                  <label class="svc-apple-switch">
+                    <input type="checkbox" id="svc-ai-adv-retries-toggle" checked>
+                    <span class="svc-apple-slider"></span>
+                  </label>
+                </div>
+
+                <!-- Delete Provider Row (Red) -->
+                <button type="button" class="svc-ai-delete-provider-card" id="svc-ai-delete-current-prov-btn">
+                  <div class="svc-ai-delete-card-left">
+                    <i data-lucide="trash-2" class="svc-ai-delete-icon"></i>
+                    <div>
+                      <strong class="svc-ai-delete-title">Delete Provider</strong>
+                      <span class="svc-ai-delete-sub">This will permanently remove this provider.</span>
+                    </div>
+                  </div>
+                  <i data-lucide="chevron-right" class="svc-ai-delete-chevron"></i>
+                </button>
+              </div>
+            </div>
+
+            <!-- Test Connection Button -->
+            <div class="svc-ai-test-connection-bar">
+              <button type="button" class="svc-ai-btn-outline-pill" id="svc-ai-test-connection-btn">
+                <i data-lucide="zap"></i><span>Test Connection</span>
+              </button>
+              <span class="svc-ai-test-status" id="svc-ai-test-status"></span>
+            </div>
           </div>
         </div>
 
+        <!-- Bottom Action Footer (Cancel / Next / Save / Back) -->
         <footer class="svc-ai-settings-footer">
-          <button type="button" class="btn-pill btn-ghost" id="svc-ai-modal-debug-btn" title="Download Complete AI Diagnostic JSON" style="margin-right:auto; color:#ea580c; border:1px dashed #fdba74;">
-            <i data-lucide="bug"></i><span>Download Diagnostic JSON</span>
+          <button type="button" class="svc-ai-btn-pill-gray" id="svc-ai-settings-cancel-btn">
+            <span>Cancel</span>
           </button>
-          <button type="button" class="btn-pill btn-ghost" id="svc-ai-settings-cancel-btn">Cancel</button>
-          <button type="submit" class="btn-pill btn-primary" id="svc-ai-settings-save-btn">
-            <i data-lucide="save"></i><span>Save AI Settings</span>
+          <button type="button" class="svc-ai-btn-pill-black" id="svc-ai-settings-primary-btn">
+            <span id="svc-ai-primary-btn-text">Next: Add Provider</span>
+            <i data-lucide="arrow-right" id="svc-ai-primary-btn-icon"></i>
           </button>
         </footer>
       </form>

@@ -25,14 +25,40 @@ ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 _UNLIMITED = frozenset({"", "0", "none", "unlimited", "off"})
 
 
+def _default_80pct_resources() -> tuple[str, str]:
+    """Calculate 80% of host RAM and 80% of host CPUs."""
+    import os
+    # Default memory: 80% of physical RAM
+    try:
+        page_size = os.sysconf("SC_PAGE_SIZE")
+        phys_pages = os.sysconf("SC_PHYS_PAGES")
+        total_ram_mb = int((page_size * phys_pages) / (1024 * 1024))
+        mem_mb = max(256, int(total_ram_mb * 0.8))
+        default_mem = f"{mem_mb}m"
+    except Exception:
+        default_mem = "1g"
+
+    # Default CPUs: 80% of host CPU cores
+    try:
+        cpu_count = os.cpu_count() or 1
+        cpus_val = max(0.5, round(cpu_count * 0.8, 2))
+        default_cpus = str(cpus_val)
+    except Exception:
+        default_cpus = "1.0"
+
+    return default_mem, default_cpus
+
+
 def _runtime_resource_args(project: dict | None = None) -> list[str]:
-    """CPU/memory/pids caps for a container, with optional project overrides."""
+    """CPU/memory/pids caps for a container, limited to fixed 80% default host resources."""
     from syte.config import settings
 
     project = project or {}
     args: list[str] = []
-    memory = str(project.get("resource_memory") or getattr(settings, "docker_memory", "1g") or "").strip()
-    cpus = str(project.get("resource_cpus") or getattr(settings, "docker_cpus", "1.0") or "").strip()
+    
+    def_mem, def_cpus = _default_80pct_resources()
+    memory = str(project.get("resource_memory") or getattr(settings, "docker_memory", "") or def_mem).strip()
+    cpus = str(project.get("resource_cpus") or getattr(settings, "docker_cpus", "") or def_cpus).strip()
     pids = int(getattr(settings, "docker_pids_limit", 256) or 0)
     if memory.lower() not in _UNLIMITED:
         args.extend(["--memory", memory])

@@ -12,6 +12,7 @@ import os
 from typing import Any, AsyncGenerator, Dict, List, Optional
 import urllib.request
 import urllib.error
+import httpx
 
 logger = logging.getLogger("syte.ai.providers")
 
@@ -258,6 +259,84 @@ class UnifiedAIClient:
         self.max_tokens = max_tokens
         self.thinking_level = thinking_level
 
+    async def list_available_models(self) -> List[Dict[str, Any]]:
+        """Request and retrieve available models from the provider or return curated lists."""
+        curated_defaults: Dict[str, List[Dict[str, Any]]] = {
+            "openai": [
+                {"id": "gpt-4o", "name": "GPT-4o (Omni)", "context_window": 128000, "recommended": True},
+                {"id": "gpt-4o-mini", "name": "GPT-4o Mini", "context_window": 128000, "recommended": True},
+                {"id": "o1-preview", "name": "o1 (Reasoning)", "context_window": 128000},
+                {"id": "o3-mini", "name": "o3-mini", "context_window": 200000},
+            ],
+            "anthropic": [
+                {"id": "claude-3-5-sonnet-20241022", "name": "Claude 3.5 Sonnet", "context_window": 200000, "recommended": True},
+                {"id": "claude-3-5-haiku-20241022", "name": "Claude 3.5 Haiku", "context_window": 200000},
+                {"id": "claude-3-opus-20240229", "name": "Claude 3 Opus", "context_window": 200000},
+            ],
+            "gemini": [
+                {"id": "gemini-2.0-flash", "name": "Gemini 2.0 Flash", "context_window": 1048576, "recommended": True},
+                {"id": "gemini-1.5-pro", "name": "Gemini 1.5 Pro", "context_window": 2097152},
+                {"id": "gemini-1.5-flash", "name": "Gemini 1.5 Flash", "context_window": 1048576},
+            ],
+            "deepseek": [
+                {"id": "deepseek-chat", "name": "DeepSeek V3", "context_window": 64000, "recommended": True},
+                {"id": "deepseek-coder", "name": "DeepSeek Coder", "context_window": 64000},
+                {"id": "deepseek-reasoner", "name": "DeepSeek R1", "context_window": 64000, "recommended": True},
+            ],
+            "openrouter": [
+                {"id": "anthropic/claude-3.5-sonnet", "name": "Anthropic: Claude 3.5 Sonnet", "context_window": 200000, "recommended": True},
+                {"id": "openai/gpt-4o", "name": "OpenAI: GPT-4o", "context_window": 128000},
+                {"id": "deepseek/deepseek-chat", "name": "DeepSeek V3", "context_window": 64000},
+                {"id": "meta-llama/llama-3.3-70b-instruct", "name": "Meta Llama 3.3 70B", "context_window": 131072},
+                {"id": "qwen/qwen-2.5-coder-32b-instruct", "name": "Qwen 2.5 Coder 32B", "context_window": 32768},
+            ],
+            "ollama": [
+                {"id": "qwen2.5-coder:latest", "name": "Qwen 2.5 Coder", "context_window": 32768},
+                {"id": "llama3.2:latest", "name": "Llama 3.2", "context_window": 8192},
+                {"id": "deepseek-coder-v2:latest", "name": "DeepSeek Coder V2", "context_window": 64000},
+            ],
+        }
+
+        # Attempt remote live query if provider supports /models
+        if self.provider in ("openai", "openrouter", "deepseek", "ollama", "gemini"):
+            url = f"{self.base_url}/models"
+            if self.provider == "ollama":
+                url = f"{self.base_url.replace('/v1', '')}/api/tags" if self.base_url.endswith('/v1') else f"{self.base_url}/api/tags"
+
+            headers = {"Content-Type": "application/json"}
+            if self.api_key:
+                headers["Authorization"] = f"Bearer {self.api_key}"
+
+            def _fetch_remote():
+                req = urllib.request.Request(url, headers=headers, method="GET")
+                with urllib.request.urlopen(req, timeout=5) as res:
+                    return json.loads(res.read().decode("utf-8", errors="replace"))
+
+            try:
+                data = await asyncio.to_thread(_fetch_remote)
+                if isinstance(data, dict):
+                    if "data" in data and isinstance(data["data"], list):
+                        remote_models = []
+                        for m in data["data"]:
+                            m_id = m.get("id") or m.get("name")
+                            if m_id:
+                                remote_models.append({
+                                    "id": m_id,
+                                    "name": m.get("name") or m_id,
+                                    "context_window": m.get("context_length") or m.get("context_window"),
+                                    "owned_by": m.get("owned_by"),
+                                })
+                        if remote_models:
+                            return remote_models[:100]
+                    elif "models" in data and isinstance(data["models"], list):
+                        return [{"id": m.get("name"), "name": m.get("name")} for m in data["models"] if m.get("name")]
+            except Exception as e:
+                logger.debug(f"Remote models fetch for {self.provider} failed, falling back to curated: {e}")
+
+        return curated_defaults.get(self.provider, [
+            {"id": self.model, "name": self.model, "context_window": 32000}
+        ])
+
     async def test_connection(self) -> dict[str, Any]:
         """Test API connectivity and model availability."""
         if not self.api_key and self.provider not in ("ollama", "custom"):
@@ -333,150 +412,110 @@ class UnifiedAIClient:
             "max_tokens": self.max_tokens,
             "stream": True,
         }
+        effort_map = {
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "extra_high": "high",
+            "max": "high",
+        }
+        effort = effort_map.get(str(self.thinking_level).lower(), "medium")
+        if any(k in effective_model.lower() for k in ("o1", "o3", "reasoner", "r1", "thinking")):
+            payload["reasoning_effort"] = effort
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
 
-        def _blocking_post(post_url: str, post_payload: dict, post_headers: dict, post_timeout: int = 180):
-            req = urllib.request.Request(
-                post_url,
-                data=json.dumps(post_payload).encode("utf-8"),
-                headers=post_headers,
-                method="POST",
-            )
-            return urllib.request.urlopen(req, timeout=post_timeout)
+        tool_calls_acc: dict[int, dict[str, Any]] = {}
+        timeout = httpx.Timeout(180.0, connect=15.0)
 
-        response = None
-        last_err_msg = "Unknown error"
-        for attempt in range(3):
-            try:
-                response = await asyncio.to_thread(_blocking_post, url, payload, headers, 180)
-                break
-            except urllib.error.HTTPError as err:
-                # If 404 or 400 on custom Vertex endpoint, attempt seamless fallback to Google Generative Language
-                if (err.code in (404, 400)) and (self.provider in ("vertex", "gemini") or "googleapis.com" in (url or "")):
-                    fallback_url = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
-                    if fallback_url != url:
-                        fallback_payload = dict(payload)
-                        fallback_payload["model"] = _normalize_google_model(self.model)
-                        try:
-                            response = await asyncio.to_thread(_blocking_post, fallback_url, fallback_payload, headers, 180)
-                            break
-                        except Exception:
-                            response = None
-
-                if err.code in (429, 502, 503, 504) and attempt < 2:
-                    await asyncio.sleep(1.5 * (attempt + 1))
-                    continue
-
-                if response is None:
-                    err_body = err.read().decode("utf-8", errors="replace")
-                    err_msg = f"HTTP {err.code}: {err.reason}"
-                    if err_body:
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                async with client.stream("POST", url, headers=headers, json=payload) as resp:
+                    if resp.status_code != 200:
+                        err_body = (await resp.aread()).decode("utf-8", errors="replace")
+                        err_msg = f"{self.provider.upper()} Error (HTTP {resp.status_code}): {err_body[:200]}"
                         try:
                             parsed = json.loads(err_body)
                             if isinstance(parsed, dict) and "error" in parsed:
                                 err_val = parsed["error"]
                                 if isinstance(err_val, dict) and "message" in err_val:
-                                    err_msg = f"{self.provider.upper()} Error (HTTP {err.code}): {err_val['message']}"
+                                    err_msg = f"{self.provider.upper()} Error (HTTP {resp.status_code}): {err_val['message']}"
                                 elif isinstance(err_val, str):
-                                    err_msg = f"{self.provider.upper()} Error (HTTP {err.code}): {err_val}"
+                                    err_msg = f"{self.provider.upper()} Error (HTTP {resp.status_code}): {err_val}"
                         except Exception:
-                            err_msg = f"HTTP {err.code}: {err_body}"
-                    if err.code in (401, 403):
-                        err_msg = f"{err_msg} — Please verify your API key and permissions in AI Settings."
-                    last_err_msg = err_msg
-                    break
-            except Exception as exc:
-                last_err_msg = f"Connection failed: {str(exc)}"
-                if attempt < 2:
-                    await asyncio.sleep(1.5 * (attempt + 1))
-                    continue
-                break
+                            pass
+                        if resp.status_code in (401, 403):
+                            err_msg = f"{err_msg} — Please verify your API key and permissions in AI Settings."
+                        yield {"type": "error", "content": err_msg}
+                        return
 
-        if response is None:
-            yield {"type": "error", "content": last_err_msg}
+                    async for line in resp.aiter_lines():
+                        line_str = line.strip()
+                        if not line_str or line_str.startswith(":"):
+                            continue
+                        if line_str == "data: [DONE]":
+                            break
+                        if line_str.startswith("data: "):
+                            raw_json = line_str[6:]
+                            try:
+                                chunk_data = json.loads(raw_json)
+                            except json.JSONDecodeError:
+                                continue
+
+                            choices = chunk_data.get("choices") or []
+                            if not choices:
+                                continue
+                            delta = choices[0].get("delta") or {}
+
+                            # Thought / Reasoning delta
+                            thought = delta.get("reasoning_content") or delta.get("reasoning") or delta.get("thought")
+                            if thought:
+                                yield {"type": "thought", "content": thought}
+
+                            # Text token delta
+                            content = delta.get("content")
+                            if content:
+                                yield {"type": "token", "content": content}
+
+                            # Tool call deltas
+                            raw_tool_calls = delta.get("tool_calls")
+                            if raw_tool_calls:
+                                for tc in raw_tool_calls:
+                                    idx = tc.get("index")
+                                    if idx is None:
+                                        tc_id = tc.get("id") or ""
+                                        matching_idx = None
+                                        if tc_id:
+                                            for existing_idx, existing_tc in tool_calls_acc.items():
+                                                if existing_tc.get("id") == tc_id:
+                                                    matching_idx = existing_idx
+                                                    break
+                                        idx = matching_idx if matching_idx is not None else len(tool_calls_acc)
+
+                                    func_delta = tc.get("function") or {}
+                                    f_name = func_delta.get("name") or tc.get("name") or ""
+                                    f_args = func_delta.get("arguments") or tc.get("arguments") or ""
+
+                                    if idx not in tool_calls_acc:
+                                        tool_calls_acc[idx] = {
+                                            "id": tc.get("id") or f"call_{idx}",
+                                            "type": "function",
+                                            "function": {
+                                                "name": f_name,
+                                                "arguments": f_args,
+                                            },
+                                        }
+                                    else:
+                                        if tc.get("id"):
+                                            tool_calls_acc[idx]["id"] = tc["id"]
+                                        if f_name:
+                                            tool_calls_acc[idx]["function"]["name"] += f_name
+                                        if f_args:
+                                            tool_calls_acc[idx]["function"]["arguments"] += f_args
+        except Exception as exc:
+            yield {"type": "error", "content": f"Connection to {self.provider} failed: {str(exc)}"}
             return
-
-        # Read SSE Stream in real time line by line
-        tool_calls_acc: dict[int, dict[str, Any]] = {}
-
-        def _read_single_line():
-            try:
-                line_bytes = response.readline()
-                if not line_bytes:
-                    return None
-                return line_bytes.decode("utf-8", errors="replace")
-            except Exception:
-                return None
-
-        while True:
-            line = await asyncio.to_thread(_read_single_line)
-            if line is None:
-                break
-
-            line_str = line.strip()
-            if not line_str or line_str.startswith(":"):
-                continue
-            if line_str == "data: [DONE]":
-                break
-            if line_str.startswith("data: "):
-                raw_json = line_str[6:]
-                try:
-                    chunk_data = json.loads(raw_json)
-                except json.JSONDecodeError:
-                    continue
-
-                choices = chunk_data.get("choices") or []
-                if not choices:
-                    continue
-                delta = choices[0].get("delta") or {}
-
-                # Thought / Reasoning delta
-                thought = delta.get("reasoning_content") or delta.get("reasoning") or delta.get("thought")
-                if thought:
-                    yield {"type": "thought", "content": thought}
-
-                # Text token delta
-                content = delta.get("content")
-                if content:
-                    yield {"type": "token", "content": content}
-
-                # Tool call deltas
-                raw_tool_calls = delta.get("tool_calls")
-                if raw_tool_calls:
-                    for tc in raw_tool_calls:
-                        idx = tc.get("index")
-                        if idx is None:
-                            tc_id = tc.get("id") or ""
-                            matching_idx = None
-                            if tc_id:
-                                for existing_idx, existing_tc in tool_calls_acc.items():
-                                    if existing_tc.get("id") == tc_id:
-                                        matching_idx = existing_idx
-                                        break
-                            idx = matching_idx if matching_idx is not None else len(tool_calls_acc)
-
-                        func_delta = tc.get("function") or {}
-                        f_name = func_delta.get("name") or tc.get("name") or ""
-                        f_args = func_delta.get("arguments") or tc.get("arguments") or ""
-
-                        if idx not in tool_calls_acc:
-                            tool_calls_acc[idx] = {
-                                "id": tc.get("id") or f"call_{idx}",
-                                "type": "function",
-                                "function": {
-                                    "name": f_name,
-                                    "arguments": f_args,
-                                },
-                            }
-                        else:
-                            if tc.get("id"):
-                                tool_calls_acc[idx]["id"] = tc["id"]
-                            if f_name:
-                                tool_calls_acc[idx]["function"]["name"] += f_name
-                            if f_args:
-                                tool_calls_acc[idx]["function"]["arguments"] += f_args
 
         # Yield any accumulated tool calls with repaired JSON arguments
         if tool_calls_acc:
@@ -526,52 +565,43 @@ class UnifiedAIClient:
             "temperature": self.temperature,
             "stream": True,
         }
+        budget_map = {
+            "low": 1024,
+            "medium": 2048,
+            "high": 4096,
+            "extra_high": 8192,
+            "max": 16384,
+        }
+        if any(k in self.model.lower() for k in ("claude-3-7", "sonnet-3-7", "thinking")):
+            payload["thinking"] = {
+                "type": "enabled",
+                "budget_tokens": budget_map.get(str(self.thinking_level).lower(), 2048),
+            }
         if system_prompt:
             payload["system"] = system_prompt
 
-        def _blocking_post():
-            req = urllib.request.Request(
-                url,
-                data=json.dumps(payload).encode("utf-8"),
-                headers=headers,
-                method="POST",
-            )
-            return urllib.request.urlopen(req, timeout=180)
-
+        timeout = httpx.Timeout(180.0, connect=15.0)
         try:
-            response = await asyncio.to_thread(_blocking_post)
-        except urllib.error.HTTPError as err:
-            err_body = err.read().decode("utf-8", errors="replace")
-            err_msg = f"Anthropic HTTP {err.code}: {err.reason}"
-            if err_body:
-                try:
-                    parsed = json.loads(err_body)
-                    if isinstance(parsed, dict) and "error" in parsed:
-                        err_val = parsed["error"]
-                        if isinstance(err_val, dict) and "message" in err_val:
-                            err_msg = f"Anthropic Error (HTTP {err.code}): {err_val['message']}"
-                        elif isinstance(err_val, str):
-                            err_msg = f"Anthropic Error (HTTP {err.code}): {err_val}"
-                except Exception:
-                    err_msg = f"Anthropic HTTP {err.code}: {err_body}"
-            yield {"type": "error", "content": err_msg}
-            return
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                async with client.stream("POST", url, headers=headers, json=payload) as resp:
+                    if resp.status_code != 200:
+                        err_body = (await resp.aread()).decode("utf-8", errors="replace")
+                        yield {"type": "error", "content": f"Anthropic HTTP {resp.status_code}: {err_body[:200]}"}
+                        return
+                    async for line in resp.aiter_lines():
+                        line_str = line.strip()
+                        if line_str.startswith("data: "):
+                            try:
+                                data = json.loads(line_str[6:])
+                                event_type = data.get("type")
+                                if event_type == "content_block_delta":
+                                    delta = data.get("delta") or {}
+                                    if delta.get("type") == "text_delta":
+                                        yield {"type": "token", "content": delta.get("text", "")}
+                                    elif delta.get("type") == "thinking_delta":
+                                        yield {"type": "thought", "content": delta.get("thinking", "")}
+                            except json.JSONDecodeError:
+                                continue
         except Exception as exc:
             yield {"type": "error", "content": f"Anthropic connection failed: {str(exc)}"}
             return
-
-        while True:
-            line_bytes = await asyncio.to_thread(response.readline)
-            if not line_bytes:
-                break
-            line = line_bytes.decode("utf-8", errors="replace").strip()
-            if line.startswith("data: "):
-                try:
-                    data = json.loads(line[6:])
-                    event_type = data.get("type")
-                    if event_type == "content_block_delta":
-                        delta = data.get("delta") or {}
-                        if delta.get("type") == "text_delta":
-                            yield {"type": "token", "content": delta.get("text", "")}
-                except json.JSONDecodeError:
-                    continue

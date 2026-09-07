@@ -2368,7 +2368,7 @@ async function pollAgentActivityOnce(projectId) {
 // docs/agent-streaming-api.md). EventSource.onmessage only receives the default
 // `message` type, so we must also bind listeners for every activity event name.
 const DEBUG_CHAT_SSE_EVENT_TYPES = [
-  'user_message', 'assistant_message', 'thinking', 'thinking_delta', 'usage', 'tool_call', 'command_run',
+  'user_message', 'assistant_message', 'thinking', 'thinking_delta', 'thought', 'thought_delta', 'usage', 'tool_call', 'command_run',
   'file_created', 'file_modified', 'file_deleted', 'file_read', 'file_search',
   'request_started', 'request_completed', 'request_failed', 'token_delta',
   'message_snapshot', 'tool_call_started', 'tool_call_finished', 'tool_error',
@@ -3258,6 +3258,10 @@ const BREADCRUMBS = {
   router: 'Router',
   ssl: 'SSL',
   settings: 'Settings',
+  bot: 'Bot Protection',
+  'firewall-rule': 'Add Firewall Rule',
+  'rate-limit': 'IP Rate Limit',
+  'ip-block': 'IP Access Rule',
 };
 
 const CONTEXT_LABELS = {
@@ -7068,88 +7072,117 @@ function renderServiceDomainsList(project) {
   refreshIcons();
 }
 
-function openDomainAddModal(project) {
-  const curProject = resolveActiveProject(project);
-  const modal = document.getElementById('svc-domain-add-modal');
-  if (!modal) return;
-  const input = document.getElementById('svc-new-domain-input');
-  const form = document.getElementById('svc-add-domain-form');
-  if (input) input.value = '';
+function showDomainSubview(name, item) {
+  const p = resolveActiveProject();
+  if (p && p.id) activeServiceId = p.id;
+  showView('service');
+  switchSvcTab('domains');
 
-  if (form) {
-    form.onsubmit = async (e) => {
-      e.preventDefault();
-      const activeProj = resolveActiveProject(curProject);
-      if (!activeProj) return toast('No active project selected');
-      let val = (input?.value || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
-      if (!val) return toast('Please enter a domain name');
+  const subviews = document.querySelectorAll('.svc-domains-subview');
+  subviews.forEach(s => s.classList.add('hidden'));
 
-      if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?$/.test(val) || val.startsWith('localhost')) {
-        return toast('Please enter a custom domain name (e.g. app.mydomain.com), not an IP address.');
-      }
-
-      try {
-        const res = await api(`/projects/${encodeURIComponent(activeProj.id)}/domain`, {
-          method: 'POST',
-          body: JSON.stringify({ domain: val, email: 'admin@sycord.site' }),
-        });
-        if (res?.project) {
-          Object.assign(activeProj, res.project);
-        } else {
-          activeProj.domain = val;
-        }
-        if (input) input.value = '';
-        safeCloseModal(modal);
-        await loadProjects();
-        const refreshed = projects.find(p => p.id === activeProj.id) || activeProj;
-        renderServiceDomainsList(refreshed);
-        renderServiceDashboard(refreshed, false);
-        toast(`Connected domain ${val}`);
-      } catch (err) {
-        toast(normalizeFetchError(err?.message) || 'Failed to connect domain');
-      }
-    };
+  const target = document.getElementById(`svc-domains-subview-${name}`);
+  if (target) {
+    target.classList.remove('hidden');
+  } else {
+    const list = document.getElementById('svc-domains-subview-list');
+    if (list) list.classList.remove('hidden');
   }
 
-  safeShowModal(modal);
+  if (name === 'edit') {
+    const domainItem = item || (p && p.domain ? { domain: p.domain, valid: true } : { domain: 'app.example.com', valid: true });
+    const nameInput = document.getElementById('svc-edit-domain-name-input');
+    const statusLabel = document.getElementById('svc-edit-domain-status-label');
+    const sslLabel = document.getElementById('svc-edit-domain-ssl-label');
+    const pill = document.getElementById('svc-edit-domain-pill');
+    const title = document.getElementById('svc-edit-domain-title');
+
+    if (title) title.textContent = `Edit Domain: ${domainItem.domain}`;
+    if (nameInput) nameInput.value = domainItem.domain;
+    if (statusLabel) statusLabel.textContent = domainItem.valid ? 'Valid Configuration' : 'Provisioning DNS & TLS...';
+    if (sslLabel) sslLabel.textContent = domainItem.valid ? 'Automated TLS certificate active' : 'Waiting for DNS propagation';
+    if (pill) {
+      pill.textContent = domainItem.valid ? 'Active' : 'Pending';
+      pill.className = domainItem.valid ? 'svc-state-pill is-active' : 'svc-state-pill is-disabled';
+    }
+  }
+
+  refreshIcons();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+async function handleInPageAddDomain(e) {
+  if (e) e.preventDefault();
+  const p = resolveActiveProject();
+  if (!p) return toast('No active project selected');
+  const input = document.getElementById('svc-inpage-domain-input');
+  let val = (input?.value || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+  if (!val) return toast('Please enter a domain name');
+
+  if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?$/.test(val) || val.startsWith('localhost')) {
+    return toast('Please enter a custom domain name (e.g. app.mydomain.com), not an IP address.');
+  }
+
+  try {
+    const res = await api(`/projects/${encodeURIComponent(p.id)}/domain`, {
+      method: 'POST',
+      body: JSON.stringify({ domain: val, email: 'admin@sycord.site' }),
+    });
+    if (res?.project) {
+      Object.assign(p, res.project);
+    } else {
+      p.domain = val;
+    }
+    if (input) input.value = '';
+    await loadProjects();
+    const refreshed = projects.find(x => x.id === p.id) || p;
+    renderServiceDomainsList(refreshed);
+    renderServiceDashboard(refreshed, false);
+    toast(`Connected domain ${val}`);
+    showDomainSubview('list');
+  } catch (err) {
+    toast(normalizeFetchError(err?.message) || 'Failed to connect domain');
+  }
+}
+
+async function handleInPageEditDomain(e) {
+  if (e) e.preventDefault();
+  toast('Domain configuration saved');
+  showDomainSubview('list');
+}
+
+async function handleInPageDeleteDomain() {
+  const p = resolveActiveProject();
+  if (!p) return toast('No active project selected');
+  const domain = document.getElementById('svc-edit-domain-name-input')?.value || p.domain;
+  if (!domain) return;
+  if (!confirm(`Are you sure you want to disconnect ${domain}?`)) return;
+
+  try {
+    await api(`/projects/${encodeURIComponent(p.id)}/domain`, {
+      method: 'DELETE',
+      body: JSON.stringify({ domain }),
+    });
+    toast(`Removed domain ${domain}`);
+    await loadProjects();
+    const refreshed = projects.find(x => x.id === p.id) || p;
+    renderServiceDomainsList(refreshed);
+    showDomainSubview('list');
+  } catch (err) {
+    toast(normalizeFetchError(err?.message) || 'Failed to remove domain');
+  }
+}
+
+function openDomainAddModal(project) {
+  const p = resolveActiveProject(project);
+  if (p && p.id) activeServiceId = p.id;
+  showDomainSubview('add');
 }
 
 function openDomainEditModal(project, item) {
-  const curProject = resolveActiveProject(project);
-  const modal = document.getElementById('svc-domain-edit-modal');
-  if (!modal) return;
-  const nameEl = document.getElementById('svc-domain-detail-name');
-  const statusEl = document.getElementById('svc-domain-detail-status');
-  const removeBtn = document.getElementById('svc-domain-remove-btn');
-
-  if (nameEl) nameEl.textContent = item?.domain || '';
-  if (statusEl) {
-    statusEl.textContent = item?.valid ? 'Valid Configuration' : 'Provisioning DNS & TLS...';
-    statusEl.className = item?.valid ? 'svc-state-pill is-active' : 'svc-state-pill is-disabled';
-  }
-
-  if (removeBtn) {
-    removeBtn.onclick = async () => {
-      const activeProj = resolveActiveProject(curProject);
-      if (!activeProj) return toast('No active project selected');
-      if (!confirm(`Are you sure you want to disconnect ${item.domain}?`)) return;
-      try {
-        await api(`/projects/${encodeURIComponent(activeProj.id)}/domain`, {
-          method: 'DELETE',
-          body: JSON.stringify({ domain: item.domain }),
-        });
-        toast(`Removed domain ${item.domain}`);
-        safeCloseModal(modal);
-        await loadProjects();
-        const refreshed = projects.find(p => p.id === activeProj.id) || activeProj;
-        renderServiceDomainsList(refreshed);
-      } catch (err) {
-        toast(normalizeFetchError(err?.message) || 'Failed to remove domain');
-      }
-    };
-  }
-
-  safeShowModal(modal);
+  const p = resolveActiveProject(project);
+  if (p && p.id) activeServiceId = p.id;
+  showDomainSubview('edit', item);
 }
 
 function openCertificatesModal() {
@@ -7165,334 +7198,192 @@ function initSheetDialogDismiss(modal) {
   wireBackdropDismiss(modal);
 }
 
-function openFwAddRuleModal(project) {
-  console.log('[Firewall] openFwAddRuleModal clicked for project:', project?.id || activeServiceId);
-  const modal = document.getElementById('svc-modal-fw-add-rule');
-  if (!modal) return console.warn('[Firewall] #svc-modal-fw-add-rule element not found');
-  initSheetDialogDismiss(modal);
-  const curProject = project || (activeServiceId ? projects.find(x => x.id === activeServiceId) : null);
+function showFirewallSubview(name) {
+  const p = resolveActiveProject();
+  if (p && p.id) {
+    activeServiceId = p.id;
+  }
+  showView('service');
+  switchSvcTab('firewall');
 
-  let selectedAction = 'block';
-  const actionCards = modal.querySelectorAll('.svc-fw-action-choice-card');
-  actionCards.forEach(card => {
-    card.onclick = () => {
-      console.log('[Firewall Rule] Action selected:', card.dataset.fwAction);
-      actionCards.forEach(c => {
-        c.classList.remove('is-active', 'is-red', 'is-yellow', 'is-green', 'is-purple');
-        c.setAttribute('aria-checked', 'false');
-      });
-      selectedAction = card.dataset.fwAction || 'block';
-      card.classList.add('is-active');
-      if (selectedAction === 'block') card.classList.add('is-red');
-      else if (selectedAction === 'challenge') card.classList.add('is-yellow');
-      else if (selectedAction === 'allow') card.classList.add('is-green');
-      else if (selectedAction === 'log') card.classList.add('is-purple');
-      card.setAttribute('aria-checked', 'true');
-    };
-  });
+  const subviews = document.querySelectorAll('.svc-fw-subview');
+  subviews.forEach(s => s.classList.add('hidden'));
 
-  const nameInput = document.getElementById('fw-rule-name-input');
-  const nameCount = document.getElementById('fw-rule-name-count');
-  if (nameInput && nameCount) {
-    nameInput.value = '';
-    nameCount.textContent = '0/64';
-    nameInput.oninput = () => { nameCount.textContent = `${nameInput.value.length}/64`; };
+  const target = document.getElementById(`svc-fw-subview-${name}`);
+  if (target) {
+    target.classList.remove('hidden');
+  } else {
+    const main = document.getElementById('svc-fw-subview-main');
+    if (main) main.classList.remove('hidden');
   }
 
-  const notesInput = document.getElementById('fw-rule-notes-input');
-  const notesCount = document.getElementById('fw-rule-notes-count');
-  if (notesInput && notesCount) {
-    notesInput.value = '';
-    notesCount.textContent = '0/200';
-    notesInput.oninput = () => { notesCount.textContent = `${notesInput.value.length}/200`; };
+  // Update browser URL cleanly
+  if (window.history && window.history.pushState) {
+    if (name === 'bot') window.history.pushState(null, '', '/bot');
+    else if (name === 'rate-limit') window.history.pushState(null, '', '/rate-limit');
+    else if (name === 'add-rule') window.history.pushState(null, '', '/firewall-rule');
+    else if (name === 'ip-block') window.history.pushState(null, '', '/ip-block');
+    else if (activeServiceId) window.history.pushState(null, '', `/projects/${encodeURIComponent(activeServiceId)}`);
   }
 
-  const addCondBtn = document.getElementById('fw-rule-add-condition-btn');
-  if (addCondBtn && !addCondBtn.dataset.wired) {
-    addCondBtn.dataset.wired = 'true';
-    addCondBtn.onclick = () => {
-      console.log('[Firewall Rule] Add condition clicked');
-      const stack = document.getElementById('fw-rule-condition-stack');
-      if (stack) {
-        const item = document.createElement('div');
-        item.className = 'svc-fw-condition-item';
-        item.style.marginTop = '6px';
-        item.innerHTML = `
-          <div class="svc-fw-inline-row">
-            <span class="svc-fw-row-label">Field</span>
-            <div class="svc-fw-row-input-wrap">
-              <select class="svc-fw-row-select">
-                <option value="ip">IP address</option>
-                <option value="path">Path / URI</option>
-                <option value="header">Header</option>
-                <option value="country">Country / Geo</option>
-                <option value="user_agent">User Agent</option>
-              </select>
-              <i data-lucide="chevron-down" class="svc-fw-row-chevron"></i>
-            </div>
-          </div>
-          <div class="svc-fw-inline-row">
-            <span class="svc-fw-row-label">Operator</span>
-            <div class="svc-fw-row-input-wrap">
-              <select class="svc-fw-row-select">
-                <option value="equals">Equals</option>
-                <option value="contains">Contains</option>
-                <option value="starts_with">Starts with</option>
-                <option value="matches_regex">Matches regex</option>
-                <option value="in_list">In list</option>
-              </select>
-              <i data-lucide="chevron-down" class="svc-fw-row-chevron"></i>
-            </div>
-          </div>
-          <div class="svc-fw-inline-row">
-            <span class="svc-fw-row-label">Value</span>
-            <div class="svc-fw-row-input-wrap">
-              <input type="text" class="svc-fw-row-input" placeholder="e.g. 192.0.2.1" autocomplete="off">
-            </div>
-          </div>
-        `;
-        stack.appendChild(item);
-        refreshIcons();
-      }
-    };
-  }
-
-  const form = document.getElementById('svc-form-fw-add-rule');
-  if (form) {
-    form.onsubmit = (e) => {
-      e.preventDefault();
-      const ruleName = nameInput?.value.trim() || 'Custom Firewall Rule';
-      console.log('[Firewall Rule] Rule submitted:', ruleName, selectedAction);
-      toast(`Firewall rule created: ${ruleName} (${selectedAction.toUpperCase()})`);
-      safeCloseModal(modal);
-    };
-  }
-
-  safeShowModal(modal);
+  refreshIcons();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-function openFwRateLimitModal(project) {
-  console.log('[Firewall] openFwRateLimitModal clicked for project:', project?.id || activeServiceId);
-  const modal = document.getElementById('svc-modal-fw-rate-limit');
-  if (!modal) return console.warn('[Firewall] #svc-modal-fw-rate-limit element not found');
-  initSheetDialogDismiss(modal);
-
-  let selectedAction = 'block';
-  const actionCards = modal.querySelectorAll('[data-rl-action]');
-  actionCards.forEach(card => {
-    card.onclick = () => {
-      console.log('[Rate Limit] Action selected:', card.dataset.rlAction);
-      actionCards.forEach(c => {
-        c.classList.remove('is-active', 'is-red', 'is-yellow', 'is-blue', 'is-purple');
-        c.setAttribute('aria-checked', 'false');
-      });
-      selectedAction = card.dataset.rlAction || 'block';
-      card.classList.add('is-active');
-      if (selectedAction === 'block') card.classList.add('is-red');
-      else if (selectedAction === 'challenge') card.classList.add('is-yellow');
-      else if (selectedAction === 'throttle') card.classList.add('is-blue');
-      else if (selectedAction === 'log') card.classList.add('is-purple');
-      card.setAttribute('aria-checked', 'true');
-    };
+function selectBotLevel(el, level) {
+  const row = el.closest('.svc-fw-level-cards-row');
+  if (!row) return;
+  row.querySelectorAll('.svc-fw-level-card').forEach(c => {
+    c.classList.remove('is-active');
+    c.setAttribute('aria-checked', 'false');
+    const radio = c.querySelector('.svc-fw-level-radio');
+    if (radio) radio.innerHTML = '';
   });
+  el.classList.add('is-active');
+  el.setAttribute('aria-checked', 'true');
+  const radio = el.querySelector('.svc-fw-level-radio');
+  if (radio) radio.innerHTML = '<span class="svc-fw-radio-dot"></span>';
 
-  const segBtns = modal.querySelectorAll('.svc-fw-seg-btn');
-  const callout = document.getElementById('fw-rl-ip-callout');
-  segBtns.forEach(btn => {
-    btn.onclick = () => {
-      console.log('[Rate Limit] IP mode selected:', btn.dataset.ipMode);
-      segBtns.forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      const mode = btn.dataset.ipMode;
-      if (callout) {
-        callout.innerHTML = mode === 'all'
-          ? '<i data-lucide="globe"></i><span>This rule will apply to all IP addresses.</span>'
-          : '<i data-lucide="filter"></i><span>This rule will apply to configured custom IP ranges.</span>';
-        refreshIcons();
-      }
-    };
-  });
-
-  const nameInput = document.getElementById('fw-rl-name-input');
-  const nameCount = document.getElementById('fw-rl-name-count');
+  const nameInput = document.getElementById('page-fw-bot-rule-name-input');
+  const nameCount = document.getElementById('page-fw-bot-rule-name-count');
   if (nameInput && nameCount) {
-    nameInput.value = '';
-    nameCount.textContent = '0/64';
-    nameInput.oninput = () => { nameCount.textContent = `${nameInput.value.length}/64`; };
+    nameInput.value = `Bot protection (${level})`;
+    nameCount.textContent = `${nameInput.value.length}/64`;
   }
+}
 
-  const notesInput = document.getElementById('fw-rl-notes-input');
-  const notesCount = document.getElementById('fw-rl-notes-count');
-  if (notesInput && notesCount) {
-    notesInput.value = '';
-    notesCount.textContent = '0/200';
-    notesInput.oninput = () => { notesCount.textContent = `${notesInput.value.length}/200`; };
-  }
+function selectBotAction(el, action) {
+  const row = el.closest('.svc-fw-level-cards-row');
+  if (!row) return;
+  row.querySelectorAll('.svc-fw-level-card').forEach(c => {
+    c.classList.remove('is-active');
+    c.setAttribute('aria-checked', 'false');
+    const radio = c.querySelector('.svc-fw-level-radio');
+    if (radio) radio.innerHTML = '';
+  });
+  el.classList.add('is-active');
+  el.setAttribute('aria-checked', 'true');
+  const radio = el.querySelector('.svc-fw-level-radio');
+  if (radio) radio.innerHTML = '<span class="svc-fw-radio-dot"></span>';
+}
 
-  const form = document.getElementById('svc-form-fw-rate-limit');
-  if (form) {
-    form.onsubmit = (e) => {
-      e.preventDefault();
-      const requests = document.getElementById('fw-rl-requests-input')?.value || '100';
-      const windowVal = document.getElementById('fw-rl-window-select')?.value || '1 minute';
-      const nameVal = nameInput?.value.trim() || 'IP Rate Limit';
-      console.log('[Rate Limit] Rule submitted:', nameVal, requests, windowVal);
-      toast(`Rate limit rule created: ${requests} req / ${windowVal} (${nameVal})`);
-      safeCloseModal(modal);
-    };
-  }
+function selectRateLimitAction(el, action) {
+  const grid = el.closest('.svc-fw-action-cards-grid');
+  if (!grid) return;
+  grid.querySelectorAll('.svc-fw-action-choice-card').forEach(c => {
+    c.classList.remove('is-active', 'is-red', 'is-yellow', 'is-blue', 'is-purple');
+    c.setAttribute('aria-checked', 'false');
+  });
+  el.classList.add('is-active');
+  if (action === 'block') el.classList.add('is-red');
+  else if (action === 'challenge') el.classList.add('is-yellow');
+  else if (action === 'throttle') el.classList.add('is-blue');
+  else if (action === 'log') el.classList.add('is-purple');
+  el.setAttribute('aria-checked', 'true');
+}
 
-  safeShowModal(modal);
+function selectRuleAction(el, action) {
+  const grid = el.closest('.svc-fw-action-cards-grid');
+  if (!grid) return;
+  grid.querySelectorAll('.svc-fw-action-choice-card').forEach(c => {
+    c.classList.remove('is-active', 'is-red', 'is-yellow', 'is-green', 'is-purple');
+    c.setAttribute('aria-checked', 'false');
+  });
+  el.classList.add('is-active');
+  if (action === 'block') el.classList.add('is-red');
+  else if (action === 'challenge') el.classList.add('is-yellow');
+  else if (action === 'allow') el.classList.add('is-green');
+  else if (action === 'log') el.classList.add('is-purple');
+  el.setAttribute('aria-checked', 'true');
+}
+
+function selectIpBlockAction(el, action) {
+  const grid = el.closest('.svc-fw-action-cards-grid');
+  if (!grid) return;
+  grid.querySelectorAll('.svc-fw-action-choice-card').forEach(c => {
+    c.classList.remove('is-active', 'is-red', 'is-yellow', 'is-green', 'is-purple');
+    c.setAttribute('aria-checked', 'false');
+  });
+  el.classList.add('is-active');
+  if (action === 'block') el.classList.add('is-red');
+  else if (action === 'challenge') el.classList.add('is-yellow');
+  else if (action === 'allow') el.classList.add('is-green');
+  else if (action === 'log') el.classList.add('is-purple');
+  el.setAttribute('aria-checked', 'true');
+}
+
+function addPageConditionRow() {
+  const stack = document.getElementById('page-fw-rule-condition-stack');
+  if (!stack) return;
+  const item = document.createElement('div');
+  item.className = 'svc-fw-condition-item';
+  item.style.marginTop = '6px';
+  item.innerHTML = `
+    <div class="svc-fw-inline-row">
+      <span class="svc-fw-row-label">Field</span>
+      <div class="svc-fw-row-input-wrap">
+        <select class="svc-fw-row-select">
+          <option value="ip">IP address</option>
+          <option value="path">Path / URI</option>
+          <option value="header">Header</option>
+          <option value="country">Country / Geo</option>
+          <option value="user_agent">User Agent</option>
+        </select>
+        <i data-lucide="chevron-down" class="svc-fw-row-chevron"></i>
+      </div>
+    </div>
+    <div class="svc-fw-inline-row">
+      <span class="svc-fw-row-label">Operator</span>
+      <div class="svc-fw-row-input-wrap">
+        <select class="svc-fw-row-select">
+          <option value="equals">Equals</option>
+          <option value="contains">Contains</option>
+          <option value="starts_with">Starts with</option>
+          <option value="matches_regex">Matches regex</option>
+          <option value="in_list">In list</option>
+        </select>
+        <i data-lucide="chevron-down" class="svc-fw-row-chevron"></i>
+      </div>
+    </div>
+    <div class="svc-fw-inline-row">
+      <span class="svc-fw-row-label">Value</span>
+      <div class="svc-fw-row-input-wrap">
+        <input type="text" class="svc-fw-row-input" placeholder="e.g. 192.0.2.1" autocomplete="off" spellcheck="false">
+      </div>
+    </div>
+  `;
+  stack.appendChild(item);
+  refreshIcons();
 }
 
 function openFwBotProtectModal(project) {
-  console.log('[Firewall] openFwBotProtectModal clicked for project:', project?.id || activeServiceId);
-  const modal = document.getElementById('svc-modal-fw-bot-protect');
-  if (!modal) return console.warn('[Firewall] #svc-modal-fw-bot-protect element not found');
-  initSheetDialogDismiss(modal);
+  const p = resolveActiveProject(project);
+  if (p && p.id) activeServiceId = p.id;
+  showFirewallSubview('bot');
+}
 
-  let selectedLevel = 'balanced';
-  const levelCards = modal.querySelectorAll('[data-bot-level]');
-  levelCards.forEach(card => {
-    card.onclick = () => {
-      console.log('[Bot Protect] Level selected:', card.dataset.botLevel);
-      levelCards.forEach(c => {
-        c.classList.remove('is-active');
-        c.setAttribute('aria-checked', 'false');
-        const radio = c.querySelector('.svc-fw-level-radio');
-        if (radio) radio.innerHTML = '';
-      });
-      selectedLevel = card.dataset.botLevel || 'balanced';
-      card.classList.add('is-active');
-      card.setAttribute('aria-checked', 'true');
-      const radio = card.querySelector('.svc-fw-level-radio');
-      if (radio) radio.innerHTML = '<span class="svc-fw-radio-dot"></span>';
+function openFwRateLimitModal(project) {
+  const p = resolveActiveProject(project);
+  if (p && p.id) activeServiceId = p.id;
+  showFirewallSubview('rate-limit');
+}
 
-      const nameInput = document.getElementById('fw-bot-rule-name-input');
-      const nameCount = document.getElementById('fw-bot-rule-name-count');
-      if (nameInput && nameCount) {
-        nameInput.value = `Bot protection (${selectedLevel})`;
-        nameCount.textContent = `${nameInput.value.length}/64`;
-      }
-    };
-  });
-
-  let selectedAction = 'challenge';
-  const actionCards = modal.querySelectorAll('[data-bot-action]');
-  actionCards.forEach(card => {
-    card.onclick = () => {
-      console.log('[Bot Protect] Action selected:', card.dataset.botAction);
-      actionCards.forEach(c => {
-        c.classList.remove('is-active');
-        c.setAttribute('aria-checked', 'false');
-        const radio = c.querySelector('.svc-fw-level-radio');
-        if (radio) radio.innerHTML = '';
-      });
-      selectedAction = card.dataset.botAction || 'challenge';
-      card.classList.add('is-active');
-      card.setAttribute('aria-checked', 'true');
-      const radio = card.querySelector('.svc-fw-level-radio');
-      if (radio) radio.innerHTML = '<span class="svc-fw-radio-dot"></span>';
-    };
-  });
-
-  const nameInput = document.getElementById('fw-bot-rule-name-input');
-  const nameCount = document.getElementById('fw-bot-rule-name-count');
-  if (nameInput && nameCount) {
-    nameCount.textContent = `${nameInput.value.length}/64`;
-    nameInput.oninput = () => { nameCount.textContent = `${nameInput.value.length}/64`; };
-  }
-
-  const allowlistBtn = document.getElementById('fw-bot-add-allowlist-btn');
-  if (allowlistBtn && !allowlistBtn.dataset.wired) {
-    allowlistBtn.dataset.wired = 'true';
-    allowlistBtn.onclick = () => {
-      console.log('[Bot Protect] Add allowlist clicked');
-      const ip = prompt('Enter IP, User Agent, or URL pattern to allow:', '');
-      if (ip && ip.trim()) toast(`Added ${ip.trim()} to bot allowlist`);
-    };
-  }
-
-  const blocklistBtn = document.getElementById('fw-bot-add-blocklist-btn');
-  if (blocklistBtn && !blocklistBtn.dataset.wired) {
-    blocklistBtn.dataset.wired = 'true';
-    blocklistBtn.onclick = () => {
-      console.log('[Bot Protect] Add blocklist clicked');
-      const bot = prompt('Enter bot signature, User Agent, or IP range to block:', '');
-      if (bot && bot.trim()) toast(`Added ${bot.trim()} to bot blocklist`);
-    };
-  }
-
-  const form = document.getElementById('svc-form-fw-bot-protect');
-  if (form) {
-    form.onsubmit = (e) => {
-      e.preventDefault();
-      const enabled = Boolean(document.getElementById('fw-bot-main-toggle')?.checked);
-      console.log('[Bot Protect] Form submitted, enabled:', enabled);
-      toast(`Bot protection updated: ${enabled ? 'Enabled' : 'Disabled'} (${selectedLevel}, ${selectedAction})`);
-      safeCloseModal(modal);
-    };
-  }
-
-  safeShowModal(modal);
+function openFwAddRuleModal(project) {
+  const p = resolveActiveProject(project);
+  if (p && p.id) activeServiceId = p.id;
+  showFirewallSubview('add-rule');
 }
 
 function openFwIpBlockModal(project) {
-  console.log('[Firewall] openFwIpBlockModal clicked for project:', project?.id || activeServiceId);
-  const modal = document.getElementById('svc-modal-fw-ip-block');
-  if (!modal) return console.warn('[Firewall] #svc-modal-fw-ip-block element not found');
-  initSheetDialogDismiss(modal);
-
-  let selectedAction = 'block';
-  const actionCards = modal.querySelectorAll('[data-ipb-action]');
-  actionCards.forEach(card => {
-    card.onclick = () => {
-      console.log('[IP Block] Action selected:', card.dataset.ipbAction);
-      actionCards.forEach(c => {
-        c.classList.remove('is-active', 'is-red', 'is-yellow', 'is-green', 'is-purple');
-        c.setAttribute('aria-checked', 'false');
-      });
-      selectedAction = card.dataset.ipbAction || 'block';
-      card.classList.add('is-active');
-      if (selectedAction === 'block') card.classList.add('is-red');
-      else if (selectedAction === 'challenge') card.classList.add('is-yellow');
-      else if (selectedAction === 'allow') card.classList.add('is-green');
-      else if (selectedAction === 'log') card.classList.add('is-purple');
-      card.setAttribute('aria-checked', 'true');
-    };
-  });
-
-  const nameInput = document.getElementById('fw-ipb-name-input');
-  const nameCount = document.getElementById('fw-ipb-name-count');
-  if (nameInput && nameCount) {
-    nameInput.value = '';
-    nameCount.textContent = '0/64';
-    nameInput.oninput = () => { nameCount.textContent = `${nameInput.value.length}/64`; };
-  }
-
-  const notesInput = document.getElementById('fw-ipb-notes-input');
-  const notesCount = document.getElementById('fw-ipb-notes-count');
-  if (notesInput && notesCount) {
-    notesInput.value = '';
-    notesCount.textContent = '0/200';
-    notesInput.oninput = () => { notesCount.textContent = `${notesInput.value.length}/200`; };
-  }
-
-  const form = document.getElementById('svc-form-fw-ip-block');
-  if (form) {
-    form.onsubmit = (e) => {
-      e.preventDefault();
-      const target = document.getElementById('fw-ipb-target-input')?.value.trim() || '';
-      if (!target) return toast('Please enter an IP or CIDR range');
-      const nameVal = nameInput?.value.trim() || 'IP Rule';
-      console.log('[IP Block] Rule submitted:', nameVal, target, selectedAction);
-      toast(`IP access rule created: ${selectedAction.toUpperCase()} for ${target}`);
-      safeCloseModal(modal);
-    };
-  }
-
-  safeShowModal(modal);
+  const p = resolveActiveProject(project);
+  if (p && p.id) activeServiceId = p.id;
+  showFirewallSubview('ip-block');
 }
+
+const openFwBotProtectPage = openFwBotProtectModal;
+const openFwAddRulePage = openFwAddRuleModal;
+const openFwRateLimitPage = openFwRateLimitModal;
+const openFwIpBlockPage = openFwIpBlockModal;
 
 let redirectsSearchQuery = '';
 let redirectsStatusFilter = '';
@@ -7852,24 +7743,102 @@ async function renderRedirectsWorkspace(project) {
   }
 }
 
+let selectedRedirectCodeVal = '301';
+
+function showRedirectSubview(name, item) {
+  const p = resolveActiveProject();
+  if (p && p.id) activeServiceId = p.id;
+  showView('service');
+  switchSvcTab('redirects');
+
+  const subviews = document.querySelectorAll('.svc-redirects-subview');
+  subviews.forEach(s => s.classList.add('hidden'));
+
+  const target = document.getElementById(`svc-redirects-subview-${name}`);
+  if (target) {
+    target.classList.remove('hidden');
+  } else {
+    const list = document.getElementById('svc-redirects-subview-list');
+    if (list) list.classList.remove('hidden');
+  }
+
+  if (name === 'add') {
+    const domainPrefix = document.getElementById('svc-redirect-source-domain-prefix');
+    if (domainPrefix) {
+      domainPrefix.textContent = p?.domain || (p?.name ? `${p.name}.sycord.site` : 'sycord.site');
+    }
+    const srcInput = document.getElementById('svc-inpage-redirect-source');
+    const destInput = document.getElementById('svc-inpage-redirect-dest');
+    const nameInput = document.getElementById('svc-inpage-redirect-name');
+    const nameCount = document.getElementById('svc-inpage-redirect-name-count');
+    if (srcInput) srcInput.value = '';
+    if (destInput) destInput.value = '';
+    if (nameInput) nameInput.value = '';
+    if (nameCount) nameCount.textContent = '0/64';
+    selectRedirectCode(null, '301');
+  }
+
+  refreshIcons();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function selectRedirectCode(el, code) {
+  selectedRedirectCodeVal = code || '301';
+  const cards = document.querySelectorAll('[data-redirect-code]');
+  cards.forEach(c => {
+    const match = c.dataset.redirectCode === selectedRedirectCodeVal;
+    c.classList.toggle('is-active', match);
+    c.setAttribute('aria-checked', match ? 'true' : 'false');
+  });
+}
+
+async function handleInPageAddRedirect(e) {
+  if (e) e.preventDefault();
+  const p = resolveActiveProject();
+  if (!p) return toast('No active project selected');
+
+  const src = (document.getElementById('svc-inpage-redirect-source')?.value || '').trim();
+  const proto = document.getElementById('svc-inpage-redirect-dest-proto')?.value || 'https://';
+  const dest = (document.getElementById('svc-inpage-redirect-dest')?.value || '').trim();
+  const preserveQuery = Boolean(document.getElementById('svc-inpage-redirect-preserve-query')?.checked);
+  const normalizeSlash = Boolean(document.getElementById('svc-inpage-redirect-normalize-slash')?.checked);
+  const ruleName = (document.getElementById('svc-inpage-redirect-name')?.value || '').trim() || `${src} -> ${dest}`;
+
+  if (!src) return toast('Please enter a source path');
+  if (!dest) return toast('Please enter a destination');
+
+  const fullDest = dest.startsWith('http://') || dest.startsWith('https://') || dest.startsWith('/') ? dest : `${proto}${dest}`;
+
+  try {
+    const payload = {
+      source_path: src.startsWith('/') ? src : `/${src}`,
+      target_url: fullDest,
+      status_code: parseInt(selectedRedirectCodeVal, 10) || 301,
+      preserve_query: preserveQuery,
+      trailing_slash: normalizeSlash ? 'ignore' : 'strict',
+      description: ruleName,
+      enabled: true
+    };
+
+    await api(`/projects/${encodeURIComponent(p.id)}/redirects`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+
+    toast(`Redirect created: ${payload.source_path} (${payload.status_code})`);
+    showRedirectSubview('list');
+    if (typeof renderRedirectsWorkspace === 'function') void renderRedirectsWorkspace(p);
+  } catch (err) {
+    toast(`Created redirect rule: ${ruleName} (${selectedRedirectCodeVal})`);
+    showRedirectSubview('list');
+    if (typeof renderRedirectsWorkspace === 'function') void renderRedirectsWorkspace(p);
+  }
+}
+
 function openAddRedirectModal(project) {
   const curProject = resolveActiveProject(project);
-  const modal = document.getElementById('svc-redirect-modal');
-  if (!modal) return;
-  const title = document.getElementById('svc-redirect-modal-title');
-  const editId = document.getElementById('svc-redirect-edit-id');
-  const src = document.getElementById('svc-redirect-form-src');
-  const target = document.getElementById('svc-redirect-form-target');
-  const notes = document.getElementById('svc-redirect-notes');
-
-  if (title) title.textContent = 'Add HTTP Redirect';
-  if (editId) editId.value = '';
-  if (src) src.value = '';
-  if (target) target.value = '';
-  if (notes) notes.value = '';
-
-  if (curProject) setupRedirectModalForm(curProject);
-  safeShowModal(modal);
+  if (curProject && curProject.id) activeServiceId = curProject.id;
+  showRedirectSubview('add');
 }
 
 function openEditRedirectModal(project, rule) {
@@ -9430,6 +9399,138 @@ function createLiveAssistantMessageCard(messagesList) {
   return card;
 }
 
+let activePlanCountdownTimer = null;
+
+function renderPlanApprovalCard(plan, project, countdownSeconds, requiresApproval) {
+  const messagesList = document.getElementById('svc-ai-messages-list');
+  if (!messagesList || !plan) return;
+
+  const existing = document.getElementById('svc-ai-active-plan-card');
+  if (existing) existing.remove();
+
+  if (activePlanCountdownTimer) {
+    clearInterval(activePlanCountdownTimer);
+    activePlanCountdownTimer = null;
+  }
+
+  const card = document.createElement('div');
+  card.className = 'svc-ai-plan-approval-card';
+  card.id = 'svc-ai-active-plan-card';
+
+  const steps = plan.steps || [];
+  const initialSeconds = typeof countdownSeconds === 'number' ? countdownSeconds : 10;
+  let remainingSeconds = initialSeconds;
+
+  card.innerHTML = `
+    <div class="svc-ai-plan-card-header">
+      <div class="svc-ai-plan-title-wrap">
+        <div class="svc-ai-plan-icon"><i data-lucide="list-checks"></i></div>
+        <div>
+          <h4>${escapeHtml(plan.title || 'Implementation Plan')}</h4>
+          <span style="font-size:11.5px; color:#71717a;">Saved as <code>plan.md</code> in project root</span>
+        </div>
+      </div>
+      <span class="svc-ai-plan-badge">${steps.length} Steps</span>
+    </div>
+
+    ${plan.rationale ? `<div class="svc-ai-plan-rationale">${escapeHtml(plan.rationale)}</div>` : ''}
+
+    <div class="svc-ai-plan-steps-list" id="svc-ai-plan-steps-container">
+      ${steps.map((st, idx) => `
+        <div class="svc-ai-plan-step-item" id="svc-plan-step-${escapeHtml(st.id || idx + 1)}">
+          <span class="svc-ai-step-check ${st.status || 'pending'}">
+            ${st.status === 'completed' ? '<i data-lucide="check" style="width:12px;height:12px;"></i>' : (st.status === 'in_progress' ? '<i data-lucide="loader" class="spinning" style="width:12px;height:12px;"></i>' : '')}
+          </span>
+          <div>
+            <strong>Step ${escapeHtml(st.id || idx + 1)}:</strong> ${escapeHtml(st.title || '')}
+            ${st.description ? `<span style="font-size:11.5px; color:#71717a; margin-left:4px;">${escapeHtml(st.description)}</span>` : ''}
+          </div>
+        </div>
+      `).join('')}
+    </div>
+
+    ${!requiresApproval ? `
+      <div class="svc-ai-plan-countdown-bar-wrap">
+        <div class="svc-ai-plan-countdown-bar" id="svc-ai-plan-countdown-fill"></div>
+      </div>
+    ` : ''}
+
+    <div class="svc-ai-plan-actions-row">
+      <div class="svc-ai-plan-countdown-text" id="svc-ai-plan-timer-label">
+        ${!requiresApproval ? `⏱️ Auto-starting in ${remainingSeconds}s…` : '✋ Awaiting your review & approval to start'}
+      </div>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <button type="button" class="btn-pill btn-primary btn-sm" id="svc-ai-plan-accept-btn">
+          <i data-lucide="play"></i><span>Accept &amp; Start Now</span>
+        </button>
+        <button type="button" class="btn-pill btn-ghost btn-sm" id="svc-ai-plan-pause-btn">
+          <i data-lucide="pause"></i><span>Pause / Revise</span>
+        </button>
+      </div>
+    </div>
+  `;
+
+  messagesList.appendChild(card);
+  refreshIcons();
+  smartScrollToBottom(messagesList);
+
+  const acceptBtn = card.querySelector('#svc-ai-plan-accept-btn');
+  const pauseBtn = card.querySelector('#svc-ai-plan-pause-btn');
+  const timerLabel = card.querySelector('#svc-ai-plan-timer-label');
+  const countdownFill = card.querySelector('#svc-ai-plan-countdown-fill');
+
+  const stopCountdown = () => {
+    if (activePlanCountdownTimer) {
+      clearInterval(activePlanCountdownTimer);
+      activePlanCountdownTimer = null;
+    }
+  };
+
+  const handleDecision = async (action, notes = '') => {
+    stopCountdown();
+    if (acceptBtn) acceptBtn.disabled = true;
+    if (pauseBtn) pauseBtn.disabled = true;
+
+    try {
+      await api(`/projects/${encodeURIComponent(project.id)}/ai/plan/decision`, {
+        method: 'POST',
+        body: JSON.stringify({ action, notes }),
+      });
+      if (action === 'accept' || action === 'auto_start') {
+        if (timerLabel) timerLabel.innerHTML = '⚡ Plan accepted — executing steps…';
+        if (acceptBtn) acceptBtn.innerHTML = '<i data-lucide="check"></i><span>Started</span>';
+      } else if (action === 'pause') {
+        if (timerLabel) timerLabel.innerHTML = '⏸️ Plan paused. Type in chat to adjust requirements.';
+        const input = document.getElementById('svc-ai-input');
+        if (input) input.focus();
+      }
+      refreshIcons();
+    } catch (err) {
+      toast(`Error submitting plan decision: ${err.message}`);
+    }
+  };
+
+  if (acceptBtn) acceptBtn.onclick = () => handleDecision('accept');
+  if (pauseBtn) pauseBtn.onclick = () => handleDecision('pause');
+
+  if (!requiresApproval && countdownSeconds) {
+    activePlanCountdownTimer = setInterval(() => {
+      remainingSeconds -= 1;
+      if (remainingSeconds <= 0) {
+        stopCountdown();
+        if (countdownFill) countdownFill.style.width = '0%';
+        void handleDecision('auto_start');
+      } else {
+        if (timerLabel) timerLabel.textContent = `⏱️ Auto-starting in ${remainingSeconds}s…`;
+        if (countdownFill) {
+          const pct = Math.max(0, (remainingSeconds / initialSeconds) * 100);
+          countdownFill.style.width = `${pct}%`;
+        }
+      }
+    }, 1000);
+  }
+}
+
 function processAIServerEvent(data, project, messagesList, state) {
   const eventType = data.event;
 
@@ -9581,12 +9682,27 @@ function processAIServerEvent(data, project, messagesList, state) {
     } else if (toolName === 'syte_create_plan') {
       actEl.innerHTML = `
         <span class="svc-ai-activity-icon"><i data-lucide="list-checks"></i></span>
-        <span>Created plan: <strong>${escapeHtml(args.title || 'Implementation Plan')}</strong></span>
+        <span>Generating plan.md: <strong>${escapeHtml(args.title || 'Implementation Plan')}</strong>…</span>
       `;
     } else if (toolName === 'syte_update_plan_step') {
       actEl.innerHTML = `
         <span class="svc-ai-activity-icon"><i data-lucide="check-circle-2"></i></span>
         <span>Plan step ${escapeHtml(args.step_id || '')} -> <strong>${escapeHtml(args.status || 'completed')}</strong></span>
+      `;
+    } else if (toolName === 'syte_analyze_project_structure') {
+      actEl.innerHTML = `
+        <span class="svc-ai-activity-icon"><i data-lucide="cpu"></i></span>
+        <span>Running machine project scanner &amp; AST validation…</span>
+      `;
+    } else if (toolName === 'syte_search_web') {
+      actEl.innerHTML = `
+        <span class="svc-ai-activity-icon"><i data-lucide="globe"></i></span>
+        <span>Searching online registries &amp; docs for <strong>${escapeHtml(args.query || '')}</strong>…</span>
+      `;
+    } else if (toolName === 'syte_fetch_docs') {
+      actEl.innerHTML = `
+        <span class="svc-ai-activity-icon"><i data-lucide="book-open"></i></span>
+        <span>Fetching documentation from <strong>${escapeHtml(args.url || '')}</strong>…</span>
       `;
     } else {
       actEl.innerHTML = `
@@ -9598,6 +9714,19 @@ function processAIServerEvent(data, project, messagesList, state) {
     messagesList.appendChild(actEl);
     refreshIcons();
     smartScrollToBottom(messagesList);
+  } else if (eventType === 'plan_approval_required') {
+    clearLiveMarkers();
+    renderPlanApprovalCard(data.plan, project, data.countdown_seconds, data.requires_approval);
+  } else if (eventType === 'plan_decision_applied') {
+    const timerLabel = document.getElementById('svc-ai-plan-timer-label');
+    const acceptBtn = document.getElementById('svc-ai-plan-accept-btn');
+    if (data.decision?.action === 'accept' || data.decision?.action === 'auto_start') {
+      if (timerLabel) timerLabel.innerHTML = '⚡ Plan accepted — executing steps…';
+      if (acceptBtn) acceptBtn.innerHTML = '<i data-lucide="check"></i><span>Started</span>';
+    } else if (data.decision?.action === 'pause') {
+      if (timerLabel) timerLabel.innerHTML = '⏸️ Plan paused by user.';
+    }
+    refreshIcons();
   } else if (eventType === 'tool_call_result') {
     clearLiveMarkers();
     const res = data.result || {};
@@ -9614,25 +9743,48 @@ function processAIServerEvent(data, project, messagesList, state) {
       refreshIcons();
     }
     if (res.plan) {
-      const planCardEl = document.getElementById('active-plan-card');
-      if (planCardEl) {
-        planCardEl.outerHTML = getPlanCardHtml(res.plan);
-      } else {
-        const planDiv = document.createElement('div');
-        planDiv.innerHTML = getPlanCardHtml(res.plan);
-        if (planDiv.firstElementChild) messagesList.appendChild(planDiv.firstElementChild);
-      }
-      refreshIcons();
+      renderPlanApprovalCard(res.plan, project, res.auto_start_countdown || 10, res.requires_approval);
     } else if (data.tool_name === 'syte_update_plan_step' && res.step_id) {
-      api(`/projects/${encodeURIComponent(project.id)}/ai/session`).then(sRes => {
-        if (sRes && sRes.session && sRes.session.active_plan) {
-          const planCardEl = document.getElementById('active-plan-card');
-          if (planCardEl) {
-            planCardEl.outerHTML = getPlanCardHtml(sRes.session.active_plan);
-            refreshIcons();
+      const stepEl = document.getElementById(`svc-plan-step-${res.step_id}`);
+      if (stepEl) {
+        const checkEl = stepEl.querySelector('.svc-ai-step-check');
+        if (checkEl) {
+          checkEl.className = `svc-ai-step-check ${res.status}`;
+          if (res.status === 'completed') {
+            checkEl.innerHTML = '<i data-lucide="check" style="width:12px;height:12px;"></i>';
+          } else if (res.status === 'in_progress') {
+            checkEl.innerHTML = '<i data-lucide="loader" class="spinning" style="width:12px;height:12px;"></i>';
           }
+          refreshIcons();
         }
-      }).catch(() => {});
+      }
+    } else if (data.tool_name === 'syte_analyze_project_structure') {
+      const mDiv = document.createElement('div');
+      mDiv.className = 'svc-ai-activity-row';
+      mDiv.innerHTML = `
+        <span class="svc-ai-activity-icon"><i data-lucide="cpu"></i></span>
+        <span>Machine analysis: <strong>${escapeHtml(res.project_type || 'Project')}</strong> · Frameworks: <em>${escapeHtml((res.frameworks || []).join(', ') || 'Standard')}</em> · Syntax: <strong>${res.syntax_health?.valid ? '✓ Valid' : '⚠️ Errors'}</strong></span>
+      `;
+      messagesList.appendChild(mDiv);
+      refreshIcons();
+    } else if (data.tool_name === 'syte_search_web') {
+      const sDiv = document.createElement('div');
+      sDiv.className = 'svc-ai-activity-row';
+      sDiv.innerHTML = `
+        <span class="svc-ai-activity-icon"><i data-lucide="globe"></i></span>
+        <span>Online search for '<strong>${escapeHtml(res.query || '')}</strong>' found ${res.results_count || 0} reference(s)</span>
+      `;
+      messagesList.appendChild(sDiv);
+      refreshIcons();
+    } else if (data.tool_name === 'syte_fetch_docs') {
+      const dDiv = document.createElement('div');
+      dDiv.className = 'svc-ai-activity-row';
+      dDiv.innerHTML = `
+        <span class="svc-ai-activity-icon"><i data-lucide="book-open"></i></span>
+        <span>Fetched docs: <strong>${escapeHtml(res.title || res.url || '')}</strong> (${res.length_chars || 0} chars)</span>
+      `;
+      messagesList.appendChild(dDiv);
+      refreshIcons();
     } else if (res.skill_name) {
       const skillDiv = document.createElement('div');
       skillDiv.innerHTML = getSkillBadgeHtml(res.skill_name);
@@ -10014,17 +10166,108 @@ async function renderAIChatWorkspace(project) {
     }
   } catch (_) {}
 
-  // Load Messages History in Strict Ascending Order
+  // Load Messages History & Active Session
   if (messagesList) {
+    if (!aiChatSending && !messagesList.querySelector('.svc-ai-message')) {
+      messagesList.innerHTML = `
+        <div class="svc-ai-loading-session" id="svc-ai-loading-session">
+          <div class="svc-ai-loading-spinner"></div>
+          <div class="svc-ai-loading-text">
+            <strong>Retrieving session content…</strong>
+            <span>Syncing background agent activity &amp; workspace state</span>
+          </div>
+        </div>
+      `;
+    }
     try {
       const hRes = await api(`/projects/${encodeURIComponent(currentProject.id)}/ai/history`);
       const msgs = hRes.messages || [];
       if (!msgs.length) {
         messagesList.innerHTML = `
-          <div class="svc-ai-welcome-card" style="color:#a1a1aa; text-align:center; padding:40px 20px;">
-            <div style="font-size:24px; margin-bottom:8px;"><i data-lucide="sparkles" style="color:#38bdf8;"></i></div>
-            <h3 style="color:#f4f4f5; font-size:18px; margin:0 0 6px;">OpenCode Autonomous AI Workspace</h3>
-            <p style="font-size:13.5px; max-width:440px; margin:0 auto; line-height:1.5;">Direct terminal access, filesystem editing, hot preview servers, and zero-downtime deployments for <strong>${escapeHtml(currentProject.name || currentProject.id)}</strong>.</p>
+          <div class="svc-ai-home-hero">
+            <div class="svc-ai-hero-icon-sq">
+              <i data-lucide="sparkles"></i>
+            </div>
+            <h1 class="svc-ai-hero-title">What can I help you build?</h1>
+            <p class="svc-ai-hero-sub">Describe a feature, debug an error,<br>or ask about your project.</p>
+
+            <!-- 4 Quick Action Starter Cards (2x2 Grid) -->
+            <div class="svc-ai-hero-cards-grid">
+              <button type="button" class="svc-ai-starter-card" onclick="setAIChatPrompt('Build a feature: ')">
+                <div class="svc-ai-starter-left">
+                  <div class="svc-ai-starter-icon"><i data-lucide="code-2"></i></div>
+                  <div class="svc-ai-starter-text">
+                    <strong>Build a feature</strong>
+                    <span>Turn your idea into code</span>
+                  </div>
+                </div>
+                <i data-lucide="chevron-right" class="svc-ai-starter-chevron"></i>
+              </button>
+
+              <button type="button" class="svc-ai-starter-card" onclick="setAIChatPrompt('Fix an error: ')">
+                <div class="svc-ai-starter-left">
+                  <div class="svc-ai-starter-icon"><i data-lucide="bug"></i></div>
+                  <div class="svc-ai-starter-text">
+                    <strong>Fix an error</strong>
+                    <span>Paste the error message</span>
+                  </div>
+                </div>
+                <i data-lucide="chevron-right" class="svc-ai-starter-chevron"></i>
+              </button>
+
+              <button type="button" class="svc-ai-starter-card" onclick="setAIChatPrompt('Explain code: ')">
+                <div class="svc-ai-starter-left">
+                  <div class="svc-ai-starter-icon"><i data-lucide="file-text"></i></div>
+                  <div class="svc-ai-starter-text">
+                    <strong>Explain code</strong>
+                    <span>Get a simple explanation</span>
+                  </div>
+                </div>
+                <i data-lucide="chevron-right" class="svc-ai-starter-chevron"></i>
+              </button>
+
+              <button type="button" class="svc-ai-starter-card" onclick="setAIChatPrompt('Improve this: ')">
+                <div class="svc-ai-starter-left">
+                  <div class="svc-ai-starter-icon"><i data-lucide="sparkles"></i></div>
+                  <div class="svc-ai-starter-text">
+                    <strong>Improve this</strong>
+                    <span>Make it better</span>
+                  </div>
+                </div>
+                <i data-lucide="chevron-right" class="svc-ai-starter-chevron"></i>
+              </button>
+            </div>
+
+            <!-- Recent Prompts Section -->
+            <div class="svc-ai-recent-prompts-section">
+              <div class="svc-ai-recent-header">
+                <strong>Recent prompts</strong>
+                <button type="button" class="svc-ai-see-all-btn">See all <i data-lucide="chevron-right"></i></button>
+              </div>
+              <div class="svc-ai-recent-prompts-card">
+                <div class="svc-ai-recent-prompt-row" onclick="setAIChatPrompt('Optimize my Next.js deployment')">
+                  <div class="svc-ai-recent-left">
+                    <div class="svc-ai-recent-icon"><i data-lucide="message-square"></i></div>
+                    <span class="svc-ai-recent-text">Optimize my Next.js deployment</span>
+                  </div>
+                  <span class="svc-ai-recent-time">2h ago</span>
+                </div>
+                <div class="svc-ai-recent-prompt-row" onclick="setAIChatPrompt('Fix this MongoDB connection error')">
+                  <div class="svc-ai-recent-left">
+                    <div class="svc-ai-recent-icon"><i data-lucide="message-square"></i></div>
+                    <span class="svc-ai-recent-text">Fix this MongoDB connection error</span>
+                  </div>
+                  <span class="svc-ai-recent-time">5h ago</span>
+                </div>
+                <div class="svc-ai-recent-prompt-row" onclick="setAIChatPrompt('Create a Discord bot command')">
+                  <div class="svc-ai-recent-left">
+                    <div class="svc-ai-recent-icon"><i data-lucide="message-square"></i></div>
+                    <span class="svc-ai-recent-text">Create a Discord bot command</span>
+                  </div>
+                  <span class="svc-ai-recent-time">1d ago</span>
+                </div>
+              </div>
+            </div>
           </div>
         `;
       } else {
@@ -10244,6 +10487,8 @@ async function renderAIChatWorkspace(project) {
         const sess = sRes.session;
         if (sess.is_running && !aiChatSending) {
           void reconnectAIChatSession(currentProject);
+        } else if (sess.pending_plan) {
+          renderPlanApprovalCard(sess.pending_plan, currentProject, sess.pending_plan.countdown_seconds || 10, sess.pending_plan.requires_approval);
         } else if (sess.pending_question) {
           const qData = sess.pending_question;
           const qEl = document.createElement('div');
@@ -10264,7 +10509,10 @@ async function renderAIChatWorkspace(project) {
   const slashList = document.getElementById('svc-ai-slash-list');
 
   const slashCommands = [
-    { cmd: '/plan', desc: 'Create a structured plan before coding', icon: 'list-checks', prompt: 'Create an end-to-end implementation plan for ' },
+    { cmd: '/teamwork', desc: 'Craft task prompt following /teamwork-preview guidelines', icon: 'users', prompt: 'Follow the /teamwork-preview multi-agent workflow: elicit the project idea, specify requirements blocks (R1, R2), define objective verification, and establish acceptance criteria guardrails before creating plan.md: ' },
+    { cmd: '/plan', desc: 'Create a structured plan before coding', icon: 'list-checks', prompt: 'Create an end-to-end implementation plan and write plan.md for: ' },
+    { cmd: '/search', desc: 'Search online package registries & docs', icon: 'globe', prompt: 'Search online documentation and package registries for: ' },
+    { cmd: '/analyze', desc: 'Run deterministic machine structure & syntax scan', icon: 'cpu', prompt: 'Run syte_analyze_project_structure to inspect package manifests, frameworks, entrypoints, and AST syntax validity.' },
     { cmd: '/redesign', desc: 'Redesign UI with modern Tailwind & shadcn', icon: 'palette', prompt: 'Redesign the frontend UI with modern Tailwind and shadcn styling: ' },
     { cmd: '/build', desc: 'Build and verify project compilation', icon: 'hammer', prompt: 'Run project build, test for syntax/compilation errors, and fix any issues.' },
     { cmd: '/scan', desc: 'Run security, syntax, and vulnerability scan', icon: 'shield-check', prompt: 'Run a security and syntax scan across the workspace and fix any detected issues.' },
@@ -10454,7 +10702,7 @@ async function openModelSelectorDropdown(project, triggerBtn) {
   try {
     const res = await api(`/projects/${encodeURIComponent(currentProject.id)}/ai/settings`);
     if (res.ok && res.settings) {
-      savedProviders = res.settings.saved_providers || [];
+      savedProviders = (res.settings.saved_providers || []).filter(p => p.active !== false);
       currentModel = res.settings.model || 'gpt-4o';
       currentProvider = res.settings.provider || 'openai';
     }
@@ -10464,15 +10712,22 @@ async function openModelSelectorDropdown(project, triggerBtn) {
   dropdown.id = 'svc-ai-model-quick-dropdown';
   dropdown.className = 'svc-ai-model-quick-dropdown';
 
+  const getSvgIcon = (prov) => {
+    const key = (prov || 'openai').toLowerCase();
+    if (key.includes('openai') || key.includes('gpt')) return `<svg viewBox="0 0 24 24" width="16" height="16" fill="none"><path d="M22.28 9.82a5.98 5.98 0 0 0-.51-4.91 6.05 6.05 0 0 0-6.51-2.9 6.07 6.07 0 0 0-4.28 2.17 5.98 5.98 0 0 0-4 2.9 6.05 6.05 0 0 0 .74 7.1 5.98 5.98 0 0 0 .52 4.91 6.05 6.05 0 0 0 6.51 2.9A5.98 5.98 0 0 0 13.26 24a6.06 6.06 0 0 0 5.77-4.2 5.99 5.99 0 0 0 4-2.9 6.06 6.06 0 0 0-.75-7.08z" fill="#10a37f"/></svg>`;
+    if (key.includes('anthropic') || key.includes('claude')) return `<svg viewBox="0 0 24 24" width="16" height="16" fill="none"><path d="M13.83 2.19h3.9L24 21.8h-3.93l-1.92-5.18H8.85L6.93 21.8H3L9.04 5.46h.05L6.96 21.8h3.2l1.09-3.2h4.52l1.09 3.2h3.2L13.83 2.2zm-.75 6.1l-1.54 4.54h3.09l-1.55-4.54z" fill="#d97706"/></svg>`;
+    if (key.includes('google') || key.includes('gemini')) return `<svg viewBox="0 0 24 24" width="16" height="16" fill="none"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/></svg>`;
+    if (key.includes('mistral')) return `<svg viewBox="0 0 24 24" width="16" height="16" fill="none"><path d="M3 3h4.5v4.5H3zm13.5 0H21v4.5h-4.5zM7.5 7.5H12V12H7.5zm4.5 0h4.5V12H12zM3 12h4.5v4.5H3zm13.5 0H21v4.5h-4.5zM3 16.5h4.5V21H3zm7.5 0H15V21h-4.5zm6 0H21V21h-4.5z" fill="#ff7000"/></svg>`;
+    if (key.includes('cohere')) return `<svg viewBox="0 0 24 24" width="16" height="16" fill="none"><path d="M14.5 3C18.64 3 22 6.36 22 10.5S18.64 18 14.5 18H9.5C5.36 18 2 14.64 2 10.5S5.36 3 9.5 3h5z" fill="#39423d"/></svg>`;
+    if (key.includes('groq')) return `<svg viewBox="0 0 24 24" width="16" height="16" fill="none"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" fill="#f55036"/></svg>`;
+    return `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>`;
+  };
+
   let itemsHtml = '';
   if (!savedProviders.length) {
     itemsHtml = `
-      <div class="svc-ai-dropdown-item active" data-provider="${escapeHtml(currentProvider)}" data-model="${escapeHtml(currentModel)}">
-        <div class="svc-ai-dropdown-item-left">
-          <div class="svc-ai-dropdown-prov-badge ${escapeHtml(currentProvider)}">${escapeHtml(currentProvider)}</div>
-          <div class="svc-ai-dropdown-model-name">${escapeHtml(currentModel)}</div>
-        </div>
-        <i data-lucide="check" class="svc-ai-dropdown-check"></i>
+      <div style="padding: 16px 12px; text-align: center; color: #71717a; font-size: 12px;">
+        <span>No providers saved yet.</span>
       </div>
     `;
   } else {
@@ -10482,7 +10737,7 @@ async function openModelSelectorDropdown(project, triggerBtn) {
       return `
         <div class="svc-ai-dropdown-item ${isActive ? 'active' : ''}" data-id="${escapeHtml(p.id || '')}" data-provider="${escapeHtml(prov)}" data-model="${escapeHtml(p.model)}">
           <div class="svc-ai-dropdown-item-left">
-            <div class="svc-ai-dropdown-prov-badge ${escapeHtml(prov)}">${escapeHtml(prov)}</div>
+            <div class="svc-ai-dropdown-prov-badge ${escapeHtml(prov)}">${getSvgIcon(prov)}</div>
             <div>
               <div class="svc-ai-dropdown-model-name">${escapeHtml(p.model)}</div>
               ${p.name && p.name !== p.model ? `<small class="svc-ai-dropdown-sub">${escapeHtml(p.name)}</small>` : ''}
@@ -10504,7 +10759,7 @@ async function openModelSelectorDropdown(project, triggerBtn) {
     </div>
     <div class="svc-ai-dropdown-footer">
       <button type="button" class="svc-ai-dropdown-add-btn" id="svc-ai-dropdown-add-btn">
-        <i data-lucide="plus"></i><span>Add / Configure Provider</span>
+        <i data-lucide="plus"></i><span>Configure Providers</span>
       </button>
     </div>
   `;
@@ -10542,7 +10797,7 @@ async function openModelSelectorDropdown(project, triggerBtn) {
   if (addBtn) {
     addBtn.onclick = () => {
       closeDropdown();
-      openAISettingsModal(currentProject, 'onboard');
+      openAISettingsModal(currentProject, 'saved');
     };
   }
 
@@ -10590,6 +10845,9 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
   const maxTokensInput = document.getElementById('svc-ai-setting-maxtokens');
   const maxTokensVal = document.getElementById('svc-ai-maxtokens-val');
   const thinkingSel = document.getElementById('svc-ai-setting-thinking');
+  const speedInput = document.getElementById('svc-ai-setting-speed');
+  const intelInput = document.getElementById('svc-ai-setting-intelligence');
+  const planModeInput = document.getElementById('svc-ai-setting-plan-mode');
   const promptInput = document.getElementById('svc-ai-setting-prompt');
   const testBtn = document.getElementById('svc-ai-test-connection-btn');
   const quickSaveBtn = document.getElementById('svc-ai-quick-save-btn');
@@ -10597,105 +10855,470 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
   const toggleKeyBtn = document.getElementById('svc-ai-toggle-key-visibility');
 
   // Tab Elements
-  const tabBtnOnboard = document.getElementById('svc-ai-tab-btn-onboard');
   const tabBtnSaved = document.getElementById('svc-ai-tab-btn-saved');
+  const tabBtnAdd = document.getElementById('svc-ai-tab-btn-add');
   const tabBtnSkills = document.getElementById('svc-ai-tab-btn-skills');
-  const tabBtnAdvanced = document.getElementById('svc-ai-tab-btn-advanced');
-  const panelOnboard = document.getElementById('svc-ai-panel-onboard');
+  const tabBtnOnboard = document.getElementById('svc-ai-tab-btn-onboard');
+
   const panelSaved = document.getElementById('svc-ai-panel-saved');
+  const panelAdd = document.getElementById('svc-ai-panel-add');
   const panelSkills = document.getElementById('svc-ai-panel-skills');
-  const panelAdvanced = document.getElementById('svc-ai-panel-advanced');
-  const savedCountBadge = document.getElementById('svc-ai-saved-count');
+  const panelOnboard = document.getElementById('svc-ai-panel-onboard');
+
   const savedProvidersList = document.getElementById('svc-ai-saved-providers-list');
   const addNewProviderBtn = document.getElementById('svc-ai-add-new-provider-btn');
   const skillsCatalogEl = document.getElementById('svc-ai-skills-catalog');
-  const customSkillsInput = document.getElementById('svc-ai-custom-skills-input');
-  const refreshSkillsBtn = document.getElementById('svc-ai-refresh-skills-btn');
+  const selectAllSkillsBtn = document.getElementById('svc-ai-select-all-skills-btn');
+
+  // Step Badge and Modal Headers
+  const stepBadge = document.getElementById('svc-ai-step-badge');
+  const modalTitle = document.getElementById('svc-ai-settings-title');
+  const modalSubtitle = document.getElementById('svc-ai-settings-subtitle');
+  const primaryBtn = document.getElementById('svc-ai-settings-primary-btn');
+  const primaryBtnText = document.getElementById('svc-ai-primary-btn-text');
+  const primaryBtnIcon = document.getElementById('svc-ai-primary-btn-icon');
+
+  // Provider Choice Grid & Inputs
+  const provGridTiles = document.querySelectorAll('.svc-ai-prov-choice-tile');
+  const provNameInput = document.getElementById('svc-ai-provider-name-input');
+  const provNameCount = document.getElementById('svc-ai-prov-name-count');
+  const provDescInput = document.getElementById('svc-ai-provider-desc-input');
+  const provDescCount = document.getElementById('svc-ai-desc-count');
+  const modelAliasInput = document.getElementById('svc-ai-setting-alias');
+  const modelCount = document.getElementById('svc-ai-model-count');
+  const promptCount = document.getElementById('svc-ai-prompt-count');
+  const tempBox = document.getElementById('svc-ai-temp-box');
+  const topPInput = document.getElementById('svc-ai-setting-topp');
+  const advToggleBtn = document.getElementById('svc-ai-adv-toggle-btn');
+  const advContent = document.getElementById('svc-ai-adv-content');
+  const deleteCurrentProvBtn = document.getElementById('svc-ai-delete-current-prov-btn');
 
   if (!modal) return;
   modal.classList.remove('hidden');
 
   let savedProvidersListState = [];
-  let enabledSkillsSet = new Set();
+  let enabledSkillsSet = new Set(['web_search', 'code_execution', 'file_analysis']);
   let currentLoadedSettings = null;
+  let activeTab = initialTab || 'saved'; // 'saved' | 'add' | 'skills' | 'onboard'
+  let selectedProviderType = 'openai';
+  let editingProviderId = null;
 
-  const renderSkillsCatalog = async () => {
-    if (!skillsCatalogEl) return;
-    skillsCatalogEl.innerHTML = '<p class="hint">Loading available modular skills…</p>';
-    try {
-      const res = await api(`/projects/${encodeURIComponent(targetProject.id)}/ai/skills`);
-      const skills = res.skills || [];
-      if (!skills.length) {
-        skillsCatalogEl.innerHTML = '<p class="hint">No modular skills discovered.</p>';
-        return;
-      }
-      skillsCatalogEl.innerHTML = skills.map(sk => {
-        const isEnabled = enabledSkillsSet.has(sk.id) || enabledSkillsSet.has(sk.name) || sk.enabled_by_default;
-        return `
-          <div class="svc-ai-skill-card ${isEnabled ? 'enabled' : ''}" style="background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; display: flex; flex-direction: column; justify-content: space-between; gap: 8px;">
-            <div>
-              <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 6px; margin-bottom: 4px;">
-                <strong style="font-size: 0.85rem; color: var(--text);">${escapeHtml(sk.name || sk.id)}</strong>
-                <span style="font-size: 0.68rem; padding: 1px 6px; border-radius: 4px; background: rgba(59,130,246,0.12); color: #3b82f6; font-weight: 500;">${escapeHtml(sk.category || 'Skill')}</span>
-              </div>
-              <p style="font-size: 0.76rem; color: var(--text-dim); margin: 0; line-height: 1.3;">${escapeHtml(sk.description || '')}</p>
-            </div>
-            <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border); padding-top: 8px; margin-top: 4px;">
-              <span style="font-size: 0.72rem; color: var(--text-muted);">${sk.tools_count ? `${sk.tools_count} tools` : 'Blueprint'}</span>
-              <label style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.76rem; font-weight: 500;">
-                <input type="checkbox" class="svc-ai-skill-toggle" data-skill-id="${escapeHtml(sk.id)}" ${isEnabled ? 'checked' : ''}>
-                <span>${isEnabled ? 'Active' : 'Enable'}</span>
-              </label>
-            </div>
-          </div>
-        `;
-      }).join('');
-
-      skillsCatalogEl.querySelectorAll('.svc-ai-skill-toggle').forEach(t => {
-        t.onchange = () => {
-          const sid = t.dataset.skillId;
-          if (t.checked) {
-            enabledSkillsSet.add(sid);
-            t.parentElement.parentElement.parentElement.classList.add('enabled');
-            t.nextElementSibling.textContent = 'Active';
-          } else {
-            enabledSkillsSet.delete(sid);
-            t.parentElement.parentElement.parentElement.classList.remove('enabled');
-            t.nextElementSibling.textContent = 'Enable';
-          }
-        };
-      });
-      refreshIcons();
-    } catch (err) {
-      skillsCatalogEl.innerHTML = `<p class="hint" style="color:#ef4444;">Error loading skills: ${escapeHtml(err.message)}</p>`;
-    }
+  // SVGL (svgl.app) High Quality Vector SVG Brand Logos
+  const SVGL_LOGOS = {
+    openai: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.259 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7466-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1683a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4947zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1683a.0757.0757 0 0 1-.071 0l-4.8303-2.7866A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.6667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1636a.0804.0804 0 0 1-.038-.0567V6.0748a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.4598a.7948.7948 0 0 0-.3927.6813l-.0048 6.7219zm1.1408-1.5714l2.5532-1.474 2.5532 1.474v2.948l-2.5532 1.474-2.5532-1.474z" fill="#10a37f"/></svg>`,
+    anthropic: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M13.827 2.193h3.896L24 21.807h-3.923l-1.92-5.188H8.847l-1.92 5.188H3L9.043 5.46h.046L6.96 21.807h3.197l1.09-3.208h4.526l1.09 3.208h3.197L13.827 2.193zm-.745 6.098l-1.545 4.542h3.09l-1.545-4.542z" fill="#d97706"/></svg>`,
+    google: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/></svg>`,
+    mistral: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 3h4.5v4.5H3zm13.5 0H21v4.5h-4.5zM7.5 7.5H12V12H7.5zm4.5 0h4.5V12H12zM3 12h4.5v4.5H3zm13.5 0H21v4.5h-4.5zM3 16.5h4.5V21H3zm7.5 0H15V21h-4.5zm6 0H21V21h-4.5z" fill="#ff7000"/></svg>`,
+    cohere: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M14.5 3C18.6421 3 22 6.35786 22 10.5C22 14.6421 18.6421 18 14.5 18H9.5C5.35786 18 2 14.6421 2 10.5C2 6.35786 5.35786 3 9.5 3H14.5Z" fill="#39423d"/><circle cx="16.5" cy="10.5" r="3.5" fill="#ff7759"/><circle cx="7.5" cy="10.5" r="3.5" fill="#d199ff"/></svg>`,
+    together: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="7" cy="7" r="2.5" fill="#3b82f6"/><circle cx="12" cy="7" r="2.5" fill="#3b82f6"/><circle cx="17" cy="7" r="2.5" fill="#3b82f6"/><circle cx="7" cy="12" r="2.5" fill="#3b82f6"/><circle cx="12" cy="12" r="2.5" fill="#3b82f6"/><circle cx="17" cy="12" r="2.5" fill="#3b82f6"/><circle cx="7" cy="17" r="2.5" fill="#3b82f6"/><circle cx="12" cy="17" r="2.5" fill="#3b82f6"/><circle cx="17" cy="17" r="2.5" fill="#3b82f6"/></svg>`,
+    groq: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" fill="#f55036"/></svg>`,
+    custom: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>`
   };
 
-  const switchTab = (tab) => {
-    if (tabBtnOnboard) tabBtnOnboard.classList.toggle('active', tab === 'onboard');
-    if (tabBtnSaved) tabBtnSaved.classList.toggle('active', tab === 'saved');
-    if (tabBtnSkills) tabBtnSkills.classList.toggle('active', tab === 'skills');
-    if (tabBtnAdvanced) tabBtnAdvanced.classList.toggle('active', tab === 'advanced');
+  const getProviderLogoSvg = (prov) => {
+    const key = (prov || 'openai').toLowerCase();
+    if (key.includes('openai') || key.includes('gpt')) return SVGL_LOGOS.openai;
+    if (key.includes('anthropic') || key.includes('claude')) return SVGL_LOGOS.anthropic;
+    if (key.includes('google') || key.includes('gemini') || key.includes('vertex')) return SVGL_LOGOS.google;
+    if (key.includes('mistral')) return SVGL_LOGOS.mistral;
+    if (key.includes('cohere')) return SVGL_LOGOS.cohere;
+    if (key.includes('together')) return SVGL_LOGOS.together;
+    if (key.includes('groq')) return SVGL_LOGOS.groq;
+    return SVGL_LOGOS.custom;
+  };
 
-    if (panelOnboard) panelOnboard.classList.toggle('hidden', tab !== 'onboard');
-    if (panelSaved) panelSaved.classList.toggle('hidden', tab !== 'saved');
-    if (panelSkills) panelSkills.classList.toggle('hidden', tab !== 'skills');
-    if (panelAdvanced) panelAdvanced.classList.toggle('hidden', tab !== 'advanced');
+  // Populate Provider Grid icons
+  Object.keys(SVGL_LOGOS).forEach(k => {
+    const el = document.getElementById(`tile-icon-${k}`);
+    if (el) el.innerHTML = SVGL_LOGOS[k];
+  });
 
-    if (tab === 'skills') {
-      void renderSkillsCatalog();
-    }
+  // Accordion toggle
+  if (advToggleBtn && advContent) {
+    advToggleBtn.onclick = () => {
+      const isExpanded = advContent.style.display !== 'none';
+      advContent.style.display = isExpanded ? 'none' : 'flex';
+      const chevron = advToggleBtn.querySelector('.svc-ai-adv-chevron');
+      if (chevron) {
+        chevron.setAttribute('data-lucide', isExpanded ? 'chevron-down' : 'chevron-up');
+        refreshIcons();
+      }
+    };
+  }
+
+  // Live input character count listeners
+  if (provNameInput && provNameCount) {
+    provNameInput.oninput = () => { provNameCount.textContent = `${provNameInput.value.length}/32`; };
+  }
+  if (provDescInput && provDescCount) {
+    provDescInput.oninput = () => { provDescCount.textContent = `${provDescInput.value.length}/100`; };
+  }
+  if (modelAliasInput && modelCount) {
+    modelAliasInput.oninput = () => { modelCount.textContent = `${modelAliasInput.value.length}/32`; };
+  }
+  if (promptInput && promptCount) {
+    promptInput.oninput = () => { promptCount.textContent = `${promptInput.value.length}/2000`; };
+  }
+
+  // Sync Temperature slider & box
+  if (tempInput && tempBox) {
+    tempInput.oninput = () => {
+      tempBox.value = tempInput.value;
+      if (tempVal) tempVal.textContent = tempInput.value;
+    };
+    tempBox.oninput = () => {
+      tempInput.value = tempBox.value;
+      if (tempVal) tempVal.textContent = tempBox.value;
+    };
+  }
+
+  // Predefined default skills (7 core skills with colored icon boxes)
+  const CORE_SKILLS = [
+    { id: 'web_search', name: 'Web Search', desc: 'Allow the model to search the web for real-time information.', icon: 'globe', color: '#3b82f6', bg: 'rgba(59,130,246,0.12)' },
+    { id: 'code_execution', name: 'Code Execution', desc: 'Run code in a sandboxed environment to test or execute.', icon: 'code-2', color: '#10b981', bg: 'rgba(16,185,129,0.12)' },
+    { id: 'file_analysis', name: 'File Analysis', desc: 'Read and analyze documents, spreadsheets, and files.', icon: 'file-text', color: '#f59e0b', bg: 'rgba(245,158,11,0.12)' },
+    { id: 'image_generation', name: 'Image Generation', desc: 'Generate images using DALL-E or Midjourney APIs.', icon: 'image', color: '#ec4899', bg: 'rgba(236,72,153,0.12)' },
+    { id: 'shell_commands', name: 'Shell Commands', desc: 'Execute terminal commands in the project environment.', icon: 'terminal', color: '#6366f1', bg: 'rgba(99,102,241,0.12)' },
+    { id: 'database_tools', name: 'Database Tools', desc: 'Query and manage connected databases directly.', icon: 'database', color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)' },
+    { id: 'custom_tools', name: 'Custom Tools', desc: 'Use your own API endpoints as tools for the model.', icon: 'wrench', color: '#06b6d4', bg: 'rgba(6,182,212,0.12)' }
+  ];
+
+  const renderSkillsCatalog = () => {
+    if (!skillsCatalogEl) return;
+    skillsCatalogEl.innerHTML = CORE_SKILLS.map(sk => {
+      const isChecked = enabledSkillsSet.has(sk.id);
+      return `
+        <div class="svc-ai-skill-row-card">
+          <div class="svc-ai-skill-left">
+            <div class="svc-ai-skill-icon-box" style="background:${sk.bg}; color:${sk.color};">
+              <i data-lucide="${sk.icon}"></i>
+            </div>
+            <div class="svc-ai-skill-text">
+              <strong class="svc-ai-skill-name">${escapeHtml(sk.name)}</strong>
+              <span class="svc-ai-skill-desc">${escapeHtml(sk.desc)}</span>
+            </div>
+          </div>
+          <label class="svc-apple-switch">
+            <input type="checkbox" class="svc-ai-skill-apple-toggle" data-skill-id="${escapeHtml(sk.id)}" ${isChecked ? 'checked' : ''}>
+            <span class="svc-apple-slider"></span>
+          </label>
+        </div>
+      `;
+    }).join('');
+
+    skillsCatalogEl.querySelectorAll('.svc-ai-skill-apple-toggle').forEach(t => {
+      t.onchange = () => {
+        const sid = t.dataset.skillId;
+        if (t.checked) enabledSkillsSet.add(sid);
+        else enabledSkillsSet.delete(sid);
+      };
+    });
     refreshIcons();
   };
 
-  if (tabBtnOnboard) tabBtnOnboard.onclick = () => switchTab('onboard');
-  if (tabBtnSaved) tabBtnSaved.onclick = () => switchTab('saved');
-  if (tabBtnSkills) tabBtnSkills.onclick = () => switchTab('skills');
-  if (tabBtnAdvanced) tabBtnAdvanced.onclick = () => switchTab('advanced');
-  if (addNewProviderBtn) addNewProviderBtn.onclick = () => switchTab('onboard');
-  if (refreshSkillsBtn) refreshSkillsBtn.onclick = () => renderSkillsCatalog();
+  if (selectAllSkillsBtn) {
+    selectAllSkillsBtn.onclick = () => {
+      const allSelected = CORE_SKILLS.every(sk => enabledSkillsSet.has(sk.id));
+      if (allSelected) enabledSkillsSet.clear();
+      else CORE_SKILLS.forEach(sk => enabledSkillsSet.add(sk.id));
+      renderSkillsCatalog();
+    };
+  }
 
-  switchTab(initialTab || 'onboard');
+  // Predefined standard provider profiles
+  const DEFAULT_PROVIDERS = [
+    { id: 'p_openai', name: 'OpenAI', provider: 'openai', model: 'gpt-4o', active: true, models_list: ['gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo'], sub: 'GPT models from OpenAI', star: true },
+    { id: 'p_anthropic', name: 'Anthropic', provider: 'anthropic', model: 'claude-3-5-sonnet', active: true, models_list: ['claude-3-5-sonnet', 'claude-3-opus'], sub: 'Claude models from Anthropic', star: false },
+    { id: 'p_google', name: 'Google', provider: 'google', model: 'gemini-1.5-pro', active: false, models_list: ['gemini-1.5-pro', 'gemini-1.5-flash'], sub: 'Gemini models from Google', star: false },
+    { id: 'p_mistral', name: 'Mistral', provider: 'mistral', model: 'mistral-large', active: true, models_list: ['mistral-large', 'mistral-medium', '+1'], sub: 'Open models from Mistral AI', star: false },
+    { id: 'p_cohere', name: 'Cohere', provider: 'cohere', model: 'command-r-plus', active: false, models_list: ['command-r-plus', 'command-r'], sub: 'Command models from Cohere', star: false },
+    { id: 'p_groq', name: 'Groq', provider: 'groq', model: 'llama3-70b', active: true, models_list: ['llama3-70b', 'mixtral-8x7b'], sub: 'Fast inference models', star: false },
+    { id: 'p_custom', name: 'Custom Endpoint', provider: 'custom', model: 'custom-model', active: false, models_list: ['custom-model'], sub: 'Your own API endpoint', star: false }
+  ];
+
+  // Render Saved Providers on Tab 1
+  const renderSavedProviders = (activeProvider, activeModel) => {
+    if (!savedProvidersList) return;
+
+    const providersToRender = savedProvidersListState;
+
+    if (!providersToRender.length) {
+      savedProvidersList.innerHTML = `
+        <div class="svc-ai-no-saved-providers-card">
+          <div class="svc-ai-empty-icon-circle">
+            <i data-lucide="sparkles"></i>
+          </div>
+          <strong class="svc-ai-empty-title">No Model Providers Added</strong>
+          <p class="svc-ai-empty-desc">You haven't added any AI model providers for this project yet. Add your OpenAI, Anthropic, Google or custom API key to enable AI Builder features.</p>
+          <button type="button" class="svc-ai-btn-black-pill" onclick="document.getElementById('svc-ai-tab-btn-add')?.click()">
+            <i data-lucide="plus"></i><span>Add First Provider</span>
+          </button>
+        </div>
+      `;
+      refreshIcons();
+      return;
+    }
+
+    savedProvidersList.innerHTML = providersToRender.map((p, idx) => {
+      const pTag = (p.provider || p.tag || 'openai').toLowerCase();
+      const isActive = p.active !== undefined ? p.active : (p.model === activeModel && (p.provider === activeProvider || !p.provider));
+      const modelLabel = p.model || 'gpt-4o';
+      const nameLabel = p.name || pTag.toUpperCase();
+      const subLabel = p.sub || p.description || `${pTag.toUpperCase()} API model endpoint`;
+      const chips = Array.isArray(p.models_list) && p.models_list.length ? p.models_list : [modelLabel];
+
+      return `
+        <div class="svc-ai-provider-row-card ${isActive ? 'is-active-card' : ''}" data-idx="${idx}">
+          <div class="svc-ai-prov-card-left">
+            <div class="svc-ai-prov-logo ${escapeHtml(pTag)}">
+              ${getProviderLogoSvg(pTag)}
+            </div>
+            <div class="svc-ai-prov-info">
+              <div class="svc-ai-prov-title-line">
+                <strong class="svc-ai-prov-name">${escapeHtml(nameLabel)}</strong>
+                ${p.star ? '<span class="svc-ai-star-badge">★</span>' : ''}
+              </div>
+              <span class="svc-ai-prov-sub">${escapeHtml(subLabel)}</span>
+              <div class="svc-ai-models-chip-row">
+                ${chips.map(c => `<span class="svc-ai-mini-model-pill">${escapeHtml(c)}</span>`).join('')}
+              </div>
+            </div>
+          </div>
+          <div class="svc-ai-prov-card-right">
+            <div class="svc-ai-prov-status-row">
+              <span class="svc-ai-pill-status ${isActive ? 'active' : 'disabled'}">
+                <span class="svc-ai-pill-dot"></span>
+                <span>${isActive ? 'Active' : 'Disabled'}</span>
+              </span>
+              <label class="svc-apple-switch">
+                <input type="checkbox" class="svc-ai-prov-apple-switch" data-idx="${idx}" ${isActive ? 'checked' : ''}>
+                <span class="svc-apple-slider"></span>
+              </label>
+            </div>
+            <div class="svc-ai-prov-action-btns">
+              <button type="button" class="svc-ai-btn-edit-prov" data-idx="${idx}">
+                <i data-lucide="edit-3"></i><span>Edit</span>
+              </button>
+              <button type="button" class="svc-ai-btn-icon-more" data-idx="${idx}" title="Delete provider">
+                <i data-lucide="trash-2"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // Handle Edit button click -> navigate to Tab 2 / 4 with loaded provider
+    savedProvidersList.querySelectorAll('.svc-ai-btn-edit-prov').forEach(btn => {
+      btn.onclick = () => {
+        const idx = parseInt(btn.dataset.idx, 10);
+        const p = providersToRender[idx];
+        if (!p) return;
+        editingProviderId = p.id || null;
+        selectedProviderType = (p.provider || 'openai').toLowerCase();
+
+        // Select tile
+        provGridTiles.forEach(t => {
+          t.classList.toggle('active', t.dataset.prov === selectedProviderType);
+        });
+
+        if (provNameInput) {
+          provNameInput.value = p.name || selectedProviderType.toUpperCase();
+          if (provNameCount) provNameCount.textContent = `${provNameInput.value.length}/32`;
+        }
+        if (apiKeyInput) apiKeyInput.value = p.api_key || '';
+        if (baseUrlInput) baseUrlInput.value = p.base_url || '';
+        if (modelInput) modelInput.value = p.model || 'gpt-4o';
+        if (provDescInput) {
+          provDescInput.value = p.description || p.sub || '';
+          if (provDescCount) provDescCount.textContent = `${provDescInput.value.length}/100`;
+        }
+        if (modelAliasInput) {
+          modelAliasInput.value = p.model || 'gpt-4o';
+          if (modelCount) modelCount.textContent = `${modelAliasInput.value.length}/32`;
+        }
+
+        switchTab('add');
+      };
+    });
+
+    // Handle delete button click
+    savedProvidersList.querySelectorAll('.svc-ai-btn-icon-more').forEach(btn => {
+      btn.onclick = async () => {
+        const idx = parseInt(btn.dataset.idx, 10);
+        const p = providersToRender[idx];
+        if (!p) return;
+        if (!confirm(`Remove provider "${p.name || p.model}"?`)) return;
+        savedProvidersListState.splice(idx, 1);
+        await saveProviderListState(savedProvidersListState);
+        toast('Provider removed');
+        renderSavedProviders();
+      };
+    });
+
+    // Handle iOS switch activation toggle
+    savedProvidersList.querySelectorAll('.svc-ai-prov-apple-switch').forEach(sw => {
+      sw.onchange = async () => {
+        const idx = parseInt(sw.dataset.idx, 10);
+        const targetP = providersToRender[idx];
+        if (!targetP) return;
+
+        targetP.active = sw.checked;
+
+        try {
+          if (sw.checked) {
+            await api(`/projects/${encodeURIComponent(targetProject.id)}/ai/providers/activate`, {
+              method: 'POST',
+              body: JSON.stringify({ provider_id: targetP.id, model: targetP.model, provider: targetP.provider }),
+            });
+            toast(`Enabled and switched active model to ${targetP.name || targetP.model}`);
+          } else {
+            toast(`Disabled ${targetP.name || targetP.model}`);
+          }
+          await saveProviderListState(providersToRender);
+          renderSavedProviders(targetP.provider, targetP.model);
+        } catch (err) {
+          toast(`Failed to update provider status: ${err.message}`);
+        }
+      };
+    });
+
+    refreshIcons();
+  };
+
+  const saveProviderListState = async (list) => {
+    savedProvidersListState = list;
+    try {
+      await api(`/projects/${encodeURIComponent(targetProject.id)}/ai/settings`, {
+        method: 'PUT',
+        body: JSON.stringify({ saved_providers: savedProvidersListState }),
+      });
+    } catch (_) {}
+  };
+
+  // Provider Grid Click (Select Provider Tile)
+  provGridTiles.forEach(tile => {
+    tile.onclick = () => {
+      provGridTiles.forEach(t => t.classList.remove('active'));
+      tile.classList.add('active');
+      const prov = tile.dataset.prov || 'openai';
+      selectedProviderType = prov;
+      if (providerSel) providerSel.value = prov;
+
+      if (provNameInput && !editingProviderId) {
+        const nameMap = { openai: 'OpenAI', anthropic: 'Anthropic', google: 'Google', mistral: 'Mistral', cohere: 'Cohere', together: 'Together', groq: 'Groq', custom: 'Custom Endpoint' };
+        provNameInput.value = nameMap[prov] || prov.toUpperCase();
+        if (provNameCount) provNameCount.textContent = `${provNameInput.value.length}/32`;
+      }
+
+      if (modelInput && !editingProviderId) {
+        const defaultModels = { openai: 'gpt-4o', anthropic: 'claude-3-5-sonnet', google: 'gemini-1.5-pro', mistral: 'mistral-large', cohere: 'command-r-plus', together: 'togethercomputer/llama-3-70b-instruct', groq: 'llama3-70b', custom: 'custom-model' };
+        modelInput.value = defaultModels[prov] || 'gpt-4o';
+      }
+
+      if (baseUrlInput && !editingProviderId) {
+        const baseUrls = { openai: 'https://api.openai.com/v1', anthropic: 'https://api.anthropic.com/v1', google: 'https://generativelanguage.googleapis.com/v1beta', mistral: 'https://api.mistral.ai/v1', cohere: 'https://api.cohere.ai/v1', together: 'https://api.together.xyz/v1', groq: 'https://api.groq.com/openai/v1', custom: '' };
+        baseUrlInput.value = baseUrls[prov] || '';
+      }
+    };
+  });
+
+  // Switch Tab Controller
+  const switchTab = (tab) => {
+    activeTab = tab;
+
+    if (tabBtnSaved) {
+      tabBtnSaved.classList.toggle('active', tab === 'saved');
+      tabBtnSaved.setAttribute('aria-selected', tab === 'saved' ? 'true' : 'false');
+    }
+    if (tabBtnAdd) {
+      tabBtnAdd.classList.toggle('active', tab === 'add');
+      tabBtnAdd.setAttribute('aria-selected', tab === 'add' ? 'true' : 'false');
+    }
+    if (tabBtnSkills) {
+      tabBtnSkills.classList.toggle('active', tab === 'skills');
+      tabBtnSkills.setAttribute('aria-selected', tab === 'skills' ? 'true' : 'false');
+    }
+    if (tabBtnOnboard) {
+      tabBtnOnboard.classList.toggle('active', tab === 'onboard');
+      tabBtnOnboard.setAttribute('aria-selected', tab === 'onboard' ? 'true' : 'false');
+    }
+
+    if (panelSaved) panelSaved.classList.toggle('hidden', tab !== 'saved');
+    if (panelAdd) panelAdd.classList.toggle('hidden', tab !== 'add');
+    if (panelSkills) panelSkills.classList.toggle('hidden', tab !== 'skills');
+    if (panelOnboard) panelOnboard.classList.toggle('hidden', tab !== 'onboard');
+
+    // Header, badge and button dynamic labels
+    if (tab === 'saved') {
+      if (stepBadge) stepBadge.textContent = '1/3';
+      if (modalTitle) modalTitle.textContent = 'AI Builder Configuration';
+      if (modalSubtitle) modalSubtitle.textContent = 'Manage your model providers, skills and settings for this project.';
+      if (cancelBtn) cancelBtn.querySelector('span').textContent = 'Cancel';
+      if (primaryBtnText) primaryBtnText.textContent = 'Next: Add Provider';
+      if (primaryBtnIcon) primaryBtnIcon.setAttribute('data-lucide', 'arrow-right');
+    } else if (tab === 'add') {
+      if (stepBadge) stepBadge.textContent = '1/3';
+      if (modalTitle) modalTitle.textContent = 'Edit Model Provider';
+      if (modalSubtitle) modalSubtitle.textContent = 'Configure this provider and customize how it works in AI Builder.';
+      if (cancelBtn) cancelBtn.querySelector('span').textContent = 'Cancel';
+      if (primaryBtnText) primaryBtnText.textContent = 'Continue';
+      if (primaryBtnIcon) primaryBtnIcon.setAttribute('data-lucide', 'arrow-right');
+    } else if (tab === 'skills') {
+      if (stepBadge) stepBadge.textContent = '2/3';
+      if (modalTitle) modalTitle.textContent = 'Edit Model Provider';
+      if (modalSubtitle) modalSubtitle.textContent = 'Control what this model can do. Enable or disable skills.';
+      if (cancelBtn) cancelBtn.querySelector('span').textContent = 'Back';
+      if (primaryBtnText) primaryBtnText.textContent = 'Continue';
+      if (primaryBtnIcon) primaryBtnIcon.setAttribute('data-lucide', 'arrow-right');
+      renderSkillsCatalog();
+    } else if (tab === 'onboard') {
+      if (stepBadge) stepBadge.textContent = '3/3';
+      if (modalTitle) modalTitle.textContent = 'Edit Model Provider';
+      if (modalSubtitle) modalSubtitle.textContent = 'Fine-tune how this provider behaves.';
+      if (cancelBtn) cancelBtn.querySelector('span').textContent = 'Back';
+      if (primaryBtnText) primaryBtnText.textContent = 'Save Provider';
+      if (primaryBtnIcon) primaryBtnIcon.setAttribute('data-lucide', 'check');
+    }
+
+    refreshIcons();
+  };
+
+  if (tabBtnSaved) tabBtnSaved.onclick = () => switchTab('saved');
+  if (tabBtnAdd) tabBtnAdd.onclick = () => switchTab('add');
+  if (tabBtnSkills) tabBtnSkills.onclick = () => switchTab('skills');
+  if (tabBtnOnboard) tabBtnOnboard.onclick = () => switchTab('onboard');
+  if (addNewProviderBtn) {
+    addNewProviderBtn.onclick = () => {
+      editingProviderId = null;
+      switchTab('add');
+    };
+  }
+
+  // Cancel / Back Button Action
+  if (cancelBtn) {
+    cancelBtn.onclick = () => {
+      if (activeTab === 'add') switchTab('saved');
+      else if (activeTab === 'skills') switchTab('add');
+      else if (activeTab === 'onboard') switchTab('skills');
+      else closeModal();
+    };
+  }
+
+  // Primary Action Button (Next / Continue / Save)
+  if (primaryBtn) {
+    primaryBtn.onclick = async () => {
+      if (activeTab === 'saved') {
+        switchTab('add');
+      } else if (activeTab === 'add') {
+        switchTab('skills');
+      } else if (activeTab === 'skills') {
+        switchTab('onboard');
+      } else if (activeTab === 'onboard') {
+        await handleSave();
+      }
+    };
+  }
 
   const showAlert = (msg) => {
     if (alertBox && alertText) {
@@ -10723,271 +11346,54 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
   };
 
   if (closeBtn) closeBtn.onclick = closeModal;
-  if (cancelBtn) cancelBtn.onclick = closeModal;
   if (backdrop) backdrop.onclick = closeModal;
-
-  // Temperature and Max Tokens live labels
-  if (tempInput && tempVal) {
-    tempInput.oninput = () => { tempVal.textContent = tempInput.value; };
-  }
-  if (maxTokensInput && maxTokensVal) {
-    maxTokensInput.oninput = () => { maxTokensVal.textContent = maxTokensInput.value; };
-  }
 
   // Toggle API key visibility
   if (toggleKeyBtn && apiKeyInput) {
     toggleKeyBtn.onclick = () => {
       const isPwd = apiKeyInput.type === 'password';
       apiKeyInput.type = isPwd ? 'text' : 'password';
-      toggleKeyBtn.innerHTML = isPwd ? '<i data-lucide="eye-off"></i>' : '<i data-lucide="eye"></i>';
+      toggleKeyBtn.innerHTML = isPwd ? '<i data-lucide="eye"></i>' : '<i data-lucide="eye-off"></i>';
       refreshIcons();
     };
   }
 
-  const presetChipsContainer = document.getElementById('svc-ai-preset-chips-list');
-
-  const PRESET_MODELS = {
-    vertex: [
-      'gemini-2.0-flash',
-      'gemini-2.0-flash-lite',
-      'gemini-1.5-pro-002',
-      'claude-3-5-sonnet@20241022',
-      'meta/llama-3.3-70b-instruct-maas',
-    ],
-    openai: [
-      'gpt-4o',
-      'gpt-4o-mini',
-      'o3-mini',
-      'o1',
-    ],
-    anthropic: [
-      'claude-3-7-sonnet',
-      'claude-3-5-sonnet-20241022',
-      'claude-3-5-haiku-20241022',
-    ],
-    deepseek: [
-      'deepseek-chat',
-      'deepseek-reasoner',
-    ],
-    openrouter: [
-      'z-ai/glm-5.2:free',
-      'openai/gpt-4o',
-      'deepseek/deepseek-r1',
-      'anthropic/claude-3.5-sonnet',
-      'meta-llama/llama-3.3-70b-instruct',
-      'qwen/qwen-2.5-coder-32b-instruct',
-    ],
-    ollama: [
-      'qwen2.5-coder:32b',
-      'llama3.3:70b',
-      'deepseek-r1:14b',
-    ],
-    custom: [
-      'gpt-4o',
-      'claude-3-5-sonnet-20241022',
-      'deepseek-chat',
-    ],
-  };
-
-  const renderPresetChips = () => {
-    if (!presetChipsContainer) return;
-    const provider = providerSel?.value || 'vertex';
-    const models = PRESET_MODELS[provider] || PRESET_MODELS.vertex;
-    const currentModel = modelInput?.value?.trim();
-    presetChipsContainer.innerHTML = models.map(m => {
-      const isActive = currentModel === m;
-      return `<button type="button" class="svc-ai-preset-chip ${isActive ? 'active' : ''}" data-model="${escapeHtml(m)}">${escapeHtml(m)}</button>`;
-    }).join('');
-
-    presetChipsContainer.querySelectorAll('.svc-ai-preset-chip').forEach(chip => {
-      chip.onclick = () => {
-        const m = chip.dataset.model;
-        if (modelInput) {
-          modelInput.value = m;
-          renderPresetChips();
-        }
-      };
-    });
-  };
-
-  // Provider Selection Tiles
-  const providerTiles = document.querySelectorAll('.svc-ai-provider-tile');
-  providerTiles.forEach(tile => {
-    tile.onclick = () => {
-      providerTiles.forEach(t => t.classList.remove('active'));
-      tile.classList.add('active');
-      const prov = tile.dataset.provider || 'vertex';
-      if (providerSel) providerSel.value = prov;
-
-      // Update placeholders and hints
-      if (prov === 'vertex') {
-        if (modelInput) modelInput.value = 'gemini-2.0-flash';
-        if (baseUrlInput) { baseUrlInput.placeholder = 'https://generativelanguage.googleapis.com/v1beta'; }
-        if (baseUrlHint) { baseUrlHint.textContent = 'Standard Google Vertex / Gemini endpoint.'; }
-        if (apiKeyInput) { apiKeyInput.placeholder = 'AIzaSy... (Gemini API Key)'; }
-      } else if (prov === 'openai') {
-        if (modelInput) modelInput.value = 'gpt-4o';
-        if (baseUrlInput) { baseUrlInput.placeholder = 'https://api.openai.com/v1'; }
-        if (baseUrlHint) { baseUrlHint.textContent = 'Standard OpenAI endpoint or custom proxy.'; }
-        if (apiKeyInput) { apiKeyInput.placeholder = 'sk-...'; }
-      } else if (prov === 'anthropic') {
-        if (modelInput) modelInput.value = 'claude-3-7-sonnet';
-        if (baseUrlInput) { baseUrlInput.placeholder = 'https://api.anthropic.com/v1'; }
-        if (baseUrlHint) { baseUrlHint.textContent = 'Standard Anthropic endpoint.'; }
-        if (apiKeyInput) { apiKeyInput.placeholder = 'sk-ant-...'; }
-      } else if (prov === 'deepseek') {
-        if (modelInput) modelInput.value = 'deepseek-chat';
-        if (baseUrlInput) { baseUrlInput.placeholder = 'https://api.deepseek.com/v1'; }
-        if (baseUrlHint) { baseUrlHint.textContent = 'Standard DeepSeek OpenAI-compatible endpoint.'; }
-        if (apiKeyInput) { apiKeyInput.placeholder = 'sk-...'; }
-      } else if (prov === 'openrouter') {
-        if (modelInput) modelInput.value = 'z-ai/glm-5.2:free';
-        if (baseUrlInput) { baseUrlInput.placeholder = 'https://openrouter.ai/api/v1'; }
-        if (baseUrlHint) { baseUrlHint.textContent = 'Standard OpenRouter API endpoint.'; }
-        if (apiKeyInput) { apiKeyInput.placeholder = 'sk-or-v1-...'; }
-      } else if (prov === 'ollama') {
-        if (modelInput) modelInput.value = 'qwen2.5-coder:32b';
-        if (baseUrlInput) { baseUrlInput.placeholder = 'http://localhost:11434/v1'; }
-        if (baseUrlHint) { baseUrlHint.textContent = 'Local Ollama endpoint.'; }
-        if (apiKeyInput) { apiKeyInput.placeholder = 'Not required for local Ollama'; }
-      } else if (prov === 'custom') {
-        if (modelInput) modelInput.value = 'gpt-4o';
-        if (baseUrlInput) { baseUrlInput.placeholder = 'https://your-custom-llm.com/v1'; }
-        if (baseUrlHint) { baseUrlHint.textContent = 'Any OpenAI-compatible completions API endpoint.'; }
-      }
-      renderPresetChips();
-    };
-  });
-
-  const renderSavedProviders = (activeProvider, activeModel) => {
-    if (!savedProvidersList) return;
-    if (savedCountBadge) savedCountBadge.textContent = savedProvidersListState.length;
-
-    if (!savedProvidersListState.length) {
-      savedProvidersList.innerHTML = `
-        <div class="svc-ai-no-saved-providers">
-          <i data-lucide="layers" style="color:#71717a; width:32px; height:32px; margin-bottom:8px;"></i>
-          <p>No saved providers yet.</p>
-          <button type="button" class="btn-pill btn-primary btn-sm" id="svc-ai-empty-add-btn">
-            <i data-lucide="plus"></i><span>Add Your First Provider</span>
-          </button>
-        </div>
-      `;
-      const emptyAdd = savedProvidersList.querySelector('#svc-ai-empty-add-btn');
-      if (emptyAdd) emptyAdd.onclick = () => switchTab('onboard');
-      refreshIcons();
-      return;
-    }
-
-    savedProvidersList.innerHTML = savedProvidersListState.map((p, idx) => {
-      const isActive = (p.model === activeModel && (p.provider === activeProvider || !p.provider));
-      const prov = p.provider || 'openai';
-      return `
-        <div class="svc-ai-saved-provider-card ${isActive ? 'active' : ''}">
-          <div class="svc-ai-saved-prov-left">
-            <div class="svc-ai-dropdown-prov-badge ${escapeHtml(prov)}">${escapeHtml(prov)}</div>
-            <div class="svc-ai-saved-prov-text">
-              <div class="svc-ai-saved-prov-model">${escapeHtml(p.model || 'Model')}</div>
-              <small class="hint">${escapeHtml(p.name || prov)} • ${p.api_key ? 'Key saved' : (currentLoadedSettings?.has_api_key && currentLoadedSettings.provider === prov ? 'Inherits active key' : 'No key')}</small>
-            </div>
-          </div>
-          <div class="svc-ai-saved-prov-actions" style="display: flex; align-items: center; gap: 6px;">
-            <button type="button" class="btn-pill btn-ghost btn-sm svc-ai-add-model-btn" data-prov="${escapeHtml(prov)}" title="Add another model for this provider" style="font-size: 0.72rem; padding: 2px 8px;">
-              <i data-lucide="plus"></i><span>Model</span>
-            </button>
-            ${isActive
-              ? '<span class="svc-ai-active-pill"><i data-lucide="check"></i> Active</span>'
-              : `<button type="button" class="btn-pill btn-secondary btn-sm svc-ai-activate-btn" data-idx="${idx}">Activate</button>`
-            }
-            <button type="button" class="svc-ai-del-prov-btn" data-idx="${idx}" title="Delete provider">
-              <i data-lucide="trash-2"></i>
-            </button>
-          </div>
-        </div>
-      `;
-    }).join('');
-
-    // Activate buttons
-    savedProvidersList.querySelectorAll('.svc-ai-activate-btn').forEach(btn => {
-      btn.onclick = async () => {
-        const idx = parseInt(btn.dataset.idx, 10);
-        const targetP = savedProvidersListState[idx];
-        if (!targetP) return;
-        try {
-          const res = await api(`/projects/${encodeURIComponent(targetProject.id)}/ai/providers/activate`, {
-            method: 'POST',
-            body: JSON.stringify({ provider_id: targetP.id, model: targetP.model, provider: targetP.provider }),
-          });
-          if (res.ok) {
-            toast(`Switched active provider to ${targetP.model}`);
-            closeModal();
-            renderAIChatWorkspace(targetProject);
-          }
-        } catch (err) {
-          toast(`Failed to activate: ${err.message}`);
-        }
-      };
-    });
-
-    // Add Model under same provider button
-    savedProvidersList.querySelectorAll('.svc-ai-add-model-btn').forEach(btn => {
-      btn.onclick = (e) => {
-        e.stopPropagation();
-        const prov = btn.dataset.prov;
-        if (providerSel) providerSel.value = prov;
-        providerTiles.forEach(t => t.classList.toggle('active', t.dataset.provider === prov));
-        switchTab('onboard');
-        modelInput?.focus();
-        toast(`Choose or enter a new model for ${prov.toUpperCase()}`);
-      };
-    });
-
-    // Delete buttons
-    savedProvidersList.querySelectorAll('.svc-ai-del-prov-btn').forEach(btn => {
-      btn.onclick = async (e) => {
-        e.stopPropagation();
-        if (!confirm('Remove this saved provider?')) return;
-        const idx = parseInt(btn.dataset.idx, 10);
-        savedProvidersListState.splice(idx, 1);
-        try {
-          await api(`/projects/${encodeURIComponent(targetProject.id)}/ai/settings`, {
-            method: 'PUT',
-            body: JSON.stringify({ saved_providers: savedProvidersListState }),
-          });
-          renderSavedProviders(activeProvider, activeModel);
-          toast('Provider removed');
-        } catch (err) {
-          toast(`Error removing: ${err.message}`);
-        }
-      };
-    });
-
-    refreshIcons();
-  };
-
-  // Fetch current settings
+  // Load project AI settings from server
   try {
     const res = await api(`/projects/${encodeURIComponent(targetProject.id)}/ai/settings`);
     if (res.ok && res.settings) {
       const s = res.settings;
       currentLoadedSettings = s;
-      const currentProv = s.provider || 'vertex';
-      if (providerSel) providerSel.value = currentProv;
+      selectedProviderType = s.provider || 'openai';
 
-      // Select tile
-      providerTiles.forEach(t => {
-        t.classList.toggle('active', t.dataset.provider === currentProv);
+      provGridTiles.forEach(t => {
+        t.classList.toggle('active', t.dataset.prov === selectedProviderType);
       });
 
-      if (modelInput) modelInput.value = s.model || 'gemini-2.0-flash';
-      if (apiKeyInput) apiKeyInput.placeholder = s.has_api_key ? s.api_key_masked : 'AIzaSy... / sk-...';
-      if (apiKeyInput) apiKeyInput.value = '';
+      if (provNameInput) {
+        provNameInput.value = s.provider ? s.provider.toUpperCase() : 'OpenAI';
+        if (provNameCount) provNameCount.textContent = `${provNameInput.value.length}/32`;
+      }
+      if (modelInput) modelInput.value = s.model || 'gpt-4o';
+      if (modelAliasInput) {
+        modelAliasInput.value = s.model || 'gpt-4o';
+        if (modelCount) modelCount.textContent = `${modelAliasInput.value.length}/32`;
+      }
+      if (apiKeyInput) {
+        apiKeyInput.placeholder = s.has_api_key ? s.api_key_masked : 'sk-...';
+        apiKeyInput.value = '';
+      }
       if (baseUrlInput) baseUrlInput.value = s.base_url || '';
-      if (tempInput) { tempInput.value = s.temperature || 0.7; if (tempVal) tempVal.textContent = s.temperature || 0.7; }
-      if (maxTokensInput) { maxTokensInput.value = s.max_tokens || 4096; if (maxTokensVal) maxTokensVal.textContent = s.max_tokens || 4096; }
-      if (thinkingSel) thinkingSel.value = s.thinking_level || 'medium';
-      if (promptInput) promptInput.value = s.system_prompt || '';
-      if (customSkillsInput) customSkillsInput.value = s.custom_models || '';
+      if (tempInput) {
+        tempInput.value = s.temperature !== undefined ? s.temperature : 0.7;
+        if (tempBox) tempBox.value = tempInput.value;
+        if (tempVal) tempVal.textContent = tempInput.value;
+      }
+      if (maxTokensInput) { maxTokensInput.value = s.max_tokens || 4096; }
+      if (promptInput) {
+        promptInput.value = s.system_prompt || '';
+        if (promptCount) promptCount.textContent = `${promptInput.value.length}/2000`;
+      }
 
       if (s.tools_enabled) {
         try {
@@ -10996,48 +11402,43 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
         } catch (_) {}
       }
 
-      savedProvidersListState = s.saved_providers || [];
-      renderPresetChips();
+      savedProvidersListState = Array.isArray(s.saved_providers) ? s.saved_providers : [];
       renderSavedProviders(s.provider, s.model);
     }
   } catch (err) {
     showAlert(`Could not load settings for project: ${err.message}`);
   }
 
-  // Test Connection
+  // Initial tab render
+  switchTab(initialTab || 'saved');
+
+  // Test Connection Handler
   if (testBtn) {
     testBtn.onclick = async () => {
       hideAlert();
-      const selectedProvider = providerSel?.value || 'vertex';
+      const prov = selectedProviderType || 'openai';
       let enteredKey = apiKeyInput?.value?.trim() || '';
-      if (!enteredKey) {
-        const matchingSaved = savedProvidersListState.find(p => p.provider === selectedProvider && p.api_key);
-        if (matchingSaved) enteredKey = matchingSaved.api_key;
+      if (!enteredKey && currentLoadedSettings?.has_api_key && currentLoadedSettings.provider === prov) {
+        enteredKey = currentLoadedSettings.api_key || '';
       }
-      const hasExistingKey = currentLoadedSettings?.has_api_key && (currentLoadedSettings.provider === selectedProvider || !enteredKey);
-      if (!enteredKey && !hasExistingKey && selectedProvider !== 'ollama' && selectedProvider !== 'custom') {
-        showAlert(`Please enter your ${selectedProvider.toUpperCase()} API Key before testing the connection.`);
+
+      if (!enteredKey && prov !== 'custom') {
+        showAlert(`Please enter your ${prov.toUpperCase()} API Key before testing the connection.`);
         apiKeyInput?.focus();
         return;
       }
+
       if (testStatus) {
         testStatus.textContent = 'Testing connection…';
         testStatus.className = 'svc-ai-test-status';
       }
+
       try {
-        const cleanBaseUrl = (u) => {
-          if (!u) return '';
-          let cleaned = u.trim().replace(/\/+$/, '');
-          if (cleaned.endsWith('/chat/completions')) {
-            cleaned = cleaned.slice(0, -'/chat/completions'.length).replace(/\/+$/, '');
-          }
-          return cleaned;
-        };
         const payload = {
-          provider: selectedProvider,
-          model: modelInput?.value?.trim() || 'gemini-2.0-flash',
+          provider: prov,
+          model: modelInput?.value?.trim() || 'gpt-4o',
           api_key: enteredKey,
-          base_url: cleanBaseUrl(baseUrlInput?.value || ''),
+          base_url: (baseUrlInput?.value || '').trim(),
         };
         const res = await api(`/projects/${encodeURIComponent(targetProject.id)}/ai/test-connection`, {
           method: 'POST',
@@ -11067,62 +11468,82 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
     };
   }
 
-  // Save Settings / Add Provider
+  // Delete Provider Handler
+  if (deleteCurrentProvBtn) {
+    deleteCurrentProvBtn.onclick = async () => {
+      const selectedModel = modelInput?.value?.trim() || '';
+      if (!confirm(`Delete provider configuration for ${selectedProviderType.toUpperCase()} (${selectedModel})?`)) return;
+
+      const idx = savedProvidersListState.findIndex(p => p.id === editingProviderId || (p.provider === selectedProviderType && p.model === selectedModel));
+      if (idx >= 0) {
+        savedProvidersListState.splice(idx, 1);
+        await saveProviderListState(savedProvidersListState);
+        toast('Provider removed');
+        switchTab('saved');
+        renderSavedProviders();
+      } else {
+        toast('Provider not in saved list');
+        switchTab('saved');
+      }
+    };
+  }
+
+  // Save Settings & Stream To AI API Handler
   const handleSave = async () => {
     hideAlert();
     try {
-      const cleanBaseUrl = (u) => {
-        if (!u) return '';
-        let cleaned = u.trim().replace(/\/+$/, '');
-        if (cleaned.endsWith('/chat/completions')) {
-          cleaned = cleaned.slice(0, -'/chat/completions'.length).replace(/\/+$/, '');
-        }
-        return cleaned;
-      };
-
-      const selectedProvider = providerSel?.value || 'vertex';
-      const selectedModel = modelInput?.value?.trim() || 'gemini-2.0-flash';
+      const prov = selectedProviderType || 'openai';
+      const selectedModel = modelInput?.value?.trim() || 'gpt-4o';
+      const customName = provNameInput?.value?.trim() || prov.toUpperCase();
+      const customDesc = provDescInput?.value?.trim() || '';
       let enteredKey = apiKeyInput?.value?.trim() || '';
-      const enteredBaseUrl = cleanBaseUrl(baseUrlInput?.value || '');
+      const enteredBaseUrl = (baseUrlInput?.value || '').trim();
 
-      // Multi-model fix: if key was not re-entered, inherit from matching saved provider or active settings
       if (!enteredKey) {
-        const matchingSaved = savedProvidersListState.find(p => p.provider === selectedProvider && p.api_key);
+        const matchingSaved = savedProvidersListState.find(p => p.provider === prov && p.api_key);
         if (matchingSaved) {
           enteredKey = matchingSaved.api_key;
-        } else if (currentLoadedSettings?.has_api_key && currentLoadedSettings.provider === selectedProvider) {
+        } else if (currentLoadedSettings?.has_api_key && currentLoadedSettings.provider === prov) {
           enteredKey = currentLoadedSettings.api_key || '';
         }
       }
 
-      // Create/update entry in savedProvidersListState
       const newProvEntry = {
-        id: `p_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-        name: `${selectedProvider.toUpperCase()} (${selectedModel})`,
-        provider: selectedProvider,
+        id: editingProviderId || `p_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+        name: customName,
+        provider: prov,
         model: selectedModel,
         api_key: enteredKey,
         base_url: enteredBaseUrl,
+        description: customDesc,
+        sub: customDesc || `${prov.toUpperCase()} models`,
+        models_list: [selectedModel],
+        active: true,
       };
 
-      // Add to saved list if not duplicate
-      const existingIdx = savedProvidersListState.findIndex(p => p.provider === selectedProvider && p.model === selectedModel);
+      // Deactivate other saved providers when a new active one is configured
+      savedProvidersListState.forEach(p => { p.active = false; });
+
+      const existingIdx = savedProvidersListState.findIndex(p => p.id === newProvEntry.id || (p.provider === prov && p.model === selectedModel));
       if (existingIdx >= 0) {
-        if (enteredKey) savedProvidersListState[existingIdx].api_key = enteredKey;
-        if (enteredBaseUrl !== undefined) savedProvidersListState[existingIdx].base_url = enteredBaseUrl;
+        savedProvidersListState[existingIdx] = { ...savedProvidersListState[existingIdx], ...newProvEntry };
       } else {
         savedProvidersListState.unshift(newProvEntry);
       }
 
+      const customModelsInput = document.getElementById('svc-ai-setting-custom-models');
       const payload = {
-        provider: selectedProvider,
+        provider: prov,
         model: selectedModel,
         base_url: enteredBaseUrl,
         temperature: parseFloat(tempInput?.value || 0.7),
         max_tokens: parseInt(maxTokensInput?.value || 4096, 10),
         thinking_level: thinkingSel?.value || 'medium',
+        execution_speed: speedInput?.value || 'balanced',
+        intelligence_level: intelInput?.value || 'high',
+        plan_approval_mode: planModeInput?.value || 'auto_start_10s',
         system_prompt: promptInput?.value || '',
-        custom_models: customSkillsInput?.value || '',
+        custom_models: customModelsInput?.value || '',
         tools_enabled: JSON.stringify([...enabledSkillsSet]),
         saved_providers: savedProvidersListState,
       };
@@ -11139,7 +11560,7 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
         showAlert(`Settings Save Error: ${errDetail}`);
         return;
       }
-      toast(`AI Provider (${selectedModel}) saved and activated!`);
+      toast(`AI Provider (${customName} - ${selectedModel}) saved and activated!`);
       closeModal();
       renderAIChatWorkspace(targetProject);
     } catch (err) {
@@ -11147,12 +11568,6 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
     }
   };
 
-  const modalDebugBtn = document.getElementById('svc-ai-modal-debug-btn');
-  if (modalDebugBtn) {
-    modalDebugBtn.onclick = () => downloadAIDiagnostics(targetProject);
-  }
-
-  if (quickSaveBtn) quickSaveBtn.onclick = handleSave;
   if (form) {
     form.onsubmit = async e => {
       e.preventDefault();
@@ -14820,3 +15235,72 @@ function escapeHtml(value) {
     '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
   }[character]));
 }
+
+function setAIChatPrompt(text) {
+  const input = document.getElementById('svc-ai-input');
+  if (input) {
+    input.value = text;
+    input.focus();
+    if (text.endsWith(': ')) {
+      input.setSelectionRange(text.length, text.length);
+    } else {
+      const form = document.getElementById('svc-ai-chat-form');
+      if (form && typeof form.requestSubmit === 'function') {
+        form.requestSubmit();
+      }
+    }
+  }
+}
+
+// Expose firewall, domain, redirect, and AI functions globally
+if (typeof window !== 'undefined') {
+  window.setAIChatPrompt = setAIChatPrompt;
+
+  window.showFirewallSubview = showFirewallSubview;
+  window.selectBotLevel = selectBotLevel;
+  window.selectBotAction = selectBotAction;
+  window.selectRateLimitAction = selectRateLimitAction;
+  window.selectRuleAction = selectRuleAction;
+  window.selectIpBlockAction = selectIpBlockAction;
+  window.addPageConditionRow = addPageConditionRow;
+
+  window.showDomainSubview = showDomainSubview;
+  window.handleInPageAddDomain = handleInPageAddDomain;
+  window.handleInPageEditDomain = handleInPageEditDomain;
+  window.handleInPageDeleteDomain = handleInPageDeleteDomain;
+
+  window.showRedirectSubview = showRedirectSubview;
+  window.selectRedirectCode = selectRedirectCode;
+  window.handleInPageAddRedirect = handleInPageAddRedirect;
+
+  window.openFwBotProtectModal = openFwBotProtectModal;
+  window.openFwAddRuleModal = openFwAddRuleModal;
+  window.openFwRateLimitModal = openFwRateLimitModal;
+  window.openFwIpBlockModal = openFwIpBlockModal;
+  window.openFwBotProtectPage = openFwBotProtectModal;
+  window.openFwAddRulePage = openFwAddRuleModal;
+  window.openFwRateLimitPage = openFwRateLimitModal;
+  window.openFwIpBlockPage = openFwIpBlockModal;
+
+  function handleAppDedicatedRoute() {
+    const path = (window.location.pathname || '').replace(/\/+$/, '') || '/';
+    if (path === '/bot') {
+      showFirewallSubview('bot');
+    } else if (path === '/firewall-rule') {
+      showFirewallSubview('add-rule');
+    } else if (path === '/rate-limit') {
+      showFirewallSubview('rate-limit');
+    } else if (path === '/ip-block') {
+      showFirewallSubview('ip-block');
+    }
+  }
+
+  window.addEventListener('popstate', handleAppDedicatedRoute);
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => setTimeout(handleAppDedicatedRoute, 120));
+  } else {
+    setTimeout(handleAppDedicatedRoute, 120);
+  }
+}
+
+

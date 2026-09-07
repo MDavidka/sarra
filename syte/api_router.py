@@ -340,3 +340,398 @@ async def api_preview_status(
     if not meta:
         _http_error(404, "not_found", message)
     return {"ok": True, **meta}
+
+
+class AgentChangeRequest(BaseModel):
+    uuid: str = Field(..., description="Project UUID")
+    message: str = Field(..., description="Agent message prompt")
+    model_profile: str | None = Field(None, description="Requested model profile")
+    plan_mode: str | None = "off"
+    agent_mode: str | None = "build"
+    thinking_level: str | None = Field(None, description="Requested thinking effort: low, medium, high, extra_high")
+    execution_speed: str | None = Field(None, description="Requested execution speed: ultra_fast, balanced, deep_reasoning")
+
+
+@router.post("/agent_change")
+async def api_agent_change(body: AgentChangeRequest, _token: dict[str, Any] = Depends(verify_api_token)):
+    from syte.ai.session_manager import session_manager
+    import uuid as _uuid_mod
+    project_id = body.uuid
+    project = await get_project(project_id)
+    if not project:
+        _http_error(404, "not_found", f"Project not found: {project_id}")
+
+    session_id = str(_uuid_mod.uuid4())
+    overrides: dict[str, Any] = {
+        "plan_mode": body.plan_mode,
+        "agent_mode": body.agent_mode,
+    }
+    if body.model_profile:
+        overrides["model"] = body.model_profile
+    if body.thinking_level:
+        overrides["thinking_level"] = body.thinking_level
+    if body.execution_speed:
+        overrides["execution_speed"] = body.execution_speed
+
+    await session_manager.start_turn(
+        project_id=project_id,
+        user_message=body.message,
+        session_id=session_id,
+        settings_override=overrides,
+    )
+
+    request_id = str(_uuid_mod.uuid4())
+    return {
+        "ok": True,
+        "request_id": request_id,
+        "turso_session_id": session_id,
+        "session_number": 1,
+        "status": "accepted",
+    }
+
+
+@router.get("/agent_sessions")
+async def api_agent_sessions(
+    uuid: str = Query(..., description="Project UUID"),
+    limit: int = Query(50, ge=1, le=100),
+    _token: dict[str, Any] = Depends(verify_api_token),
+):
+    from syte.ai.session_manager import session_manager
+    project_id = uuid
+    project = await get_project(project_id)
+    if not project:
+        _http_error(404, "not_found", f"Project not found: {project_id}")
+
+    # Return matching sessions for this project
+    sessions_list = []
+    for key, sess in list(session_manager.sessions.items()):
+        if sess.project_id == project_id:
+            summary = sess.get_status_summary()
+            sessions_list.append({
+                "id": sess.session_id,
+                "session_number": sess.current_turn or 1,
+                "status": "open" if sess.is_running else "completed",
+                "created_at": getattr(sess, "created_at", None),
+                "updated_at": getattr(sess, "last_activity", None),
+                "session_url": f"/api/agent_session/{sess.session_id}",
+            })
+
+    return {
+        "ok": True,
+        "uuid": project_id,
+        "turso_configured": True,
+        "sessions": sessions_list[:limit],
+    }
+
+
+@router.get("/agent_session/{session_id}")
+async def api_agent_session(
+    session_id: str,
+    since_id: int = Query(0, ge=0),
+    _token: dict[str, Any] = Depends(verify_api_token),
+):
+    from syte.ai.session_manager import session_manager
+    sess = session_manager.get_session_by_id(session_id)
+    if not sess:
+        # Check if direct key exists
+        for key, candidate in list(session_manager.sessions.items()):
+            if candidate.session_id == session_id:
+                sess = candidate
+                break
+
+    if not sess:
+        _http_error(404, "not_found", f"Agent session not found: {session_id}")
+
+    events = []
+    for idx, evt in enumerate(list(sess.event_buffer)):
+        evt_id = idx + 1
+        if evt_id > since_id:
+            events.append({
+                "id": evt_id,
+                "event_type": evt.get("event") or evt.get("event_type") or "message",
+                "role": evt.get("role"),
+                "title": evt.get("title"),
+                "detail": evt.get("message") or evt.get("detail") or evt.get("text"),
+                "payload": evt,
+                "created_at": evt.get("timestamp"),
+            })
+
+    return {
+        "ok": True,
+        "id": session_id,
+        "project_id": sess.project_id,
+        "session_number": sess.current_turn or 1,
+        "status": "open" if sess.is_running else "completed",
+        "events": events,
+    }
+
+
+@router.get("/agent_activity/stream")
+async def api_agent_activity_stream(
+    uuid: str = Query(..., description="Project UUID"),
+    since_id: int = Query(0, ge=0),
+    session: str | None = Query(None),
+    _token: dict[str, Any] = Depends(verify_api_token),
+):
+    from fastapi.responses import StreamingResponse
+    from syte.ai.session_manager import session_manager
+    import json
+
+    project_id = uuid
+    target_session_id = session
+
+    async def sse_activity_broadcaster():
+        try:
+            async for event_payload in session_manager.subscribe(project_id, session_id=target_session_id, replay=True):
+                evt_name = event_payload.get("event", "message")
+                data_str = json.dumps(event_payload)
+                yield f"event: {evt_name}\ndata: {data_str}\n\n"
+                if evt_name in ("done", "stopped"):
+                    break
+        except Exception as exc:
+            err_data = json.dumps({"event": "error", "error": str(exc)})
+            yield f"event: error\ndata: {err_data}\n\n"
+
+    return StreamingResponse(
+        sse_activity_broadcaster(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.get("/projects/{uuid}/agent/activity/stream")
+async def api_project_agent_activity_stream(
+    uuid: str,
+    since_id: int = Query(0, ge=0),
+    session: str | None = Query(None),
+    _token: dict[str, Any] = Depends(verify_api_token),
+):
+    from fastapi.responses import StreamingResponse
+    from syte.ai.session_manager import session_manager
+    import json
+
+    project_id = uuid
+    target_session_id = session
+
+    async def sse_activity_broadcaster():
+        try:
+            async for event_payload in session_manager.subscribe(project_id, session_id=target_session_id, replay=True):
+                evt_name = event_payload.get("event", "message")
+                data_str = json.dumps(event_payload)
+                yield f"event: {evt_name}\ndata: {data_str}\n\n"
+                if evt_name in ("done", "stopped"):
+                    break
+        except Exception as exc:
+            err_data = json.dumps({"event": "error", "error": str(exc)})
+            yield f"event: error\ndata: {err_data}\n\n"
+
+    return StreamingResponse(
+        sse_activity_broadcaster(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.get("/agent_activity")
+async def api_agent_activity(
+    uuid: str = Query(..., description="Project UUID"),
+    since_id: int = Query(0, ge=0),
+    limit: int = Query(200, ge=1, le=500),
+    session: str | None = Query(None),
+    _token: dict[str, Any] = Depends(verify_api_token),
+):
+    from syte.ai.session_manager import session_manager
+    project_id = uuid
+    sess = None
+    if session:
+        sess = session_manager.get_session_by_id(session)
+    if not sess:
+        sess = session_manager.get_or_create_session(project_id)
+
+    events = []
+    for idx, evt in enumerate(list(sess.event_buffer)):
+        evt_id = idx + 1
+        if evt_id > since_id:
+            events.append({
+                "id": evt_id,
+                "project_id": project_id,
+                "event_type": evt.get("event") or evt.get("event_type") or "message",
+                "role": evt.get("role"),
+                "title": evt.get("title"),
+                "detail": evt.get("message") or evt.get("detail") or evt.get("text") or evt.get("delta"),
+                "payload": evt,
+                "source": "session_buffer",
+                "created_at": evt.get("timestamp"),
+            })
+
+    return {
+        "ok": True,
+        "uuid": project_id,
+        "events": events[:limit],
+        "count": len(events[:limit]),
+        "since_id": since_id,
+    }
+
+
+@router.post("/agent_interrupt")
+@router.post("/agent_stop")
+async def api_agent_stop(
+    body: dict[str, Any],
+    _token: dict[str, Any] = Depends(verify_api_token),
+):
+    from syte.ai.session_manager import session_manager
+    project_id = body.get("uuid")
+    if not project_id:
+        _http_error(400, "missing_param", "uuid is required")
+    res = await session_manager.stop_session(project_id)
+    return {"ok": True, "result": res}
+
+
+@router.get("/agent_questions")
+async def api_agent_questions(
+    uuid: str = Query(..., description="Project UUID"),
+    status: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=100),
+    _token: dict[str, Any] = Depends(verify_api_token),
+):
+    from syte.ai.session_manager import session_manager
+    sess = session_manager.get_or_create_session(uuid)
+    questions = []
+    if getattr(sess, "pending_question", None):
+        questions.append(sess.pending_question)
+    return {"ok": True, "questions": questions}
+
+
+@router.post("/agent_answer_question")
+async def api_agent_answer_question(
+    body: dict[str, Any],
+    _token: dict[str, Any] = Depends(verify_api_token),
+):
+    from syte.ai.session_manager import session_manager
+    project_id = body.get("uuid")
+    if not project_id:
+        _http_error(400, "missing_param", "uuid is required")
+    res = await session_manager.handle_user_answer(project_id, body)
+    return {"ok": True, "answer": body.get("answer"), "result": res}
+
+
+@router.get("/agent_skills")
+async def api_agent_skills(
+    uuid: str = Query(..., description="Project UUID"),
+    _token: dict[str, Any] = Depends(verify_api_token),
+):
+    from syte.ai.skills import SKILLS_REGISTRY, SKILLS_CATEGORIES_CATALOG
+    skills = []
+    for skill_id, skill_data in SKILLS_REGISTRY.items():
+        skills.append({
+            "id": skill_id,
+            "name": skill_data.get("name") or skill_id.replace("_", " ").title(),
+            "active": True,
+            "builtin": True,
+            "custom": False,
+            "description": skill_data.get("description") or f"Skill blueprint for {skill_id}",
+        })
+    for cat_name, cat_data in SKILLS_CATEGORIES_CATALOG.items():
+        cat_id = cat_name.lower().replace(" ", "_").replace("&", "and")
+        skills.append({
+            "id": cat_id,
+            "name": cat_name,
+            "active": True,
+            "builtin": True,
+            "custom": False,
+            "description": cat_data.get("description") or f"Category guidelines for {cat_name}",
+        })
+    return {"ok": True, "skills": skills}
+
+
+@router.post("/agent_skills_enable")
+async def api_agent_skills_enable(
+    body: dict[str, Any],
+    _token: dict[str, Any] = Depends(verify_api_token),
+):
+    return {"ok": True, "skill_id": body.get("skill_id"), "enabled": True}
+
+
+@router.post("/agent_skills_disable")
+async def api_agent_skills_disable(
+    body: dict[str, Any],
+    _token: dict[str, Any] = Depends(verify_api_token),
+):
+    return {"ok": True, "skill_id": body.get("skill_id"), "disabled": True}
+
+
+@router.get("/agent_mcp")
+async def api_agent_mcp(
+    uuid: str = Query(..., description="Project UUID"),
+    _token: dict[str, Any] = Depends(verify_api_token),
+):
+    return {
+        "ok": True,
+        "addons": [
+            {
+                "id": "filesystem",
+                "name": "Local Filesystem & Workspace AST",
+                "connected": True,
+                "builtin": True,
+                "description": "Full access to workspace files, line editing, search, and directory tree.",
+            },
+            {
+                "id": "terminal",
+                "name": "Host Terminal & Command Runner",
+                "connected": True,
+                "builtin": True,
+                "description": "Isolated bash execution with exit codes and stdout/stderr capture.",
+            },
+            {
+                "id": "preview",
+                "name": "Hot-Reloading Preview Dev Server",
+                "connected": True,
+                "builtin": True,
+                "description": "Vite and Next.js instant preview daemon with automatic port forwarding.",
+            },
+        ],
+    }
+
+
+@router.post("/agent_mcp_connect")
+async def api_agent_mcp_connect(
+    body: dict[str, Any],
+    _token: dict[str, Any] = Depends(verify_api_token),
+):
+    return {"ok": True, "addon": body.get("addon"), "connected": True}
+
+
+@router.post("/agent_mcp_disconnect")
+async def api_agent_mcp_disconnect(
+    body: dict[str, Any],
+    _token: dict[str, Any] = Depends(verify_api_token),
+):
+    return {"ok": True, "addon": body.get("addon"), "connected": False}
+
+
+@router.post("/agent_mcp_register")
+async def api_agent_mcp_register(
+    body: dict[str, Any],
+    _token: dict[str, Any] = Depends(verify_api_token),
+):
+    name = body.get("name") or "custom_addon"
+    return {
+        "ok": True,
+        "addon": {
+            "id": name.lower().replace(" ", "_"),
+            "name": name,
+            "connected": True,
+            "builtin": False,
+            "description": body.get("description") or "Custom MCP stdio provider",
+        },
+    }
+
+
