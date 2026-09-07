@@ -97,6 +97,23 @@ def get_ai_tools_schema() -> List[Dict[str, Any]]:
                 },
             },
         },
+        {
+            "type": "function",
+            "function": {
+                "name": "syte_fetch_debug",
+                "description": "Fetch real-time 10-minute server debug activity, categorized API metrics (failed, stale, malformed, bots, suspicion, correct, too many data), VM hardware utilization (CPU/RAM/Disk), login events, and internal errors. All sensitive environment names and credentials are sanitized with [red]. Accessible at sycord.site/de/fetch or sycord.com/de/fetch.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "category": {
+                            "type": "string",
+                            "enum": ["all", "failed", "stale", "malformed", "bots", "suspicion", "correct", "too many data", "vm_details", "internal_errors", "logins"],
+                            "description": "Optional category filter (defaults to 'all').",
+                        },
+                    },
+                },
+            },
+        },
         # 2. Workspace File System Operations (Read, Write, Edit, Move, Delete, List, Search, Terminal)
         {
             "type": "function",
@@ -1508,6 +1525,38 @@ async def execute_syte_tool(project_id: str, tool_name: str, arguments: dict[str
                 "stdout": stdout.decode("utf-8", errors="replace").strip(),
                 "stderr": stderr.decode("utf-8", errors="replace").strip(),
                 "branch": bname,
+            }
+
+        elif tool_name == "syte_fetch_debug":
+            from syte.activity_tracker import tracker
+            debug_data = tracker.get_debug_summary()
+            category = str(arguments.get("category") or "all").strip().lower()
+            if category and category != "all":
+                if category in debug_data.get("api", {}):
+                    filtered_items = debug_data["api"][category]
+                    return {
+                        "ok": True,
+                        "category": category,
+                        "fetch_url": "https://sycord.site/de/fetch",
+                        "count": len(filtered_items),
+                        "items": filtered_items,
+                        "resource_usage": debug_data.get("resource_usage"),
+                    }
+                elif category == "vm_details":
+                    return {"ok": True, "category": category, "vm_details": debug_data.get("vm_details")}
+                elif category == "internal_errors":
+                    return {"ok": True, "category": category, "internal_errors": debug_data.get("internal_errors")}
+                elif category == "logins":
+                    return {"ok": True, "category": category, "logins": debug_data.get("logins")}
+            return {
+                "ok": True,
+                "fetch_url": "https://sycord.site/de/fetch",
+                "summary": debug_data.get("summary"),
+                "resource_usage": debug_data.get("resource_usage"),
+                "api": debug_data.get("api"),
+                "vm_details": debug_data.get("vm_details"),
+                "logins": debug_data.get("logins"),
+                "internal_errors": debug_data.get("internal_errors"),
             }
 
         elif tool_name == "syte_get_performance":

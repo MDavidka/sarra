@@ -191,19 +191,32 @@ class AIAgentEngine:
         if settings_override:
             ai_settings.update(settings_override)
 
-        exec_speed = str(ai_settings.get("execution_speed") or "balanced").strip()
+        session_thinking = getattr(self.session, "thinking_level", "medium") if self.session else "medium"
+        session_speed = getattr(self.session, "execution_speed", "balanced") if self.session else "balanced"
+        exec_speed = str(ai_settings.get("execution_speed") or session_speed or "balanced").strip()
         intel_level = str(ai_settings.get("intelligence_level") or "high").strip()
         plan_approval_mode = str(ai_settings.get("plan_approval_mode") or "auto_start_10s").strip()
 
         temperature = float(ai_settings.get("temperature", 0.7))
-        thinking_level = ai_settings.get("thinking_level", "medium")
+        thinking_level = str(ai_settings.get("thinking_level") or session_thinking or "").strip().lower()
 
-        if exec_speed == "ultra_fast":
-            temperature = 0.3
-            thinking_level = "low"
-        elif exec_speed == "deep_reasoning":
+        if thinking_level == "low":
+            temperature = 0.2
+        elif thinking_level == "medium":
             temperature = 0.5
-            thinking_level = "high"
+        elif thinking_level == "high":
+            temperature = 0.7
+        elif thinking_level in ("extra_high", "max"):
+            temperature = 0.8
+        else:
+            if exec_speed == "ultra_fast":
+                temperature = 0.3
+                thinking_level = "low"
+            elif exec_speed == "deep_reasoning":
+                temperature = 0.5
+                thinking_level = "high"
+            else:
+                thinking_level = "medium"
 
         client = UnifiedAIClient(
             provider=ai_settings.get("provider", "openai"),
@@ -211,7 +224,7 @@ class AIAgentEngine:
             api_key=ai_settings.get("api_key", ""),
             base_url=ai_settings.get("base_url", ""),
             temperature=temperature,
-            max_tokens=int(ai_settings.get("max_tokens", 4096)),
+            max_tokens=int(ai_settings.get("max_tokens", 8192)),
             thinking_level=thinking_level,
         )
 
@@ -302,6 +315,7 @@ class AIAgentEngine:
             yield {"event": "status", "message": f"Thinking with {client.model}…", "turn": current_turn, "timestamp": now_iso}
 
             stream_error = None
+            thought_finished = False
             async for chunk in client.stream_chat(
                 formatted_messages,
                 tools=tools_schema,
@@ -313,10 +327,16 @@ class AIAgentEngine:
                     turn_thoughts += content
                     yield {"event": "thought_delta", "delta": content, "timestamp": datetime.now(timezone.utc).isoformat()}
                 elif chunk_type == "token":
+                    if turn_thoughts and not thought_finished:
+                        thought_finished = True
+                        yield {"event": "thinking", "text": turn_thoughts, "timestamp": datetime.now(timezone.utc).isoformat()}
                     content = chunk.get("content", "")
                     turn_tokens += content
                     yield {"event": "token_delta", "delta": content, "timestamp": datetime.now(timezone.utc).isoformat()}
                 elif chunk_type == "tool_call":
+                    if turn_thoughts and not thought_finished:
+                        thought_finished = True
+                        yield {"event": "thinking", "text": turn_thoughts, "timestamp": datetime.now(timezone.utc).isoformat()}
                     turn_tool_calls.append(chunk)
                 elif chunk_type == "error":
                     err_msg = chunk.get("content", "LLM communication error")
@@ -325,6 +345,10 @@ class AIAgentEngine:
                         break
                     yield {"event": "error", "error": err_msg}
                     return
+
+            if turn_thoughts and not thought_finished:
+                thought_finished = True
+                yield {"event": "thinking", "text": turn_thoughts, "timestamp": datetime.now(timezone.utc).isoformat()}
 
             if stream_error:
                 yield {
@@ -389,29 +413,10 @@ class AIAgentEngine:
                     }
                     continue
 
-                action_intent_phrases = ["let me", "i will", "i'll create", "i'll build", "step 1", "first,", "to start,", "i need to", "let's start", "let's build", "let's create", "let me examine", "let me inspect"]
-                has_action_intent = any(phrase in str(turn_tokens or "").lower() for phrase in action_intent_phrases)
-                is_complex_request = any(kw in str(user_message or "").lower() for kw in ["build", "create", "redesign", "add", "fix", "implement", "update", "make", "refactor", "setup", "style"])
-
-                if (has_action_intent or is_complex_request) and current_turn < 4:
-                    auto_start_prompt = (
-                        "Autonomous Directive: Please invoke `syte_create_plan` or execute file/command tools directly now. "
-                        "Do not stop or output prose descriptions without calling tools."
-                    )
-                    await save_ai_chat_message(self.project_id, role="assistant", content=turn_tokens)
-                    formatted_messages.append({"role": "assistant", "content": turn_tokens})
-                    formatted_messages.append({"role": "user", "content": auto_start_prompt})
-                    yield {
-                        "event": "status",
-                        "message": "Initiating autonomous plan execution…",
-                        "turn": current_turn,
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                    }
-                    continue
-
+                full_text = final_response_text or turn_tokens
                 # Everything is completed: save final response and emit done
-                await save_ai_chat_message(self.project_id, role="assistant", content=turn_tokens)
-                yield {"event": "done", "reply": turn_tokens, "timestamp": datetime.now(timezone.utc).isoformat()}
+                await save_ai_chat_message(self.project_id, role="assistant", content=full_text)
+                yield {"event": "done", "reply": full_text, "timestamp": datetime.now(timezone.utc).isoformat()}
                 break
 
             # Save the assistant message with tool calls

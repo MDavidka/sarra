@@ -397,3 +397,7 @@ def get_skill_content(skill_name: str) -> Optional[str]:
     # Default fallback
     return SKILLS_REGISTRY["website-create"]["content"]
 
+
+SKILLS_GUIDES_REGISTRY = SKILLS_REGISTRY
+
+

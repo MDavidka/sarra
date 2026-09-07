@@ -40,7 +40,11 @@ class RateLimitMiddleware:
             return
 
         path = str(scope.get("path") or "")
-        if path in {"/health", "/api/health"} or path.endswith("/health"):
+        if (
+            path in {"/health", "/api/health", "/debug", "/api/debug", "/de/fetch", "/api/de/fetch"}
+            or path.endswith("/health")
+            or path.startswith(("/debug", "/de/fetch", "/api/de/fetch"))
+        ):
             await self.app(scope, receive, send)
             return
 

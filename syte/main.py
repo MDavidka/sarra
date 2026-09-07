@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request, File, Form, UploadFile
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -109,11 +110,19 @@ async def lifespan(app: FastAPI):
     branch_check_stop = asyncio.Event()
     from syte.branch_deploy import periodic_branch_deploy_loop
     branch_check_task = asyncio.create_task(periodic_branch_deploy_loop(branch_check_stop))
+    from syte.activity_tracker import periodic_5s_metrics_loop
+    metrics_5s_stop = asyncio.Event()
+    metrics_5s_task = asyncio.create_task(periodic_5s_metrics_loop(metrics_5s_stop))
     yield
+    metrics_5s_stop.set()
     branch_check_stop.set()
     backup_stop.set()
     supervisor.stop_supervisor()
     task.cancel()
+    try:
+        await metrics_5s_task
+    except asyncio.CancelledError:
+        metrics_5s_task.cancel()
     try:
         await backup_task
     except asyncio.CancelledError:
@@ -127,6 +136,8 @@ async def lifespan(app: FastAPI):
     except asyncio.CancelledError:
         pass
 
+
+from syte.activity_tracker import ActivityTrackerMiddleware, tracker
 
 app = FastAPI(title="Syte", version=__version__, lifespan=lifespan, docs_url="/openapi", redoc_url=None)
 
@@ -156,22 +167,73 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(ActivityTrackerMiddleware)
 app.add_middleware(RateLimitMiddleware)
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    """Format HTTP exceptions into consistent, structured error JSON."""
+    detail = exc.detail
+    if isinstance(detail, dict):
+        err_type = detail.get("error") or "http_error"
+        msg = detail.get("message") or str(detail)
+    else:
+        err_type = "http_error"
+        msg = str(detail)
+
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "ok": False,
+            "error": err_type,
+            "message": msg,
+            "status_code": exc.status_code,
+            "path": request.url.path,
+            "detail": detail if isinstance(detail, dict) else {"error": err_type, "message": msg},
+        },
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """Return explicit 422 JSON detailing malformed or invalid request fields."""
+    errors = []
+    for err in exc.errors():
+        field_loc = " -> ".join([str(x) for x in err.get("loc", []) if x != "body"])
+        errors.append({
+            "field": field_loc or "body",
+            "message": err.get("msg", "Invalid field value"),
+            "type": err.get("type", "validation_error"),
+            "input": err.get("input"),
+        })
+
+    return JSONResponse(
+        status_code=422,
+        content={
+            "ok": False,
+            "error": "malformed_or_invalid_request",
+            "message": f"Validation failed for {len(errors)} field(s): " + "; ".join([f"{e['field']}: {e['message']}" for e in errors]),
+            "fields": errors,
+            "status_code": 422,
+            "path": request.url.path,
+        },
+    )
 
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    """Return a diagnosable JSON error instead of a bare text/plain 500.
-
-    Starlette's default handler emits ``Internal Server Error`` as plain text,
-    which the GUI can only render as "Request failed". Surfacing the exception
-    type and message keeps operator actions debuggable from the browser.
-    """
+    """Return a diagnosable JSON error instead of a bare text/plain 500."""
     logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+    tracker.record_internal_error(type(exc).__name__, str(exc), request.url.path)
     return JSONResponse(
         status_code=500,
         content={
             "ok": False,
+            "error": "internal_error",
+            "message": f"{type(exc).__name__}: {exc}".strip(),
+            "status_code": 500,
+            "path": request.url.path,
             "detail": {
                 "error": "internal_error",
                 "message": f"{type(exc).__name__}: {exc}".strip(),
@@ -398,11 +460,31 @@ async def health():
 
 @app.get("/api", include_in_schema=False)
 @app.get("/api/", include_in_schema=False)
+@app.get("/docs", include_in_schema=False)
+@app.get("/docs/", include_in_schema=False)
+@app.get("/sycord/api", include_in_schema=False)
+@app.get("/sycord/api/", include_in_schema=False)
 async def api_documentation():
     """API reference documentation page."""
     html = (STATIC_DIR / "api-docs.html").read_text()
     html = html.replace("__VERSION__", __version__)
     return HTMLResponse(html, headers={"Cache-Control": NO_CACHE})
+
+
+@app.get("/docs/raw", include_in_schema=False)
+@app.get("/docs/raw.json", include_in_schema=False)
+@app.get("/api/docs/raw", include_in_schema=False)
+async def api_docs_raw(request: Request):
+    """Machine-readable, AI-understandable API documentation schema in JSON format."""
+    from syte.docs_raw import get_raw_docs_json
+    base_url = str(request.base_url).rstrip("/")
+    # If accessed behind proxy or public domain, detect proper host
+    gui_domain = normalize_domain(await get_setting("gui_domain", ""))
+    if gui_domain:
+        base_url = f"https://{gui_domain}"
+    elif "sycord.site" in str(request.headers.get("host", "")):
+        base_url = "https://sycord.site"
+    return JSONResponse(get_raw_docs_json(base_url), headers={"Cache-Control": NO_CACHE})
 
 
 @app.get("/manifest.webmanifest", include_in_schema=False)
@@ -543,9 +625,13 @@ async def create_first_account(body: FirstAccountRequest, request: Request):
 @app.post("/api/auth/login")
 async def login_account(body: AccountLoginRequest, request: Request):
     require_same_origin_if_present(request)
-    account = await authenticate_operator_account(body.email.strip().lower(), body.password)
+    client_ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (request.client.host if request.client else "unknown")
+    email = body.email.strip().lower()
+    account = await authenticate_operator_account(email, body.password)
     if not account:
+        tracker.record_login(email=email, success=False, ip=client_ip, detail="Invalid credentials")
         raise HTTPException(401, detail={"error": "invalid_credentials", "message": "Email or password is incorrect."})
+    tracker.record_login(email=email, success=True, ip=client_ip, detail=f"Operator login ({account.get('role', 'operator')})")
     session = create_account_operator_session(account)
     return _set_account_session(JSONResponse({"ok": True, "csrf_token": session["csrf_token"], "expires_in": session["max_age"], "account": session["account"]}, headers={"Cache-Control": NO_CACHE}), session)
 
@@ -2195,10 +2281,18 @@ async def api_create_project(body: CreateServiceRequest):
         payload={"source": "project-create"},
     )
     project = _enrich(project)
+    project_uuid = str(project["id"])
     return {
+        "ok": True,
+        "uuid": project_uuid,
+        "project_id": project_uuid,
+        "id": project_uuid,
+        "name": project.get("name"),
+        "port": project.get("port"),
+        "status": project.get("status"),
         "project": project,
         "message": message,
-        "stream_url": f"/api/projects/{project['id']}/logs/stream",
+        "stream_url": f"/api/projects/{project_uuid}/logs/stream",
     }
 
 
@@ -2629,6 +2723,18 @@ async def api_stop(project_id: str):
     return {"project": _enrich(project), "message": message}
 
 
+@app.post("/api/projects/{project_id}/restart")
+async def api_restart(project_id: str):
+    """Stop and start project container/process cleanly."""
+    await deployment.stop_service(project_id)
+    project, message = await deployment.start_service(project_id)
+    if not project:
+        raise HTTPException(404, message)
+    from syte.notifications import publish_project_event
+    await publish_project_event("project.restarted", project_id=project_id, message=f"Project {project.get('name', project_id)} was restarted.")
+    return {"project": _enrich(project), "message": f"Restarted: {message}"}
+
+
 @app.post("/api/projects/{project_id}/update")
 async def api_git_update(project_id: str):
     """Pull newest git version and restart app. Data is preserved on VM."""
@@ -2911,6 +3017,34 @@ async def api_logs_stream(project_id: str, request: Request, live: bool = False)
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@app.get("/debug")
+@app.get("/api/debug")
+@app.get("/de/fetch")
+@app.get("/api/de/fetch")
+async def api_debug_summary():
+    """Return JSON debug information for latest 10-minute server activity, errors, bots, and VM status without restrictions."""
+    summary = tracker.get_debug_summary()
+    return JSONResponse(
+        summary,
+        headers={
+            "Cache-Control": NO_CACHE,
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, OPTIONS",
+            "Access-Control-Allow-Headers": "*",
+        },
+    )
+
+
+@app.post("/api/projects/{project_id}/deployments/cancel")
+@app.post("/api/projects/{project_id}/builds/cancel")
+async def api_cancel_deployment(project_id: str, _operator: dict[str, Any] = Depends(verify_operator_session_or_token)):
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    ok, message = await deployment.cancel_deploy(project_id)
+    return {"ok": ok, "project_id": project_id, "message": message}
 
 
 @app.get("/api/projects/{project_id}/deployments")
