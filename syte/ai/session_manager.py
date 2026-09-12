@@ -36,6 +36,7 @@ from syte.sse_core import (
     RETRY_FRAME,
     SUBSCRIBER_QUEUE_SIZE,
     DeltaBatcher,
+    channel_hub,
     encode_sse_frame,
     stream_gap_frame,
     utc_now_iso,
@@ -141,7 +142,7 @@ class ProjectAISession:
 
         # Transient per-turn chatter is excluded from the replay window so a
         # reconnect never re-downloads a whole previous turn's token stream.
-        if evt_type not in ("token_delta", "thought_delta", "status"):
+        if evt_type not in ("token_delta", "thought_delta", "thinking_delta", "status"):
             self._ring.append((seq, frame, event))
 
         for sub in list(self._subs):
@@ -159,6 +160,15 @@ class ProjectAISession:
                     pass
             except Exception:
                 pass
+
+        # Also fan out to better-sse subtab channel subscribers
+        try:
+            channel = channel_hub.get_channel(f"project:{self.project_id}:subtab:ai", create=False)
+            if channel and channel.session_count > 0:
+                for session in list(channel.sessions):
+                    session._enqueue(frame, event)
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Subscription (SSE)
@@ -355,7 +365,7 @@ class AIAgentSessionManager:
                 [
                     entry
                     for entry in session._ring
-                    if str(entry[2].get("event") or "") not in ("token_delta", "thought_delta", "status")
+                    if str(entry[2].get("event") or "") not in ("token_delta", "thought_delta", "thinking_delta", "status")
                 ],
                 maxlen=EVENT_BUFFER_SIZE,
             )

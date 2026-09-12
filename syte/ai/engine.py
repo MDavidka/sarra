@@ -183,16 +183,13 @@ class AIAgentEngine:
             except Exception:
                 pass
 
-            # Gather existing workspace file tree
-            ws_files_list = []
-            if ws_dir.exists():
-                for p in sorted(ws_dir.rglob("*")):
-                    if any(ign in p.parts for ign in [".git", "node_modules", ".venv", "__pycache__", "dist", "build"]):
-                        continue
-                    if len(ws_files_list) < 40:
-                        rel = p.relative_to(ws_dir)
-                        ws_files_list.append(str(rel) + ("/" if p.is_dir() else ""))
-            ws_files_summary = "\n".join(f"  - {f}" for f in ws_files_list) if ws_files_list else "  (Workspace directory is currently empty)"
+            # 2. Gather Deep Focus (Project Memory)
+            from syte.ai.deep_focus import build_deep_focus_index, format_deep_focus_for_prompt
+            from syte.database import get_project_deep_focus
+            stored_df = await get_project_deep_focus(self.project_id)
+            custom_mem = stored_df.get("custom_memory", "") if stored_df else ""
+            deep_focus = await build_deep_focus_index(self.project_id, ws_dir=ws_dir, custom_memory=custom_mem)
+            deep_focus_prompt = format_deep_focus_for_prompt(deep_focus)
 
             context_prompt = (
                 f"\n\n--- ACTIVE SYTE PROJECT CONTEXT ---\n"
@@ -204,7 +201,7 @@ class AIAgentEngine:
                 f"- Connected Git Repository: {project.get('git_url') or 'None'}\n"
                 f"- Logged-in Git / GitHub Account: {github_info}\n"
                 f"- VM Workspace Directory: {str(ws_dir)}\n"
-                f"Existing Workspace Files:\n{ws_files_summary}\n"
+                f"{deep_focus_prompt}\n"
                 f"Capabilities: You have full autonomous tools to manage this project workspace on the host VM: read/write/edit/move/delete/search files, execute shell bash commands, stage and commit git changes, push/pull branches, query the logged-in GitHub account, view real-time router/deployment logs, and trigger zero-downtime deployments.\n"
                 f"------------------------------------\n"
             )
@@ -229,26 +226,22 @@ class AIAgentEngine:
         autonomous_instructions = (
             "\n\n--- SYTE AUTONOMOUS AGENT CORE ARCHITECTURE & EXECUTION STANDARDS ---\n"
             "You are the Syte Autonomous AI Builder & Principal Site Architect — an elite autonomous AI engineer embedded directly in the Syte platform, operating at the quality bar of v0, Google Cloud Code, and Antigravity.\n\n"
-            "## 1. AUTONOMOUS END-TO-END OWNERSHIP\n"
-            "- When given a request (e.g. 'redesign frontend', 'add auth', 'build landing page', 'fix bug', 'optimize build'), YOU MUST NOT STOP UNTIL THE TASK IS 100% READY.\n"
-            "- Do not give partial advice or ask 'shall I proceed?'. Take action immediately by creating a plan, reading files, writing complete code, verifying syntax, and testing.\n"
-            "- If a plan has uncompleted steps, you will continue automatically to the next step without pausing or waiting for human approval.\n\n"
+            "## 1. USER-FIRST DIRECT EXECUTION (PRIMARY DIRECTIVE)\n"
+            "- Focus directly and immediately on what the user asks in their message. Answer their questions, solve their problems, and make their requested changes promptly.\n"
+            "- Do not get distracted by rigid memory steps or unnecessary planning ceremonies for straightforward tasks.\n"
+            "- Use Deep Focus (Project Memory) for instant project awareness (stack, architecture, key files, database) without wasting high token budgets repeatedly reading basic files.\n\n"
             "## 2. PROFESSIONAL DESIGN & UI/UX STANDARDS (v0 / Antigravity Standard)\n"
             "- **Typography**: Modern font stack (Inter, Geist Sans, system UI). Strict hierarchy: Display H1 (tight tracking `-0.03em`), Section H2, Card H3, muted lead copy, and crisp caption badges.\n"
             "- **Color & Styling**: Tailwind CSS / modern CSS. Zinc/Slate neutral scale, glassmorphism (`backdrop-blur-md bg-white/80 border border-zinc-200/60`), vibrant accent colors (Indigo `#6366f1`, Sky `#0284c7`, Emerald `#10b981`).\n"
             "- **Component Library**: Use shadcn/ui style components (Cards, Pills, Action Buttons, Badges, Hero banners, Feature grids, Responsive navbar with mobile sheet) and Lucide icons.\n"
             "- **Zero-Placeholder Guarantee**: ALWAYS write complete, production-ready code. Never leave `// TODO`, `/* implement later */`, or incomplete functions.\n"
             "- **Responsive**: Mobile-first fluid layouts (`grid-cols-1 md:grid-cols-2 lg:grid-cols-3`), touch targets >= 44px, zero horizontal overflow.\n\n"
-            "## 3. MANDATORY EXECUTION WORKFLOW\n"
-            "1. **Plan**: For any multi-step task, start by calling `syte_create_plan` with actionable steps.\n"
-            "2. **Skills Discovery**: Discover or load domain capabilities with `syte_discover_skills` and `syte_load_skill` (browse 'Design & Colors', 'Components & UI', 'App & Routing', 'Login & Auth', 'Server & Backend', 'Integrations & Database', 'Optimization & Build').\n"
-            "3. **Inspect**: Read workspace files (`syte_read_file`, `syte_search_files`, `syte_list_workspace_files`).\n"
-            "4. **Write/Edit Files (PRIMARY FOCUS)**: Generate complete, beautiful code files (`syte_write_file`, `syte_edit_file`).\n"
-            "   - **FILE GENERATION PRIORITY**: Prioritize generating and editing complete workspace files over running heavy VM processes. Syte automatically compiles, containerizes, hot-reloads, and serves workspace files. Do NOT waste tool turns attempting to run long-running, blocking background shell processes or complex terminal daemons.\n"
-            "5. **Update Step Status**: Keep the user updated with precise progress by marking steps `in_progress` and then `completed` using `syte_update_plan_step`.\n"
-            "6. **Verify & Test**: Run `syte_security_lint_scan` to verify AST syntax and safety, run quick compilation checks (`syte_run_command`), and launch preview servers (`syte_start_preview`).\n"
-            "   - **PREVIEW TESTING DIRECTIVE**: ALWAYS use `syte_start_preview` to test your changes against the live preview server during development. DO NOT trigger real production deployments (`syte_create_deployment`) for testing. Production deployments are reserved only for when explicitly requested by the user.\n"
-            "7. **Deliver**: Provide a concise summary of what was accomplished only after all steps are done.\n"
+            "## 3. PRAGMATIC EXECUTION WORKFLOW\n"
+            "1. **Analyze User Request**: Directly address what the user requested. If attachments or uploaded files (Excel, Word, Zip, CSV, code) are provided in context, analyze their content thoroughly.\n"
+            "2. **Inspect or Use Deep Focus**: Check Deep Focus (or workspace files when needed) to pinpoint exact changes.\n"
+            "3. **Write/Edit Files**: Generate complete, high-quality code files (`syte_write_file`, `syte_edit_file`).\n"
+            "4. **Verify & Test**: Scan AST syntax and safety (`syte_security_lint_scan`) and verify preview servers (`syte_start_preview`).\n"
+            "5. **Deliver**: Provide a clear, concise summary of the answer or changes directly to the user.\n"
             "------------------------------------------------------------------------\n"
         )
         full_system_prompt = f"{base_prompt}\n{autonomous_instructions}\n{context_prompt}"
@@ -273,7 +266,7 @@ class AIAgentEngine:
 
         tools_schema = get_ai_tools_schema() if ai_settings.get("tools_enabled") != "none" else None
 
-        # 6. Autonomous execution loop (up to 120 tool turns for continuous full-task completion)
+        # 6. Execution loop
         max_turns = 120
         current_turn = 0
         final_response_text = ""
@@ -296,8 +289,6 @@ class AIAgentEngine:
                 if chunk_type == "thought":
                     content = chunk.get("content", "")
                     turn_thoughts += content
-                    # Hot delta: no per-token timestamp — the session batches
-                    # these and stamps one timestamp per merged frame.
                     yield {"event": "thought_delta", "delta": content, "request_id": request_id, "turn": current_turn}
                 elif chunk_type == "token":
                     content = chunk.get("content", "")
@@ -321,7 +312,7 @@ class AIAgentEngine:
                     "request_id": request_id,
                 }
                 await asyncio.sleep(2)
-                current_turn -= 1  # retry turn
+                current_turn -= 1
                 continue
 
             final_response_text += turn_tokens
@@ -332,72 +323,9 @@ class AIAgentEngine:
                 if parsed_calls:
                     turn_tool_calls = parsed_calls
 
-            # If no tool calls were requested in this turn
-            # If no tool calls were requested in this turn
+            # If no tool calls were requested in this turn: the agent has finished answering the user's message!
             if not turn_tool_calls:
-                active_plan = getattr(self.session, "active_plan", None) if self.session else None
-
-                # If no active plan exists yet, attempt to parse markdown step headings from turn_tokens
-                if not active_plan and turn_tokens:
-                    parsed_plan = extract_plan_from_markdown_text(str(user_message or "")[:60], turn_tokens)
-                    if parsed_plan and self.session:
-                        self.session.active_plan = parsed_plan
-                        active_plan = parsed_plan
-                        yield {
-                            "event": "tool_call_result",
-                            "tool_call_id": "auto_plan_1",
-                            "tool_name": "syte_create_plan",
-                            "request_id": request_id,
-                            "turn": current_turn,
-                            "result": {"ok": True, "plan": parsed_plan, "message": f"Created implementation plan with {len(parsed_plan.get('steps') or [])} steps."},
-                        }
-
-                pending_steps = []
-                if active_plan and isinstance(active_plan.get("steps"), list):
-                    pending_steps = [s for s in (active_plan.get("steps") or []) if isinstance(s, dict) and s.get("status") != "completed"]
-
-                # If there are unfinished plan steps, automatically drive the next step without stopping
-                if pending_steps and current_turn < max_turns:
-                    next_step = pending_steps[0]
-                    step_title = next_step.get("title") or f"Step {next_step.get('id') or '1'}"
-                    continuation_prompt = (
-                        f"Autonomous Execution Directive: Plan step '{step_title}' is currently pending. "
-                        "Do not stop, do not ask for user confirmation, and do not wait. Immediately call the necessary tools "
-                        "(e.g. syte_read_file, syte_write_file, syte_edit_file, syte_run_command), execute the changes, "
-                        "update the step status with syte_update_plan_step, and proceed autonomously until all plan steps are complete."
-                    )
-                    await save_ai_chat_message(self.project_id, role="assistant", content=turn_tokens)
-                    formatted_messages.append({"role": "assistant", "content": turn_tokens})
-                    formatted_messages.append({"role": "user", "content": continuation_prompt})
-                    yield {
-                        "event": "status",
-                        "message": f"Auto-advancing plan step: {step_title}…",
-                        "turn": current_turn,
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                    }
-                    continue
-
-                action_intent_phrases = ["let me", "i will", "i'll create", "i'll build", "step 1", "first,", "to start,", "i need to", "let's start", "let's build", "let's create", "let me examine", "let me inspect"]
-                has_action_intent = any(phrase in str(turn_tokens or "").lower() for phrase in action_intent_phrases)
-                is_complex_request = any(kw in str(user_message or "").lower() for kw in ["build", "create", "redesign", "add", "fix", "implement", "update", "make", "refactor", "setup", "style"])
-
-                if (has_action_intent or is_complex_request) and current_turn < 4:
-                    auto_start_prompt = (
-                        "Autonomous Directive: Please invoke `syte_create_plan` or execute file/command tools directly now. "
-                        "Do not stop or output prose descriptions without calling tools."
-                    )
-                    await save_ai_chat_message(self.project_id, role="assistant", content=turn_tokens)
-                    formatted_messages.append({"role": "assistant", "content": turn_tokens})
-                    formatted_messages.append({"role": "user", "content": auto_start_prompt})
-                    yield {
-                        "event": "status",
-                        "message": "Initiating autonomous plan execution…",
-                        "turn": current_turn,
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                    }
-                    continue
-
-                # Everything is completed: save final response and emit done
+                # Save final response and emit done
                 await save_ai_chat_message(self.project_id, role="assistant", content=turn_tokens)
                 yield {
                     "event": "done",

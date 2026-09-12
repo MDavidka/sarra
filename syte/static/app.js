@@ -9150,6 +9150,65 @@ function formatAIMarkdown(text) {
   return parts.join('');
 }
 
+function renderUserMessageContent(rawContent) {
+  if (!rawContent) return '';
+  const marker = '--- USER ATTACHED FILES FOR AI UNDERSTANDING ---';
+  if (!rawContent.includes(marker)) {
+    return formatAIMarkdown(rawContent);
+  }
+
+  const parts = rawContent.split(marker);
+  let userPrompt = (parts[0] || '').trim();
+  if (userPrompt === 'Please analyze and inspect the attached files:' || userPrompt.startsWith('Please analyze and inspect the attached files:')) {
+    userPrompt = '';
+  }
+
+  const rawAttachments = parts[1] || '';
+  const endMarker = '------------------------------------------------';
+  const attachBlock = rawAttachments.split(endMarker)[0] || rawAttachments;
+
+  // Extract attached files
+  const fileRegex = /###\s*\[Attached File:\s*([^\(\]]+)(?:\s*\(([^\)\]]*)\))?\]/g;
+  const attachedFiles = [];
+  let match;
+  while ((match = fileRegex.exec(attachBlock)) !== null) {
+    const filename = (match[1] || '').trim();
+    const summary = (match[2] || '').trim();
+    attachedFiles.push({ filename, summary });
+  }
+
+  let html = '';
+  if (userPrompt) {
+    html += `<div class="svc-ai-user-prompt-text">${formatAIMarkdown(userPrompt)}</div>`;
+  }
+
+  if (attachedFiles.length > 0) {
+    html += `
+      <div class="svc-ai-user-attached-chips">
+        <div class="svc-ai-attached-badge-header"><i data-lucide="paperclip"></i> Attached for AI:</div>
+        ${attachedFiles.map(f => {
+          const ext = (f.filename.split('.').pop() || '').toLowerCase();
+          let icon = 'file-text';
+          if (ext === 'zip') icon = 'archive';
+          else if (['xlsx', 'xls', 'csv', 'tsv'].includes(ext)) icon = 'sheet';
+          else if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) icon = 'image';
+          else if (['js', 'ts', 'tsx', 'jsx', 'py', 'json', 'html', 'css', 'yaml', 'yml'].includes(ext)) icon = 'file-code';
+          else if (ext === 'pdf') icon = 'file';
+          return `
+            <div class="svc-ai-user-chip" title="${escapeHtml(f.summary || f.filename)}">
+              <span class="chip-icon"><i data-lucide="${icon}"></i></span>
+              <strong class="chip-name">${escapeHtml(f.filename)}</strong>
+              ${f.summary ? `<span class="chip-sum">(${escapeHtml(f.summary)})</span>` : ''}
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+  }
+
+  return html;
+}
+
 var aiChatSending = false;
 
 function getPlanCardHtml(plan) {
@@ -9742,11 +9801,13 @@ async function executeAIChatTurn(project, userText) {
         <span class="svc-ai-msg-time">Just now</span>
       </div>
     </div>
-    <div class="svc-ai-user-bubble">${formatAIMarkdown(userText)}</div>
+    <div class="svc-ai-user-bubble">${renderUserMessageContent(userText)}</div>
   `;
   messagesList.appendChild(userEl);
   smartScrollToBottom(messagesList);
   refreshIcons();
+  setAIDraft(project.id, '');
+  saveAICacheFromDOM(project.id);
 
   setAIChatSendingState(true, project);
   const streamState = {
@@ -9784,6 +9845,7 @@ async function executeAIChatTurn(project, userText) {
       const errCard = createLiveAssistantMessageCard(messagesList);
       errCard.innerHTML += `<div class="svc-ai-assistant-bubble" style="color:#ef4444;">Error: ${escapeHtml(errMsg)}</div>`;
       refreshIcons();
+      saveAICacheFromDOM(project.id);
       return;
     }
 
@@ -9821,6 +9883,7 @@ async function executeAIChatTurn(project, userText) {
       streamState.liveThinkingMarkerEl.remove();
     }
     refreshIcons();
+    saveAICacheFromDOM(project.id);
   }
 }
 
@@ -9964,6 +10027,640 @@ async function downloadAIDiagnostics(project) {
   }
 }
 
+var aiAttachedFiles = [];
+
+function renderAIAttachmentsTray() {
+  const tray = document.getElementById('svc-ai-attachments-tray');
+  const countEl = document.getElementById('svc-ai-attached-count');
+  const listEl = document.getElementById('svc-ai-attached-chips-list');
+  const clearBtn = document.getElementById('svc-ai-tray-clear-btn');
+  if (!tray || !listEl) return;
+
+  if (!aiAttachedFiles || !aiAttachedFiles.length) {
+    tray.style.display = 'none';
+    listEl.innerHTML = '';
+    return;
+  }
+
+  tray.style.display = 'block';
+  if (countEl) countEl.textContent = String(aiAttachedFiles.length);
+
+  listEl.innerHTML = aiAttachedFiles.map((file, idx) => {
+    const ext = (file.extension || '').toLowerCase().replace('.', '') || 'file';
+    let iconName = 'file-text';
+    if (ext === 'zip') iconName = 'archive';
+    else if (['xlsx', 'xls', 'csv', 'tsv'].includes(ext)) iconName = 'sheet';
+    else if (['docx', 'doc'].includes(ext)) iconName = 'file-text';
+    else if (ext === 'pdf') iconName = 'file';
+    else if (['js', 'ts', 'tsx', 'jsx', 'py', 'html', 'css', 'json'].includes(ext)) iconName = 'file-code';
+
+    const sizeStr = file.size_bytes ? `${Math.round(file.size_bytes / 1024 * 10) / 10} KB` : '';
+
+    return `
+      <div class="svc-ai-attached-chip" title="${escapeHtml(file.summary || file.filename)}">
+        <span class="svc-ai-chip-icon"><i data-lucide="${iconName}"></i></span>
+        <span class="svc-ai-chip-name">${escapeHtml(file.filename)}</span>
+        ${sizeStr ? `<span class="svc-ai-chip-size">(${sizeStr})</span>` : ''}
+        <button type="button" class="svc-ai-chip-remove" onclick="removeAIAttachedFile(${idx})" title="Remove attachment">&times;</button>
+      </div>
+    `;
+  }).join('');
+
+  if (clearBtn && !clearBtn.dataset.bound) {
+    clearBtn.dataset.bound = 'true';
+    clearBtn.onclick = () => {
+      aiAttachedFiles = [];
+      renderAIAttachmentsTray();
+      toast('Attachments cleared');
+    };
+  }
+  refreshIcons();
+}
+
+window.removeAIAttachedFile = (index) => {
+  if (index >= 0 && index < aiAttachedFiles.length) {
+    aiAttachedFiles.splice(index, 1);
+    renderAIAttachmentsTray();
+  }
+};
+
+async function handleAIFilesSelected(files, project) {
+  if (!files || !files.length) return;
+  const targetProject = project || selectedAIProject || { id: 'global', name: 'sarra' };
+  const fileArray = Array.from(files);
+
+  toast(`Uploading & analyzing ${fileArray.length} file(s)...`);
+
+  try {
+    const formData = new FormData();
+    for (const file of fileArray) {
+      formData.append('files', file);
+    }
+    formData.append('extract_to_workspace', 'true');
+
+    const headers = {};
+    if (typeof syraCsrfToken !== 'undefined' && syraCsrfToken) headers['X-Syte-CSRF'] = syraCsrfToken;
+    if (typeof getApiKey === 'function' && getApiKey()) headers['X-API-Key'] = getApiKey();
+
+    const response = await fetch(`/api/projects/${encodeURIComponent(targetProject.id || 'global')}/ai/upload`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: headers,
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(errText || 'Upload failed');
+    }
+
+    const res = await response.json();
+    if (res && res.ok && res.files && res.files.length) {
+      aiAttachedFiles = [...aiAttachedFiles, ...res.files];
+      renderAIAttachmentsTray();
+      toast(`Attached ${res.files.length} file(s) for AI understanding!`);
+      const textarea = document.getElementById('svc-ai-input');
+      if (textarea) textarea.focus();
+    } else {
+      toast('No files could be parsed', 'error');
+    }
+  } catch (err) {
+    console.error('[AI Upload Error]', err);
+    toast(`Upload error: ${err.message}`, 'error');
+  }
+}
+window.handleAIFilesSelected = handleAIFilesSelected;
+
+async function openAIDeepFocusModal(project) {
+  const currentProject = project || selectedAIProject || { id: 'global', name: 'sarra' };
+  const modal = document.getElementById('svc-ai-deep-focus-modal');
+  if (!modal) return;
+
+  const fwEl = document.getElementById('svc-ai-df-val-framework');
+  const rtEl = document.getElementById('svc-ai-df-val-runtime');
+  const dbEl = document.getElementById('svc-ai-df-val-db');
+  const uiEl = document.getElementById('svc-ai-df-val-ui');
+  const dirsList = document.getElementById('svc-ai-df-dirs-list');
+  const filesBox = document.getElementById('svc-ai-df-files-box');
+  const memoryInput = document.getElementById('svc-ai-df-custom-memory-input');
+  const saveBtn = document.getElementById('svc-ai-df-save-memory-btn');
+  const rebuildBtn = document.getElementById('svc-ai-df-rebuild-btn');
+
+  safeShowModal(modal);
+
+  async function loadDeepFocusData() {
+    if (fwEl) fwEl.textContent = 'Loading…';
+    if (rtEl) rtEl.textContent = 'Loading…';
+    if (dbEl) dbEl.textContent = 'Loading…';
+    if (uiEl) uiEl.textContent = 'Loading…';
+
+    try {
+      const res = await api(`/projects/${encodeURIComponent(currentProject.id)}/ai/deep-focus`);
+      if (res && res.ok && res.deep_focus) {
+        const df = res.deep_focus;
+        const stack = df.framework_stack || {};
+        const arch = df.architecture || {};
+
+        if (fwEl) fwEl.textContent = stack.framework || 'Generic';
+        if (rtEl) rtEl.textContent = `${stack.language || 'Code'} (${stack.runtime || 'Host'})`;
+        if (dbEl) dbEl.textContent = stack.database || 'None detected';
+        if (uiEl) uiEl.textContent = (stack.ui_libraries && stack.ui_libraries.length) ? stack.ui_libraries.join(', ') : 'Standard HTML/CSS';
+
+        if (dirsList) {
+          const dirs = arch.directories || [];
+          dirsList.innerHTML = dirs.length ? dirs.map(d => `<span class="svc-ai-df-tag"><i data-lucide="folder"></i> ${escapeHtml(d)}</span>`).join('') : '<span class="hint">No directories indexed</span>';
+        }
+
+        if (filesBox) {
+          const keyFiles = arch.key_files || [];
+          filesBox.innerHTML = keyFiles.length ? `
+            <div class="svc-ai-df-files-list">
+              ${keyFiles.map(f => `
+                <div class="svc-ai-df-file-item">
+                  <i data-lucide="file-code"></i>
+                  <span>${escapeHtml(f.path)}</span>
+                  <span class="hint">(${Math.round((f.size_bytes || 0) / 1024 * 10) / 10} KB)</span>
+                </div>
+              `).join('')}
+            </div>
+          ` : '<span class="hint">Workspace empty or indexing in progress.</span>';
+        }
+
+        if (memoryInput) {
+          memoryInput.value = df.custom_memory || '';
+        }
+        refreshIcons();
+      }
+    } catch (err) {
+      toast(`Failed to load Deep Focus index: ${err.message}`);
+    }
+  }
+
+  if (saveBtn) {
+    saveBtn.onclick = async () => {
+      saveBtn.disabled = true;
+      try {
+        const notes = memoryInput?.value || '';
+        const res = await api(`/projects/${encodeURIComponent(currentProject.id)}/ai/deep-focus`, {
+          method: 'POST',
+          body: JSON.stringify({ custom_memory: notes }),
+        });
+        if (res && res.ok) {
+          toast('Project Memory saved successfully');
+        }
+      } catch (err) {
+        toast(`Error saving Project Memory: ${err.message}`);
+      } finally {
+        saveBtn.disabled = false;
+      }
+    };
+  }
+
+  if (rebuildBtn) {
+    rebuildBtn.onclick = async () => {
+      rebuildBtn.disabled = true;
+      rebuildBtn.innerHTML = '<i data-lucide="refresh-cw" class="spinning"></i> Rebuilding…';
+      try {
+        const res = await api(`/projects/${encodeURIComponent(currentProject.id)}/ai/deep-focus/rebuild`, {
+          method: 'POST',
+        });
+        if (res && res.ok) {
+          toast('Deep Focus index rebuilt from workspace!');
+          await loadDeepFocusData();
+        }
+      } catch (err) {
+        toast(`Error rebuilding Deep Focus index: ${err.message}`);
+      } finally {
+        rebuildBtn.disabled = false;
+        rebuildBtn.innerHTML = '<i data-lucide="refresh-cw"></i> Rebuild Index';
+        refreshIcons();
+      }
+    };
+  }
+
+  await loadDeepFocusData();
+}
+
+function openAIMassUploadModal(project, preselectedFiles = null) {
+  const currentProject = project || selectedAIProject || { id: 'global', name: 'sarra' };
+  const modal = document.getElementById('svc-ai-upload-modal');
+  const fileInput = document.getElementById('svc-ai-file-input');
+  const dropzone = document.getElementById('svc-ai-dropzone-box');
+  const browseBtn = document.getElementById('svc-ai-browse-btn');
+  const submitBtn = document.getElementById('svc-ai-upload-submit-btn');
+  const filesSection = document.getElementById('svc-ai-upload-files-section');
+  const filesList = document.getElementById('svc-ai-upload-files-list');
+  const countEl = document.getElementById('svc-ai-upload-count');
+  const extractCb = document.getElementById('svc-ai-extract-to-workspace-cb');
+
+  if (!modal) return;
+  safeShowModal(modal);
+
+  let stagedFiles = preselectedFiles ? Array.from(preselectedFiles) : [];
+
+  function updateStagedUI() {
+    if (!stagedFiles.length) {
+      if (filesSection) filesSection.style.display = 'none';
+      if (submitBtn) submitBtn.disabled = true;
+      return;
+    }
+    if (filesSection) filesSection.style.display = 'block';
+    if (countEl) countEl.textContent = String(stagedFiles.length);
+    if (submitBtn) submitBtn.disabled = false;
+
+    if (filesList) {
+      filesList.innerHTML = stagedFiles.map((f, i) => `
+        <div class="svc-ai-upload-file-row">
+          <div class="svc-ai-upload-file-left">
+            <i data-lucide="file-check"></i>
+            <strong>${escapeHtml(f.name)}</strong>
+            <span class="hint">(${Math.round(f.size / 1024 * 10) / 10} KB)</span>
+          </div>
+          <button type="button" class="svc-ai-file-remove-btn" onclick="removeStagedFile(${i})">&times;</button>
+        </div>
+      `).join('');
+      refreshIcons();
+    }
+  }
+
+  window.removeStagedFile = (i) => {
+    if (i >= 0 && i < stagedFiles.length) {
+      stagedFiles.splice(i, 1);
+      updateStagedUI();
+    }
+  };
+
+  if (browseBtn) {
+    browseBtn.onclick = () => {
+      if (fileInput) fileInput.click();
+    };
+  }
+
+  if (fileInput) {
+    fileInput.onchange = () => {
+      if (fileInput.files && fileInput.files.length) {
+        stagedFiles = [...stagedFiles, ...Array.from(fileInput.files)];
+        updateStagedUI();
+      }
+    };
+  }
+
+  if (dropzone) {
+    dropzone.ondragover = (e) => {
+      e.preventDefault();
+      dropzone.classList.add('drag-active');
+    };
+    dropzone.ondragleave = () => {
+      dropzone.classList.remove('drag-active');
+    };
+    dropzone.ondrop = (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('drag-active');
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
+        stagedFiles = [...stagedFiles, ...Array.from(e.dataTransfer.files)];
+        updateStagedUI();
+      }
+    };
+  }
+
+  if (submitBtn) {
+    submitBtn.onclick = async () => {
+      if (!stagedFiles.length) return;
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<i data-lucide="refresh-cw" class="spinning"></i> Processing files…';
+
+      try {
+        const formData = new FormData();
+        for (const file of stagedFiles) {
+          formData.append('files', file);
+        }
+        if (extractCb && extractCb.checked) {
+          formData.append('extract_to_workspace', 'true');
+        }
+
+        const headers = {};
+        if (syraCsrfToken) headers['X-Syte-CSRF'] = syraCsrfToken;
+        if (getApiKey()) headers['X-API-Key'] = getApiKey();
+
+        const response = await fetch(`/api/projects/${encodeURIComponent(currentProject.id)}/ai/upload`, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: headers,
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const errText = await response.text();
+          throw new Error(errText || 'Upload failed');
+        }
+
+        const res = await response.json();
+        if (res && res.ok && res.files) {
+          aiAttachedFiles = [...aiAttachedFiles, ...res.files];
+          renderAIAttachmentsTray();
+          safeCloseModal('svc-ai-upload-modal');
+          toast(`Attached ${res.files.length} file(s) for AI understanding!`);
+          
+          const textarea = document.getElementById('svc-ai-input');
+          if (textarea) textarea.focus();
+        }
+      } catch (err) {
+        toast(`Upload error: ${err.message}`);
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i data-lucide="sparkles"></i> Process & Attach for AI Understanding';
+        refreshIcons();
+      }
+    };
+  }
+
+  updateStagedUI();
+}
+
+// ---------------------------------------------------------------------------
+// AI Chat Caching & Instant Hydration System (0ms Page/Tab Persistence)
+// ---------------------------------------------------------------------------
+
+function getAICacheKey(projectId) {
+  return 'syte_ai_cache_v2_' + (projectId || 'global');
+}
+
+function getAICache(projectId) {
+  try {
+    const raw = localStorage.getItem(getAICacheKey(projectId));
+    return raw ? JSON.parse(raw) : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function setAICache(projectId, data) {
+  try {
+    const existing = getAICache(projectId) || {};
+    const merged = { ...existing, ...data, timestamp: Date.now() };
+    localStorage.setItem(getAICacheKey(projectId), JSON.stringify(merged));
+  } catch (_) {}
+}
+
+function clearAICache(projectId) {
+  try {
+    localStorage.removeItem(getAICacheKey(projectId));
+  } catch (_) {}
+}
+
+function getAIDraft(projectId) {
+  try {
+    return localStorage.getItem('syte_ai_draft_' + (projectId || 'global')) || '';
+  } catch (_) {
+    return '';
+  }
+}
+
+function setAIDraft(projectId, text) {
+  try {
+    if (!text) {
+      localStorage.removeItem('syte_ai_draft_' + (projectId || 'global'));
+    } else {
+      localStorage.setItem('syte_ai_draft_' + (projectId || 'global'), text);
+    }
+  } catch (_) {}
+}
+
+function saveAICacheFromDOM(projectId) {
+  const messagesList = document.getElementById('svc-ai-messages-list');
+  if (!messagesList) return;
+  const isWelcome = !!messagesList.querySelector('.svc-ai-welcome-card');
+  if (isWelcome) {
+    setAICache(projectId, { messages: [], feedHtml: messagesList.innerHTML });
+  } else {
+    setAICache(projectId, { feedHtml: messagesList.innerHTML });
+  }
+}
+
+function renderAIWelcomeCard(currentProject, messagesList) {
+  if (!messagesList) return;
+  messagesList.innerHTML = `
+    <div class="svc-ai-welcome-card" style="color:#a1a1aa; text-align:center; padding:40px 20px;">
+      <div style="font-size:24px; margin-bottom:8px;"><i data-lucide="sparkles" style="color:#38bdf8;"></i></div>
+      <h3 style="color:#f4f4f5; font-size:18px; margin:0 0 6px;">OpenCode Autonomous AI Workspace</h3>
+      <p style="font-size:13.5px; max-width:440px; margin:0 auto; line-height:1.5;">Direct terminal access, filesystem editing, hot preview servers, and zero-downtime deployments for <strong>${escapeHtml(currentProject.name || currentProject.id)}</strong>.</p>
+      <button type="button" class="svc-ai-empty-upload-btn" id="svc-ai-empty-upload-btn" onclick="const fi = document.getElementById('svc-ai-file-input'); if (fi) fi.click();">
+        <i data-lucide="paperclip"></i>
+        <span>Attach Files / Zip</span>
+      </button>
+    </div>
+  `;
+  refreshIcons();
+}
+
+function buildAIFeedHtml(msgs, currentProject) {
+  if (!msgs || !msgs.length) return '';
+  let feedHtml = '';
+  let pendingFiles = [];
+
+  for (const m of msgs) {
+    const timeStr = formatMessageTime(m.created_at);
+
+    if (m.role === 'user') {
+      if (pendingFiles.length) {
+        feedHtml += `
+          <div class="svc-ai-files-edited-row">
+            <span class="svc-ai-edited-label"><i data-lucide="wrench"></i> edited</span>
+            ${pendingFiles.map(f => getFileBadgeHtml(f)).join('')}
+          </div>
+        `;
+        pendingFiles = [];
+      }
+      feedHtml += `
+        <div class="svc-ai-message user" data-msg-id="${escapeHtml(m.id || '')}">
+          <div class="svc-ai-message-top">
+            <div class="svc-ai-msg-sender">
+              <div class="svc-ai-sender-avatar user"><i data-lucide="user"></i></div>
+              <span class="svc-ai-sender-name">You</span>
+              ${timeStr ? `<span class="svc-ai-msg-time">${timeStr}</span>` : ''}
+            </div>
+            <button type="button" class="svc-ai-msg-del-btn" onclick="deleteAIChatMessage('${escapeHtml(currentProject.id)}', '${escapeHtml(m.id || '')}', this)" title="Delete message">
+              <i data-lucide="trash-2"></i>
+            </button>
+          </div>
+          <div class="svc-ai-user-bubble">${renderUserMessageContent(m.content)}</div>
+        </div>
+      `;
+    } else if (m.role === 'assistant') {
+      let toolsHtml = '';
+      if (m.tool_calls && Array.isArray(m.tool_calls)) {
+        for (const tc of m.tool_calls) {
+          const fn = tc.function || {};
+          let args = {};
+          try { args = JSON.parse(fn.arguments || '{}'); } catch (_) {}
+          const fnName = fn.name || '';
+          const fPath = args.path || args.source_path || '';
+          if (fnName.includes('file') && fPath && (fnName === 'syte_write_file' || fnName === 'syte_edit_file')) {
+            pendingFiles.push(fPath);
+          }
+
+          if (fnName === 'syte_write_file') {
+            toolsHtml += `
+              <div class="svc-ai-activity-row svc-ai-status-precise">
+                <span class="svc-ai-activity-icon"><i data-lucide="file-plus"></i></span>
+                <span>Created: <strong>${escapeHtml(fPath)}</strong></span>
+              </div>
+            `;
+          } else if (fnName === 'syte_edit_file') {
+            toolsHtml += `
+              <div class="svc-ai-activity-row svc-ai-status-precise">
+                <span class="svc-ai-activity-icon"><i data-lucide="file-edit"></i></span>
+                <span>Edited: <strong>${escapeHtml(fPath)}</strong></span>
+              </div>
+            `;
+          } else if (fnName === 'syte_read_file') {
+            toolsHtml += `
+              <div class="svc-ai-activity-row svc-ai-status-precise">
+                <span class="svc-ai-activity-icon"><i data-lucide="search"></i></span>
+                <span>Inspected: <strong>${escapeHtml(fPath)}</strong></span>
+              </div>
+            `;
+          } else if (fnName === 'syte_run_command') {
+            if (pendingFiles.length) {
+              toolsHtml += `
+                <div class="svc-ai-files-edited-row">
+                  <span class="svc-ai-edited-label"><i data-lucide="wrench"></i> edited</span>
+                  ${pendingFiles.map(f => getFileBadgeHtml(f)).join('')}
+                </div>
+              `;
+              pendingFiles = [];
+            }
+            toolsHtml += `
+              <div class="svc-ai-activity-row svc-ai-status-precise">
+                <span class="svc-ai-activity-icon"><i data-lucide="terminal"></i></span>
+                <span>bash: <strong>${escapeHtml(args.command || '')}</strong></span>
+              </div>
+            `;
+          } else if (fnName === 'syte_start_preview') {
+            toolsHtml += `
+              <div class="svc-ai-activity-row svc-ai-status-precise">
+                <span class="svc-ai-activity-icon"><i data-lucide="zap"></i></span>
+                <span>Starting preview server…</span>
+              </div>
+            `;
+          } else if (fnName === 'syte_discover_skills') {
+            toolsHtml += `
+              <div class="svc-ai-activity-row svc-ai-status-precise">
+                <span class="svc-ai-activity-icon"><i data-lucide="compass"></i></span>
+                <span>Discovered skills in <strong>${escapeHtml(args.category || 'all categories')}</strong></span>
+              </div>
+            `;
+          } else if (fnName === 'syte_load_skill') {
+            toolsHtml += `
+              <div class="svc-ai-activity-row svc-ai-status-precise">
+                <span class="svc-ai-activity-icon"><i data-lucide="book-open"></i></span>
+                <span>Loaded blueprint: <strong>${escapeHtml(args.skill_name || 'Design & Colors')}</strong></span>
+              </div>
+            `;
+          } else if (fnName === 'syte_security_lint_scan') {
+            toolsHtml += `
+              <div class="svc-ai-activity-row svc-ai-status-precise">
+                <span class="svc-ai-activity-icon"><i data-lucide="shield-check"></i></span>
+                <span>AST security & syntax scan verified</span>
+              </div>
+            `;
+          } else if (fnName === 'syte_create_plan') {
+            toolsHtml += `
+              <div class="svc-ai-activity-row svc-ai-status-precise">
+                <span class="svc-ai-activity-icon"><i data-lucide="list-checks"></i></span>
+                <span>Created plan: <strong>${escapeHtml(args.title || 'Implementation Plan')}</strong></span>
+              </div>
+            `;
+          } else if (fnName === 'syte_update_plan_step') {
+            toolsHtml += `
+              <div class="svc-ai-activity-row svc-ai-status-precise">
+                <span class="svc-ai-activity-icon"><i data-lucide="check-circle-2"></i></span>
+                <span>Plan step ${escapeHtml(args.step_id || '')} -> <strong>${escapeHtml(args.status || 'completed')}</strong></span>
+              </div>
+            `;
+          }
+        }
+      }
+
+      if (pendingFiles.length) {
+        toolsHtml += `
+          <div class="svc-ai-files-edited-row">
+            <span class="svc-ai-edited-label"><i data-lucide="wrench"></i> edited</span>
+            ${pendingFiles.map(f => getFileBadgeHtml(f)).join('')}
+          </div>
+        `;
+        pendingFiles = [];
+      }
+
+      feedHtml += `
+        <div class="svc-ai-message assistant" data-msg-id="${escapeHtml(m.id || '')}">
+          <div class="svc-ai-message-top">
+            <div class="svc-ai-msg-sender">
+              <div class="svc-ai-sender-avatar ai"><i data-lucide="sparkles"></i></div>
+              <span class="svc-ai-sender-name">AI Builder</span>
+              ${timeStr ? `<span class="svc-ai-msg-time">${timeStr}</span>` : ''}
+            </div>
+            <button type="button" class="svc-ai-msg-del-btn" onclick="deleteAIChatMessage('${escapeHtml(currentProject.id)}', '${escapeHtml(m.id || '')}', this)" title="Delete message">
+              <i data-lucide="trash-2"></i>
+            </button>
+          </div>
+          ${toolsHtml}
+          ${m.content ? `<div class="svc-ai-assistant-bubble">${formatAIMarkdown(m.content)}</div>` : ''}
+        </div>
+      `;
+    } else if (m.role === 'tool') {
+      let res = {};
+      try { res = JSON.parse(m.content || '{}'); } catch (_) {}
+      let toolCardHtml = '';
+      if (res.plan) {
+        toolCardHtml = getPlanCardHtml(res.plan);
+      } else if (res.skill_name) {
+        toolCardHtml = getSkillBadgeHtml(res.skill_name);
+      } else if (res.scanned_files_count !== undefined) {
+        toolCardHtml = getSecurityScanHtml(res);
+      } else if (res.requires_user_input) {
+        if (res.is_secret_request) {
+          toolCardHtml = getSecureEnvCardHtml(res, currentProject.id, m.tool_call_id);
+        } else {
+          toolCardHtml = getQuestionCardHtml(res, currentProject.id, m.tool_call_id);
+        }
+      } else if (res.preview_url) {
+        toolCardHtml = `
+          <div class="svc-ai-preview-banner">
+            <div class="svc-ai-preview-lead">
+              <i data-lucide="zap" style="color:#f59e0b;"></i>
+              <span>Preview active: <strong>${escapeHtml(res.preview_url)}</strong></span>
+            </div>
+            <a href="${res.preview_url}" target="_blank" rel="noopener noreferrer" class="svc-ai-preview-link-btn">
+              <span>Open Preview</span>
+              <i data-lucide="external-link"></i>
+            </a>
+          </div>
+        `;
+      }
+
+      if (toolCardHtml) {
+        feedHtml += `
+          <div class="svc-ai-message tool" data-msg-id="${escapeHtml(m.id || '')}">
+            ${toolCardHtml}
+          </div>
+        `;
+      }
+    }
+  }
+
+  if (pendingFiles.length) {
+    feedHtml += `
+      <div class="svc-ai-files-edited-row">
+        <span class="svc-ai-edited-label"><i data-lucide="wrench"></i> edited</span>
+        ${pendingFiles.map(f => getFileBadgeHtml(f)).join('')}
+      </div>
+    `;
+  }
+
+  return feedHtml;
+}
+
 async function renderAIChatWorkspace(project) {
   const currentProject = selectedAIProject || project || (projects && projects[0]) || { id: 'global', name: 'sarra' };
   const messagesList = document.getElementById('svc-ai-messages-list');
@@ -9972,12 +10669,50 @@ async function renderAIChatWorkspace(project) {
   const inputModelLabel = document.getElementById('svc-ai-input-model-label');
   const form = document.getElementById('svc-ai-chat-form');
   const textarea = document.getElementById('svc-ai-input');
+  const deepFocusBtn = document.getElementById('svc-ai-deep-focus-btn');
   const debugBtn = document.getElementById('svc-ai-debug-btn');
   const settingsBtn = document.getElementById('svc-ai-settings-btn');
   const clearBtn = document.getElementById('svc-ai-clear-btn');
   const modelSelectorBtn = document.getElementById('svc-ai-model-selector-btn');
   const micBtn = document.getElementById('svc-ai-mic-btn');
   const attachBtn = document.getElementById('svc-ai-attach-btn');
+  const fileInput = document.getElementById('svc-ai-file-input');
+  const workspaceEl = document.getElementById('svc-ai-workspace');
+
+  if (deepFocusBtn) {
+    deepFocusBtn.onclick = () => openAIDeepFocusModal(selectedAIProject || currentProject);
+  }
+
+  if (attachBtn) {
+    attachBtn.onclick = () => {
+      if (fileInput) fileInput.click();
+    };
+  }
+
+  if (fileInput && !fileInput.dataset.bound) {
+    fileInput.dataset.bound = 'true';
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files && fileInput.files.length) {
+        handleAIFilesSelected(fileInput.files, selectedAIProject || currentProject);
+        fileInput.value = '';
+      }
+    });
+  }
+
+  if (workspaceEl && !workspaceEl.dataset.dropBound) {
+    workspaceEl.dataset.dropBound = 'true';
+    workspaceEl.addEventListener('dragover', (e) => {
+      e.preventDefault();
+    });
+    workspaceEl.addEventListener('drop', (e) => {
+      e.preventDefault();
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
+        handleAIFilesSelected(e.dataTransfer.files, selectedAIProject || currentProject);
+      }
+    });
+  }
+
+  renderAIAttachmentsTray();
 
   if (debugBtn) {
     debugBtn.onclick = () => downloadAIDiagnostics(selectedAIProject || currentProject);
@@ -10005,235 +10740,70 @@ async function renderAIChatWorkspace(project) {
     };
   }
 
-  // Load Shared Global AI Settings
+  // Restore cached draft immediately in 0ms
+  const cachedDraft = getAIDraft(currentProject.id);
+  if (textarea && cachedDraft && !textarea.value) {
+    textarea.value = cachedDraft;
+  }
+  if (textarea && !textarea.dataset.draftBound) {
+    textarea.dataset.draftBound = 'true';
+    textarea.addEventListener('input', () => {
+      setAIDraft((selectedAIProject || currentProject).id, textarea.value);
+    });
+  }
+
+  // Instant 0ms synchronous render from local cache for fluid navigation
+  const cached = getAICache(currentProject.id);
+  let renderedFromCache = false;
+  if (messagesList) {
+    if (cached && Array.isArray(cached.messages) && cached.messages.length > 0) {
+      if (cached.feedHtml) {
+        messagesList.innerHTML = cached.feedHtml;
+      } else {
+        messagesList.innerHTML = buildAIFeedHtml(cached.messages, currentProject);
+      }
+      messagesList.scrollTop = messagesList.scrollHeight;
+      refreshIcons();
+      renderedFromCache = true;
+    } else if (cached && Array.isArray(cached.messages) && cached.messages.length === 0) {
+      renderAIWelcomeCard(currentProject, messagesList);
+      renderedFromCache = true;
+    }
+  }
+
+  if (cached && cached.model && inputModelLabel) {
+    inputModelLabel.textContent = cached.model;
+  }
+
+  // Silent Background Revalidation: Fetch Shared Global AI Settings
   try {
     const res = await api(`/projects/${encodeURIComponent(currentProject.id)}/ai/settings`);
     if (res.ok && res.settings) {
       const s = res.settings;
       if (inputModelLabel) inputModelLabel.textContent = s.model || 'gpt-4o';
+      setAICache(currentProject.id, { model: s.model || 'gpt-4o' });
     }
   } catch (_) {}
 
-  // Load Messages History in Strict Ascending Order
+  // Silent Background Revalidation: Fetch Messages History in Strict Order
   if (messagesList) {
     try {
       const hRes = await api(`/projects/${encodeURIComponent(currentProject.id)}/ai/history`);
       const msgs = hRes.messages || [];
-      if (!msgs.length) {
-        messagesList.innerHTML = `
-          <div class="svc-ai-welcome-card" style="color:#a1a1aa; text-align:center; padding:40px 20px;">
-            <div style="font-size:24px; margin-bottom:8px;"><i data-lucide="sparkles" style="color:#38bdf8;"></i></div>
-            <h3 style="color:#f4f4f5; font-size:18px; margin:0 0 6px;">OpenCode Autonomous AI Workspace</h3>
-            <p style="font-size:13.5px; max-width:440px; margin:0 auto; line-height:1.5;">Direct terminal access, filesystem editing, hot preview servers, and zero-downtime deployments for <strong>${escapeHtml(currentProject.name || currentProject.id)}</strong>.</p>
-          </div>
-        `;
-      } else {
-        let feedHtml = '';
-        let pendingFiles = [];
-
-        for (const m of msgs) {
-          const timeStr = formatMessageTime(m.created_at);
-
-          if (m.role === 'user') {
-            if (pendingFiles.length) {
-              feedHtml += `
-                <div class="svc-ai-files-edited-row">
-                  <span class="svc-ai-edited-label"><i data-lucide="wrench"></i> edited</span>
-                  ${pendingFiles.map(f => getFileBadgeHtml(f)).join('')}
-                </div>
-              `;
-              pendingFiles = [];
-            }
-            feedHtml += `
-              <div class="svc-ai-message user" data-msg-id="${escapeHtml(m.id || '')}">
-                <div class="svc-ai-message-top">
-                  <div class="svc-ai-msg-sender">
-                    <div class="svc-ai-sender-avatar user"><i data-lucide="user"></i></div>
-                    <span class="svc-ai-sender-name">You</span>
-                    ${timeStr ? `<span class="svc-ai-msg-time">${timeStr}</span>` : ''}
-                  </div>
-                  <button type="button" class="svc-ai-msg-del-btn" onclick="deleteAIChatMessage('${escapeHtml(currentProject.id)}', '${escapeHtml(m.id || '')}', this)" title="Delete message">
-                    <i data-lucide="trash-2"></i>
-                  </button>
-                </div>
-                <div class="svc-ai-user-bubble">${formatAIMarkdown(m.content)}</div>
-              </div>
-            `;
-          } else if (m.role === 'assistant') {
-            let toolsHtml = '';
-            if (m.tool_calls && Array.isArray(m.tool_calls)) {
-              for (const tc of m.tool_calls) {
-                const fn = tc.function || {};
-                let args = {};
-                try { args = JSON.parse(fn.arguments || '{}'); } catch (_) {}
-                const fnName = fn.name || '';
-                const fPath = args.path || args.source_path || '';
-                if (fnName.includes('file') && fPath && (fnName === 'syte_write_file' || fnName === 'syte_edit_file')) {
-                  pendingFiles.push(fPath);
-                }
-
-                if (fnName === 'syte_write_file') {
-                  toolsHtml += `
-                    <div class="svc-ai-activity-row svc-ai-status-precise">
-                      <span class="svc-ai-activity-icon"><i data-lucide="file-plus"></i></span>
-                      <span>Created: <strong>${escapeHtml(fPath)}</strong></span>
-                    </div>
-                  `;
-                } else if (fnName === 'syte_edit_file') {
-                  toolsHtml += `
-                    <div class="svc-ai-activity-row svc-ai-status-precise">
-                      <span class="svc-ai-activity-icon"><i data-lucide="file-edit"></i></span>
-                      <span>Edited: <strong>${escapeHtml(fPath)}</strong></span>
-                    </div>
-                  `;
-                } else if (fnName === 'syte_read_file') {
-                  toolsHtml += `
-                    <div class="svc-ai-activity-row svc-ai-status-precise">
-                      <span class="svc-ai-activity-icon"><i data-lucide="search"></i></span>
-                      <span>Inspected: <strong>${escapeHtml(fPath)}</strong></span>
-                    </div>
-                  `;
-                } else if (fnName === 'syte_run_command') {
-                  if (pendingFiles.length) {
-                    toolsHtml += `
-                      <div class="svc-ai-files-edited-row">
-                        <span class="svc-ai-edited-label"><i data-lucide="wrench"></i> edited</span>
-                        ${pendingFiles.map(f => getFileBadgeHtml(f)).join('')}
-                      </div>
-                    `;
-                    pendingFiles = [];
-                  }
-                  toolsHtml += `
-                    <div class="svc-ai-activity-row svc-ai-status-precise">
-                      <span class="svc-ai-activity-icon"><i data-lucide="terminal"></i></span>
-                      <span>bash: <strong>${escapeHtml(args.command || '')}</strong></span>
-                    </div>
-                  `;
-                } else if (fnName === 'syte_start_preview') {
-                  toolsHtml += `
-                    <div class="svc-ai-activity-row svc-ai-status-precise">
-                      <span class="svc-ai-activity-icon"><i data-lucide="zap"></i></span>
-                      <span>Starting preview server…</span>
-                    </div>
-                  `;
-                } else if (fnName === 'syte_discover_skills') {
-                  toolsHtml += `
-                    <div class="svc-ai-activity-row svc-ai-status-precise">
-                      <span class="svc-ai-activity-icon"><i data-lucide="compass"></i></span>
-                      <span>Discovered skills in <strong>${escapeHtml(args.category || 'all categories')}</strong></span>
-                    </div>
-                  `;
-                } else if (fnName === 'syte_load_skill') {
-                  toolsHtml += `
-                    <div class="svc-ai-activity-row svc-ai-status-precise">
-                      <span class="svc-ai-activity-icon"><i data-lucide="book-open"></i></span>
-                      <span>Loaded blueprint: <strong>${escapeHtml(args.skill_name || 'Design & Colors')}</strong></span>
-                    </div>
-                  `;
-                } else if (fnName === 'syte_security_lint_scan') {
-                  toolsHtml += `
-                    <div class="svc-ai-activity-row svc-ai-status-precise">
-                      <span class="svc-ai-activity-icon"><i data-lucide="shield-check"></i></span>
-                      <span>AST security & syntax scan verified</span>
-                    </div>
-                  `;
-                } else if (fnName === 'syte_create_plan') {
-                  toolsHtml += `
-                    <div class="svc-ai-activity-row svc-ai-status-precise">
-                      <span class="svc-ai-activity-icon"><i data-lucide="list-checks"></i></span>
-                      <span>Created plan: <strong>${escapeHtml(args.title || 'Implementation Plan')}</strong></span>
-                    </div>
-                  `;
-                } else if (fnName === 'syte_update_plan_step') {
-                  toolsHtml += `
-                    <div class="svc-ai-activity-row svc-ai-status-precise">
-                      <span class="svc-ai-activity-icon"><i data-lucide="check-circle-2"></i></span>
-                      <span>Plan step ${escapeHtml(args.step_id || '')} -> <strong>${escapeHtml(args.status || 'completed')}</strong></span>
-                    </div>
-                  `;
-                }
-              }
-            }
-
-            if (pendingFiles.length) {
-              toolsHtml += `
-                <div class="svc-ai-files-edited-row">
-                  <span class="svc-ai-edited-label"><i data-lucide="wrench"></i> edited</span>
-                  ${pendingFiles.map(f => getFileBadgeHtml(f)).join('')}
-                </div>
-              `;
-              pendingFiles = [];
-            }
-
-            feedHtml += `
-              <div class="svc-ai-message assistant" data-msg-id="${escapeHtml(m.id || '')}">
-                <div class="svc-ai-message-top">
-                  <div class="svc-ai-msg-sender">
-                    <div class="svc-ai-sender-avatar ai"><i data-lucide="sparkles"></i></div>
-                    <span class="svc-ai-sender-name">AI Builder</span>
-                    ${timeStr ? `<span class="svc-ai-msg-time">${timeStr}</span>` : ''}
-                  </div>
-                  <button type="button" class="svc-ai-msg-del-btn" onclick="deleteAIChatMessage('${escapeHtml(currentProject.id)}', '${escapeHtml(m.id || '')}', this)" title="Delete message">
-                    <i data-lucide="trash-2"></i>
-                  </button>
-                </div>
-                ${toolsHtml}
-                ${m.content ? `<div class="svc-ai-assistant-bubble">${formatAIMarkdown(m.content)}</div>` : ''}
-              </div>
-            `;
-          } else if (m.role === 'tool') {
-            let res = {};
-            try { res = JSON.parse(m.content || '{}'); } catch (_) {}
-            let toolCardHtml = '';
-            if (res.plan) {
-              toolCardHtml = getPlanCardHtml(res.plan);
-            } else if (res.skill_name) {
-              toolCardHtml = getSkillBadgeHtml(res.skill_name);
-            } else if (res.scanned_files_count !== undefined) {
-              toolCardHtml = getSecurityScanHtml(res);
-            } else if (res.requires_user_input) {
-              if (res.is_secret_request) {
-                toolCardHtml = getSecureEnvCardHtml(res, currentProject.id, m.tool_call_id);
-              } else {
-                toolCardHtml = getQuestionCardHtml(res, currentProject.id, m.tool_call_id);
-              }
-            } else if (res.preview_url) {
-              toolCardHtml = `
-                <div class="svc-ai-preview-banner">
-                  <div class="svc-ai-preview-lead">
-                    <i data-lucide="zap" style="color:#f59e0b;"></i>
-                    <span>Preview active: <strong>${escapeHtml(res.preview_url)}</strong></span>
-                  </div>
-                  <a href="${res.preview_url}" target="_blank" rel="noopener noreferrer" class="svc-ai-preview-link-btn">
-                    <span>Open Preview</span>
-                    <i data-lucide="external-link"></i>
-                  </a>
-                </div>
-              `;
-            }
-
-            if (toolCardHtml) {
-              feedHtml += `
-                <div class="svc-ai-message tool" data-msg-id="${escapeHtml(m.id || '')}">
-                  ${toolCardHtml}
-                </div>
-              `;
-            }
-          }
+      const cachedMsgs = cached?.messages;
+      
+      const isDifferent = !renderedFromCache || !cachedMsgs || JSON.stringify(msgs) !== JSON.stringify(cachedMsgs);
+      if (isDifferent) {
+        if (!msgs.length) {
+          renderAIWelcomeCard(currentProject, messagesList);
+          setAICache(currentProject.id, { messages: [], feedHtml: messagesList.innerHTML });
+        } else {
+          const newHtml = buildAIFeedHtml(msgs, currentProject);
+          messagesList.innerHTML = newHtml;
+          messagesList.scrollTop = messagesList.scrollHeight;
+          refreshIcons();
+          setAICache(currentProject.id, { messages: msgs, feedHtml: newHtml });
         }
-
-        if (pendingFiles.length) {
-          feedHtml += `
-            <div class="svc-ai-files-edited-row">
-              <span class="svc-ai-edited-label"><i data-lucide="wrench"></i> edited</span>
-              ${pendingFiles.map(f => getFileBadgeHtml(f)).join('')}
-            </div>
-          `;
-        }
-
-        messagesList.innerHTML = feedHtml;
-        messagesList.scrollTop = messagesList.scrollHeight;
-        refreshIcons();
       }
     } catch (_) {}
 
@@ -10418,11 +10988,22 @@ async function renderAIChatWorkspace(project) {
     form.onsubmit = async e => {
       e.preventDefault();
       const text = (textarea?.value || '').trim();
-      if (!text || aiChatSending) return;
+      if ((!text && (!aiAttachedFiles || !aiAttachedFiles.length)) || aiChatSending) return;
       textarea.value = '';
       textarea.style.height = 'auto';
+
+      let fullText = text;
+      if (aiAttachedFiles && aiAttachedFiles.length) {
+        const attachSummary = aiAttachedFiles.map(f => `### [Attached File: ${f.filename} (${f.summary})]\n${f.parsed_content || ''}`).join('\n\n');
+        fullText = text
+          ? `${text}\n\n--- USER ATTACHED FILES FOR AI UNDERSTANDING ---\n${attachSummary}\n------------------------------------------------\n`
+          : `Please analyze and inspect the attached files:\n\n--- USER ATTACHED FILES FOR AI UNDERSTANDING ---\n${attachSummary}\n------------------------------------------------\n`;
+        aiAttachedFiles = [];
+        renderAIAttachmentsTray();
+      }
+
       const targetProj = selectedAIProject || currentProject || { id: 'global', name: 'sarra' };
-      await executeAIChatTurn(targetProj, text);
+      await executeAIChatTurn(targetProj, fullText);
     };
   }
 
