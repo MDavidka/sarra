@@ -174,7 +174,12 @@ class ProjectAISession:
     # Subscription (SSE)
     # ------------------------------------------------------------------
 
-    async def subscribe(self, since_id: int = 0, replay: bool = False) -> AsyncIterator[bytes]:
+    async def subscribe(
+        self,
+        since_id: int = 0,
+        replay: bool = False,
+        request: Optional[Any] = None,
+    ) -> AsyncIterator[bytes]:
         """Async generator of ready-to-send SSE ``bytes`` frames.
 
         ``since_id`` replays only events newer than the client's last seen id
@@ -209,6 +214,13 @@ class ProjectAISession:
                     return
 
             while True:
+                if request is not None and hasattr(request, "is_disconnected"):
+                    try:
+                        if await request.is_disconnected():
+                            break
+                    except Exception:
+                        pass
+
                 try:
                     frame, event = await asyncio.wait_for(sub.queue.get(), timeout=HEARTBEAT_SECONDS)
                 except asyncio.TimeoutError:
@@ -394,10 +406,11 @@ class AIAgentSessionManager:
         project_id: str,
         replay: bool = False,
         since_id: int = 0,
+        request: Optional[Any] = None,
     ) -> AsyncIterator[bytes]:
         """Subscribe to live SSE byte frames for a project's agent session."""
         session = self.get_or_create_session(project_id)
-        async for frame in session.subscribe(since_id=since_id, replay=replay):
+        async for frame in session.subscribe(since_id=since_id, replay=replay, request=request):
             yield frame
 
     async def handle_user_answer(self, project_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:

@@ -104,7 +104,7 @@ class AgentCommunicateRequest(BaseModel):
     message: str
     model_profile: str | None = Field(None, description="syra-nano | syra-ultra | syra-havy")
     model_id: str | None = None
-    thinking_level: int | None = Field(None, ge=1, le=6)
+    thinking_level: str | int | None = None
     improve_from_screenshot: bool = False
     visual_analysis_id: str | None = None
     api_key: str | None = None
@@ -117,7 +117,7 @@ class AgentChangeRequest(BaseModel):
     model_profile: str | None = None
     model_name: str | None = None
     model_id: str | None = None
-    thinking_level: int | None = Field(None, ge=1, le=6)
+    thinking_level: str | int | None = None
     plan_mode: str | None = None
     agent_mode: str | None = None
     improve_from_screenshot: bool = False
@@ -498,6 +498,44 @@ async def _get_agent_status_dict(uuid: str) -> dict[str, Any]:
     }
 
 
+@router.get("/models")
+async def api_models(
+    request: Request,
+    stream: bool = Query(False, description="Stream models as Server-Sent Events"),
+):
+    """List available AI models or stream them over Better-SSE."""
+    from syte.stream_api import get_normalized_models_catalog
+    settings_data = await get_ai_builder_settings("global")
+    models_list = get_normalized_models_catalog(settings_data)
+
+    accept = request.headers.get("accept", "")
+    wants_stream = stream or ("text/event-stream" in accept)
+
+    if wants_stream:
+        async def _stream_models_gen():
+            yield f"retry: 2000\n\n".encode("ascii")
+            for m in models_list:
+                payload = json.dumps({"model": m}, separators=(",", ":"))
+                yield f"event: model_stream\ndata: {payload}\n\n".encode("utf-8")
+            yield b"event: done\ndata: [DONE]\n\n"
+
+        return StreamingResponse(
+            _stream_models_gen(),
+            media_type="text/event-stream",
+            headers=SSE_HEADERS,
+        )
+
+    return {
+        "ok": True,
+        "available_models": models_list,
+        "models": models_list,
+        "ai_tab_models": models_list,
+        "saved_providers": settings_data.get("saved_providers", []),
+        "current_model": settings_data.get("model", "gpt-4o"),
+        "current_provider": settings_data.get("provider", "openai"),
+    }
+
+
 @router.get("/agent_status")
 async def api_agent_status(
     uuid: str = Query(..., description="Project UUID"),
@@ -827,9 +865,10 @@ async def api_agent_change(
     body: AgentChangeRequest,
     _token: dict[str, Any] = Depends(verify_api_token),
 ):
-    project = await get_project(body.uuid)
-    if not project:
-        _http_error(404, "not_found", "Project not found")
+    if body.uuid != "global":
+        project = await get_project(body.uuid)
+        if not project:
+            _http_error(404, "not_found", "Project not found")
 
     req_id = f"req_{uuid_mod.uuid4().hex[:8]}"
     sess_id = f"sess_{body.uuid[:8]}"
@@ -862,9 +901,10 @@ async def api_agent_communicate(
     body: AgentCommunicateRequest,
     _token: dict[str, Any] = Depends(verify_api_token),
 ):
-    project = await get_project(body.uuid)
-    if not project:
-        _http_error(404, "not_found", "Project not found")
+    if body.uuid != "global":
+        project = await get_project(body.uuid)
+        if not project:
+            _http_error(404, "not_found", "Project not found")
 
     req_id = f"req_{uuid_mod.uuid4().hex[:8]}"
     sess_id = f"sess_{body.uuid[:8]}"
