@@ -329,6 +329,79 @@
       .mini-tabs { top: 58px; margin-left: -.2rem; margin-right: -.2rem; padding: .6rem .2rem .75rem; background: rgba(251,251,250,.96); }
       .mini-tab { min-height: 38px; display: inline-flex; align-items: center; }
     }
+    /* Full documentation reader system */
+    :root {
+      --bg: #fcfcfb; --bg-sidebar: #fff; --bg-card: #fff; --bg-card-hover: #f7f8f8;
+      --bg-input: #f4f5f5; --border: #dfe1e2; --border-subtle: #eceeed;
+      --text: #111315; --text-muted: #687177; --text-dim: #92999d;
+      --accent-blue: #079dcc; --accent-green: #16885d; --accent-orange: #a96b12;
+      --accent-red: #bd4242; --shadow-drawer: 14px 0 36px rgba(17,24,30,.14);
+      --radius: 18px; --radius-sm: 11px; --sidebar-w: 292px;
+    }
+    body { background: var(--bg); color: var(--text); font-size: 15px; line-height: 1.7; }
+    .layout { min-height: 100svh; }
+    .sidebar { border-right: 1px solid var(--border); box-shadow: 1px 0 0 rgba(0,0,0,.015); }
+    .sidebar-top { padding: 1.35rem 1.15rem 1.1rem; border-bottom: 1px solid var(--border-subtle); }
+    .sidebar-back { color: var(--text-dim); font-size: 12px; margin-bottom: 1rem; }
+    .sidebar-brand { border: 0; background: transparent; padding: .5rem .2rem; gap: .75rem; }
+    .brand-icon { width: 36px; height: 36px; border-radius: 50%; background: #e9f8fb; color: var(--accent-blue); }
+    .brand-title { font-size: 16px; letter-spacing: -.02em; }
+    .brand-sub { font-size: 12px; color: var(--text-muted); }
+    .sidebar-nav { padding: .8rem .8rem 2rem; gap: 4px; }
+    .nav-cat { min-height: 44px; padding: .65rem .85rem; border-radius: 11px; font-size: 14px; }
+    .nav-cat:hover, .nav-cat.active { background: #eff9fb; color: #087da4; }
+    .nav-mini { margin-left: .5rem; padding-left: .9rem; border-left: 1px solid #cce9ef; }
+    .nav-mini a { padding: .4rem .6rem; font-size: 11px; color: var(--text-muted); }
+    .nav-mini a:hover, .nav-mini a.active { background: #f2fafb; color: #087da4; }
+    .main { margin-left: var(--sidebar-w); }
+    .main-inner { max-width: 980px; padding: 4.5rem 4.5rem 7rem; }
+    .page-header { margin-bottom: 3.25rem; max-width: 760px; }
+    .page-header h1 { font-size: clamp(3rem, 7vw, 5.5rem); line-height: .98; letter-spacing: -.07em; margin-bottom: 1.35rem; }
+    .page-header p { color: #30363a; font-size: clamp(1.1rem, 2vw, 1.3rem); line-height: 1.75; max-width: 720px; }
+    .page-header a { color: #087da4; }
+    .section { margin-bottom: 5rem; scroll-margin-top: 2rem; }
+    .section-title { font-size: clamp(1.75rem, 3vw, 2.35rem); line-height: 1.1; letter-spacing: -.045em; padding-bottom: 1rem; margin-bottom: .65rem; }
+    .section-desc { font-size: 1rem; line-height: 1.75; color: var(--text-muted); margin-bottom: 1.5rem; }
+    .endpoint { border: 1px solid #dfe3e4; border-radius: 18px; box-shadow: 0 8px 28px rgba(20,30,36,.045); margin-bottom: 1.5rem; }
+    .endpoint-header { padding: 1.35rem 1.45rem; background: #fff; border-bottom: 1px solid var(--border-subtle); }
+    .endpoint-base { font-size: 11px; color: var(--text-dim); margin-bottom: .8rem; }
+    .endpoint-row { gap: .7rem; }
+    .method { padding: .32rem .65rem; border-radius: 7px; font-size: 11px; }
+    .method.post { background: #eaf3ff; color: #1463bb; border-color: #c9e0ff; }
+    .method.get { background: #e8f7ef; color: #15764f; border-color: #c5e9d6; }
+    .method.put, .method.sse { background: #fff5df; color: #9a610d; border-color: #f2ddb2; }
+    .method.delete { background: #fff0f0; color: #a93b3b; border-color: #f1cece; }
+    .endpoint-path { font-size: 14px; line-height: 1.5; }
+    .endpoint-name { font-size: 14px; color: var(--text-muted); margin-top: .55rem; }
+    .endpoint-body { padding: 0 1.45rem 1.45rem; }
+    .panel { padding-top: 1.2rem; margin-top: 1.2rem; }
+    .panel-title { font-size: 13px; margin-bottom: .75rem; }
+    pre { border: 1px solid #e0e4e5; border-radius: 14px; background: #f7f8f8; color: #263238; padding: 1.15rem 1.2rem; font-size: 12px; line-height: 1.7; overflow-x: auto; }
+    code { border: 1px solid #e0e2e3; background: #f3f4f4; border-radius: 6px; padding: .12em .35em; }
+    pre code { border: 0; background: transparent; padding: 0; }
+    .note, .flow-step { border: 1px solid #dfe7e9; border-radius: 14px; background: #f5fafb; padding: 1rem 1.1rem; }
+    .mini-tabs { gap: .45rem; margin-bottom: 2rem; padding: .65rem 0 .9rem; border-bottom-color: var(--border); background: rgba(252,252,251,.95); }
+    .mini-tab { min-height: 38px; padding: .45rem .7rem; border-radius: 9px; border-color: var(--border); background: #fff; font-size: 11px; }
+    .mini-tab.active { color: #087da4; border-color: #a6dce8; background: #eef9fb; }
+    .util-btn { width: 44px; height: 44px; border-radius: 12px; }
+    .mobile-toolbar { min-height: 64px; padding: .75rem 1rem; border-bottom-color: var(--border); background: rgba(252,252,251,.96); }
+    .mobile-toolbar-title { font-size: 16px; font-weight: 600; }
+    .sidebar-backdrop { background: rgba(17,24,30,.24); backdrop-filter: blur(2px); }
+    @media (max-width: 768px) {
+      .main-inner { padding: 2.75rem 1.15rem calc(4rem + env(safe-area-inset-bottom)); }
+      .page-header { margin-bottom: 3rem; }
+      .page-header h1 { font-size: 3.45rem; line-height: .94; margin-bottom: 1.25rem; }
+      .page-header p { font-size: 1.1rem; line-height: 1.7; }
+      .section { margin-bottom: 4rem; }
+      .section-title { font-size: 1.85rem; }
+      .endpoint-header, .endpoint-body { padding-left: 1rem; padding-right: 1rem; }
+      .endpoint-header { padding-top: 1.1rem; padding-bottom: 1.1rem; }
+      .endpoint-path { font-size: 13px; flex-basis: calc(100% - 52px); }
+      .panel-title { font-size: 14px; }
+      pre { font-size: 11px; padding: 1rem; margin-left: -.1rem; margin-right: -.1rem; }
+      .mini-tabs { top: 64px; margin: 0 -.15rem 1.75rem; padding: .65rem .15rem .8rem; overflow-x: auto; flex-wrap: nowrap; }
+      .mini-tab { flex: 0 0 auto; }
+    }
   </style>
 </head>
 <body>
@@ -2077,7 +2150,7 @@ data: {&quot;id&quot;:150,&quot;event_type&quot;:&quot;tool_call_started&quot;,�
                     <span class="field-type">integer</span>
                   </div>
                   
-                  <div class="field-desc">0|1 — include resume hints.</div>
+                  <div class="field-desc">0|1 ��� include resume hints.</div>
                 </div>
               </div><pre>{
   &quot;ok&quot;: true,
@@ -3429,7 +3502,7 @@ data: {…}</pre>
   },
   &quot;source&quot;: &quot;agent&quot;,
   &quot;created_at&quot;: &quot;2026-07-25T21:01:21Z&quot;
-}</pre><div class="seg-label">SSE frame</div><pre>id: …
+}</pre><div class="seg-label">SSE frame</div><pre>id: ��
 event: request_completed
 data: {…}</pre>
             </div>
