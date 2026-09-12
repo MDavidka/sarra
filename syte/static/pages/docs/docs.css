@@ -1,3 +1,8 @@
 /* Page-local styles for docs: documentation reader. */
-.page-docs { --page-accent: #2563eb; }
+.page-docs { --page-accent: #0a9dcc; background: #fbfbfa; }
 .page-docs .ops-card { border-radius: 18px; }
+.page-docs .docs-hero { letter-spacing: -0.04em; }
+.page-docs button, .page-docs a { -webkit-tap-highlight-color: transparent; }
+@media (max-width: 768px) {
+  .page-docs input, .page-docs textarea, .page-docs select { font-size: 16px; }
+}
