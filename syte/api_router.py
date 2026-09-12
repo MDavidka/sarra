@@ -498,6 +498,44 @@ async def _get_agent_status_dict(uuid: str) -> dict[str, Any]:
     }
 
 
+@router.get("/models")
+async def api_models(
+    request: Request,
+    stream: bool = Query(False, description="Stream models as Server-Sent Events"),
+):
+    """List available AI models or stream them over Better-SSE."""
+    from syte.stream_api import get_normalized_models_catalog
+    settings_data = await get_ai_builder_settings("global")
+    models_list = get_normalized_models_catalog(settings_data)
+
+    accept = request.headers.get("accept", "")
+    wants_stream = stream or ("text/event-stream" in accept)
+
+    if wants_stream:
+        async def _stream_models_gen():
+            yield f"retry: 2000\n\n".encode("ascii")
+            for m in models_list:
+                payload = json.dumps({"model": m}, separators=(",", ":"))
+                yield f"event: model_stream\ndata: {payload}\n\n".encode("utf-8")
+            yield b"event: done\ndata: [DONE]\n\n"
+
+        return StreamingResponse(
+            _stream_models_gen(),
+            media_type="text/event-stream",
+            headers=SSE_HEADERS,
+        )
+
+    return {
+        "ok": True,
+        "available_models": models_list,
+        "models": models_list,
+        "ai_tab_models": models_list,
+        "saved_providers": settings_data.get("saved_providers", []),
+        "current_model": settings_data.get("model", "gpt-4o"),
+        "current_provider": settings_data.get("provider", "openai"),
+    }
+
+
 @router.get("/agent_status")
 async def api_agent_status(
     uuid: str = Query(..., description="Project UUID"),

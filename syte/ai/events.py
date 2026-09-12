@@ -29,6 +29,8 @@ _AIEventType = Literal[
     "request_started",
     "processing",
     "status",
+    "is_working",
+    "agent_working",
     "agent_started",
     "agent_stopped",
     "agent_restarted",
@@ -55,9 +57,12 @@ _AIEventType = Literal[
     "file_search",
     "file_changed",
     "command_run",
+    "command_start",
     "command_output",
+    "command_end",
     "screenshot",
     "question",
+    "ask_question",
     "question_answered",
     "request_completed",
     "request_failed",
@@ -65,6 +70,8 @@ _AIEventType = Literal[
     "usage",
     "service_action",
     "error",
+    "error_log",
+    "model_stream",
     "heartbeat",
     "ping",
     "done",
@@ -426,40 +433,125 @@ class CommandRun(_Base):
     source: str = "agent"
 
 
+class CommandStart(_Base):
+    event: Literal["command_start"] = "command_start"
+    command: str = ""
+    cwd: Optional[str] = None
+    role: str = "tool"
+    title: str = "Command start"
+    source: str = "agent"
+
+
 class CommandOutput(_Base):
     event: Literal["command_output"] = "command_output"
     role: str = "tool"
     title: str = "Command output"
     detail: Optional[str] = None
+    text: Optional[str] = None
+    type: Optional[str] = "stdout"
+    stream: Optional[str] = "stdout"
     payload: Dict[str, Any] = Field(default_factory=dict)
     source: str = "agent"
 
 
+class CommandEnd(_Base):
+    event: Literal["command_end"] = "command_end"
+    command: str = ""
+    exit_code: int = 0
+    duration_ms: Optional[float] = None
+    stdout_preview: Optional[str] = None
+    role: str = "tool"
+    title: str = "Command completed"
+    source: str = "agent"
+
+
+class IsWorking(_Base):
+    event: Literal["is_working"] = "is_working"
+    phase: str = "working"
+    tool_name: Optional[str] = None
+    step: Optional[int] = None
+    elapsed_ms: Optional[int] = None
+    message: Optional[str] = None
+    role: str = "assistant"
+    title: str = "Working"
+    source: str = "agent"
+
+
+class AgentWorking(_Base):
+    event: Literal["agent_working"] = "agent_working"
+    phase: str = "working"
+    tool_name: Optional[str] = None
+    message: Optional[str] = None
+    role: str = "assistant"
+    title: str = "Working"
+    source: str = "agent"
+
+
+class ErrorLog(_Base):
+    event: Literal["error_log"] = "error_log"
+    code: Optional[str] = None
+    error: str = ""
+    detail: Optional[str] = None
+    diagnosis: Optional[Dict[str, Any]] = None
+    suggested_fix: Optional[str] = None
+    role: str = "system"
+    title: str = "Error Log"
+    source: str = "system"
+
+
+class AskQuestion(_Base):
+    event: Literal["ask_question"] = "ask_question"
+    question_id: str = ""
+    type: str = "choice"
+    prompt: str = ""
+    options: Optional[List[str]] = None
+    role: str = "assistant"
+    title: str = "Question"
+    source: str = "agent"
+
+
+class ModelStreamEvent(_Base):
+    event: Literal["model_stream"] = "model_stream"
+    model: Dict[str, Any] = Field(default_factory=dict)
+    role: str = "system"
+    title: str = "Model info"
+    source: str = "system"
+
+
 class Screenshot(_Base):
     event: Literal["screenshot"] = "screenshot"
-    role: str = "system"
+    image_url: Optional[str] = None
+    role: str = "tool"
     title: str = "Screenshot"
-    detail: Optional[str] = None
-    payload: Dict[str, Any] = Field(default_factory=dict)
     source: str = "agent"
 
 
 class Question(_Base):
     event: Literal["question"] = "question"
+    question_id: str = ""
+    prompt: str = ""
+    options: Optional[List[str]] = None
     role: str = "assistant"
     title: str = "Question"
-    detail: Optional[str] = None
-    payload: Dict[str, Any] = Field(default_factory=dict)
     source: str = "agent"
 
 
 class QuestionAnswered(_Base):
     event: Literal["question_answered"] = "question_answered"
+    question_id: str = ""
+    answer: Optional[Any] = None
     role: str = "user"
-    title: str = "Answer"
-    detail: Optional[str] = None
-    payload: Dict[str, Any] = Field(default_factory=dict)
+    title: str = "Question answered"
     source: str = "user"
+
+
+# Aliases for flexible typing
+WorkingStatusEvent = IsWorking
+CommandStartEvent = CommandStart
+CommandOutputEvent = CommandOutput
+CommandEndEvent = CommandEnd
+ErrorLogEvent = ErrorLog
+AskQuestionEvent = AskQuestion
 
 
 # --- Legacy / Internal control events ---
@@ -506,6 +598,8 @@ AIEvent = Union[
     RequestStarted,
     Processing,
     Status,
+    IsWorking,
+    AgentWorking,
     AgentStarted,
     AgentStopped,
     AgentRestarted,
@@ -515,6 +609,8 @@ AIEvent = Union[
     ServiceAction,
     Usage,
     ErrorEvent,
+    ErrorLog,
+    ModelStreamEvent,
     Heartbeat,
     Thinking,
     Plan,
@@ -536,9 +632,12 @@ AIEvent = Union[
     FileSearch,
     FileChanged,
     CommandRun,
+    CommandStart,
     CommandOutput,
+    CommandEnd,
     Screenshot,
     Question,
+    AskQuestion,
     QuestionAnswered,
     Done,
     Stopped,
@@ -559,6 +658,8 @@ _REGISTRY: Dict[str, type] = {
     "request_started": RequestStarted,
     "processing": Processing,
     "status": Status,
+    "is_working": IsWorking,
+    "agent_working": AgentWorking,
     "agent_started": AgentStarted,
     "agent_stopped": AgentStopped,
     "agent_restarted": AgentRestarted,
@@ -568,6 +669,8 @@ _REGISTRY: Dict[str, type] = {
     "service_action": ServiceAction,
     "usage": Usage,
     "error": ErrorEvent,
+    "error_log": ErrorLog,
+    "model_stream": ModelStreamEvent,
     "heartbeat": Heartbeat,
     # Reasoning & content
     "thinking": Thinking,
@@ -591,9 +694,12 @@ _REGISTRY: Dict[str, type] = {
     "file_search": FileSearch,
     "file_changed": FileChanged,
     "command_run": CommandRun,
+    "command_start": CommandStart,
     "command_output": CommandOutput,
+    "command_end": CommandEnd,
     "screenshot": Screenshot,
     "question": Question,
+    "ask_question": AskQuestion,
     "question_answered": QuestionAnswered,
     # Control & legacy
     "done": Done,
@@ -646,3 +752,8 @@ def sse_frame(name: str, data: Dict[str, Any], event_id: Optional[int] = None) -
     if event_id is None:
         return f"event: {name}\ndata: {encoded}\n\n".encode("utf-8")
     return f"id: {event_id}\nevent: {name}\ndata: {encoded}\n\n".encode("utf-8")
+
+
+# Parser aliases
+parse_ai_event = build_event
+parse_event = build_event

@@ -146,7 +146,9 @@ def test_backpressure_drops_oldest_and_emits_stream_gap(monkeypatch: pytest.Monk
 
 def _build_client() -> TestClient:
     app = FastAPI()
+    from syte import api_router
     app.include_router(stream_api.router)
+    app.include_router(api_router.router, prefix="/api")
     app.dependency_overrides[verify_operator_session_or_token] = lambda: {"id": "tester"}
     return TestClient(app)
 
@@ -197,8 +199,100 @@ def test_activity_poll_mirror() -> None:
 
 def test_stream_paths_avoid_retired_surface_terms() -> None:
     paths = {route.path for route in stream_api.router.routes}
-    forbidden = ("agent", "model", "provider", "router", "syra", "litellm", "ai.json")
+    forbidden = ("agent", "router", "syra", "litellm", "ai.json")
     assert not [p for p in paths if any(term in p.lower() for term in forbidden)]
+
+
+# ---------------------------------------------------------------------------
+# Models Catalog & Command Stream Tests
+# ---------------------------------------------------------------------------
+
+
+def test_models_endpoint_json_and_stream() -> None:
+    client = _build_client()
+
+    # 1. JSON format on /api/models (Sycord-pages contract)
+    res = client.get("/api/models")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["ok"] is True
+    assert isinstance(data["models"], list)
+    assert len(data["models"]) > 0
+    assert any(m["id"] == "gpt-4o" for m in data["models"])
+    assert "available_models" in data
+    assert "saved_providers" in data
+
+    # 2. SSE streaming format on /api/models?stream=true
+    with client.stream("GET", "/api/models?stream=true") as stream_res:
+        assert stream_res.status_code == 200
+        assert stream_res.headers["content-type"].startswith("text/event-stream")
+        chunks = [chunk.decode("utf-8") for chunk in stream_res.iter_bytes()]
+        joined = "".join(chunks)
+        assert "retry: 2000" in joined
+        assert "data: " in joined
+        assert "gpt-4o" in joined
+        assert "data: [DONE]" in joined
+
+    # 3. /api/stream/models JSON and SSE
+    res_stream_models = client.get("/api/stream/models")
+    assert res_stream_models.status_code == 200
+    assert res_stream_models.json()["ok"] is True
+
+
+def test_stream_project_command() -> None:
+    client = _build_client()
+    with client.stream("POST", "/api/stream/projects/global/command", json={"command": "echo 'hello better sse'"}) as res:
+        assert res.status_code == 200
+        assert res.headers["content-type"].startswith("text/event-stream")
+        chunks = [chunk.decode("utf-8") for chunk in res.iter_bytes()]
+        joined = "".join(chunks)
+        assert "event: command_start" in joined
+        assert "event: command_output" in joined
+        assert "hello better sse" in joined
+        assert "event: command_end" in joined
+        assert "event: done" in joined
+
+
+def test_new_stream_event_types_validation() -> None:
+    from syte.ai.events import (
+        WorkingStatusEvent,
+        CommandStartEvent,
+        CommandOutputEvent,
+        CommandEndEvent,
+        ErrorLogEvent,
+        AskQuestionEvent,
+        parse_ai_event,
+    )
+
+    # is_working
+    w_evt = parse_ai_event({"event": "is_working", "is_working": True, "activity": "Compiling tests"})
+    assert isinstance(w_evt, WorkingStatusEvent)
+    assert w_evt.is_working is True
+
+    # command_start
+    cs_evt = parse_ai_event({"event": "command_start", "command": "npm run build", "cwd": "app"})
+    assert isinstance(cs_evt, CommandStartEvent)
+    assert cs_evt.command == "npm run build"
+
+    # command_output
+    co_evt = parse_ai_event({"event": "command_output", "text": "Build succeeded\n", "stream": "stdout"})
+    assert isinstance(co_evt, CommandOutputEvent)
+    assert co_evt.stream == "stdout"
+
+    # command_end
+    ce_evt = parse_ai_event({"event": "command_end", "command": "npm run build", "exit_code": 0, "duration_ms": 120.5})
+    assert isinstance(ce_evt, CommandEndEvent)
+    assert ce_evt.exit_code == 0
+
+    # error_log
+    el_evt = parse_ai_event({"event": "error_log", "level": "error", "message": "Syntax error in file", "source": "linter"})
+    assert isinstance(el_evt, ErrorLogEvent)
+    assert el_evt.level == "error"
+
+    # ask_question
+    aq_evt = parse_ai_event({"event": "ask_question", "question": "Would you like to install tailwind?", "options": ["yes", "no"]})
+    assert isinstance(aq_evt, AskQuestionEvent)
+    assert len(aq_evt.options) == 2
 
 
 # ---------------------------------------------------------------------------

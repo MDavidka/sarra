@@ -9657,6 +9657,95 @@ function processAIServerEvent(data, project, messagesList, state) {
     messagesList.appendChild(actEl);
     refreshIcons();
     smartScrollToBottom(messagesList);
+  } else if (eventType === 'is_working') {
+    if (data.is_working) {
+      if (state.liveThinkingMarkerEl && messagesList.contains(state.liveThinkingMarkerEl)) {
+        const thoughtSpan = state.liveThinkingMarkerEl.querySelector('.live-thought-text');
+        if (thoughtSpan && data.activity) {
+          thoughtSpan.textContent = data.activity;
+        }
+      } else {
+        clearLiveMarkers();
+        state.liveThinkingMarkerEl = document.createElement('div');
+        state.liveThinkingMarkerEl.className = 'svc-ai-activity-row svc-ai-live-status-marker';
+        state.liveThinkingMarkerEl.innerHTML = `
+          <span class="svc-ai-activity-icon spinning"><i data-lucide="loader-2"></i></span>
+          <span class="live-thought-text" style="color:#38bdf8; font-style:italic;">${escapeHtml(data.activity || 'Agent is working…')}</span>
+        `;
+        messagesList.appendChild(state.liveThinkingMarkerEl);
+        refreshIcons();
+      }
+    } else {
+      clearLiveMarkers();
+    }
+    smartScrollToBottom(messagesList);
+  } else if (eventType === 'command_start') {
+    clearLiveMarkers();
+    const cmdId = data.tool_call_id ? `cmd-${data.tool_call_id}` : `cmd-stream-${Date.now()}`;
+    let cmdEl = document.getElementById(cmdId);
+    if (!cmdEl) {
+      cmdEl = document.createElement('div');
+      cmdEl.className = 'svc-ai-terminal-card running';
+      cmdEl.id = cmdId;
+      cmdEl.innerHTML = `
+        <div class="svc-ai-terminal-header">
+          <span><i data-lucide="terminal"></i> bash: <strong>${escapeHtml(data.command || '')}</strong></span>
+          <span class="svc-ai-terminal-status-badge running"><i data-lucide="loader-2" class="spinning"></i> running</span>
+        </div>
+        <div class="svc-ai-terminal-body"></div>
+      `;
+      messagesList.appendChild(cmdEl);
+      refreshIcons();
+    }
+    state.activeCommandEl = cmdEl;
+    smartScrollToBottom(messagesList);
+  } else if (eventType === 'command_output') {
+    const cmdEl = state.activeCommandEl || messagesList.querySelector('.svc-ai-terminal-card.running');
+    if (cmdEl) {
+      const bodyEl = cmdEl.querySelector('.svc-ai-terminal-body');
+      if (bodyEl) {
+        bodyEl.textContent += (data.text || data.line || '') + (data.line && !data.text ? '\n' : '');
+        bodyEl.scrollTop = bodyEl.scrollHeight;
+      }
+    }
+  } else if (eventType === 'command_end') {
+    const cmdEl = state.activeCommandEl || (data.tool_call_id ? document.getElementById(`cmd-${data.tool_call_id}`) : null) || messagesList.querySelector('.svc-ai-terminal-card.running');
+    if (cmdEl) {
+      cmdEl.classList.remove('running');
+      const headerEl = cmdEl.querySelector('.svc-ai-terminal-header');
+      if (headerEl) {
+        const isOk = data.exit_code === 0;
+        const durText = data.duration_ms ? ` (${data.duration_ms}ms)` : '';
+        headerEl.innerHTML = `
+          <span><i data-lucide="terminal"></i> bash: <strong>${escapeHtml(data.command || '')}</strong></span>
+          <span class="svc-ai-terminal-status-badge ${isOk ? 'ok' : 'fail'}">${isOk ? 'exit 0' : `exit ${data.exit_code || 1}`}${durText}</span>
+        `;
+      }
+      if (data.output && !cmdEl.querySelector('.svc-ai-terminal-body').textContent.trim()) {
+        cmdEl.querySelector('.svc-ai-terminal-body').textContent = data.output;
+      }
+      refreshIcons();
+    }
+    state.activeCommandEl = null;
+    smartScrollToBottom(messagesList);
+  } else if (eventType === 'error_log') {
+    const errEl = document.createElement('div');
+    const isErr = (data.level || 'error') === 'error';
+    errEl.className = 'svc-ai-activity-row';
+    errEl.innerHTML = `
+      <span class="svc-ai-activity-icon" style="color:${isErr ? '#ef4444' : '#f59e0b'};"><i data-lucide="${isErr ? 'alert-triangle' : 'alert-circle'}"></i></span>
+      <span style="color:${isErr ? '#ef4444' : '#f59e0b'}; font-size:12px;"><strong>[${escapeHtml(data.source || 'agent')}]</strong> ${escapeHtml(data.message || '')}</span>
+    `;
+    messagesList.appendChild(errEl);
+    refreshIcons();
+    smartScrollToBottom(messagesList);
+  } else if (eventType === 'ask_question') {
+    clearLiveMarkers();
+    const qDiv = document.createElement('div');
+    qDiv.innerHTML = getQuestionCardHtml(data, project.id, data.tool_call_id);
+    if (qDiv.firstElementChild) messagesList.appendChild(qDiv.firstElementChild);
+    refreshIcons();
+    smartScrollToBottom(messagesList);
   } else if (eventType === 'tool_call_result') {
     clearLiveMarkers();
     const res = data.result || {};

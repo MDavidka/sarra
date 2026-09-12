@@ -25,6 +25,9 @@ each AI chat tool is streamed.
 
 from __future__ import annotations
 
+import asyncio
+import json
+import time
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
@@ -126,38 +129,123 @@ async def stream_api_catalog() -> Dict[str, Any]:
     }
 
 
+def get_normalized_models_catalog(settings_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Build a unified, deduplicated list of available model profiles for Syte and external clients."""
+    curated = [
+        {"id": "gpt-4o", "name": "GPT-4o (Omni)", "profile": "gpt-4o", "provider": "openai", "enabled": True, "active": True},
+        {"id": "gpt-4o-mini", "name": "GPT-4o Mini", "profile": "gpt-4o-mini", "provider": "openai", "enabled": True, "active": True},
+        {"id": "o3-mini", "name": "o3-mini (Reasoning)", "profile": "o3-mini", "provider": "openai", "enabled": True, "active": True},
+        {"id": "claude-3-5-sonnet-20241022", "name": "Claude 3.5 Sonnet", "profile": "claude-3-5-sonnet-20241022", "provider": "anthropic", "enabled": True, "active": True},
+        {"id": "claude-3-5-haiku-20241022", "name": "Claude 3.5 Haiku", "profile": "claude-3-5-haiku-20241022", "provider": "anthropic", "enabled": True, "active": True},
+        {"id": "gemini-2.0-flash", "name": "Gemini 2.0 Flash", "profile": "gemini-2.0-flash", "provider": "google", "enabled": True, "active": True},
+        {"id": "gemini-1.5-pro", "name": "Gemini 1.5 Pro", "profile": "gemini-1.5-pro", "provider": "google", "enabled": True, "active": True},
+        {"id": "deepseek-chat", "name": "DeepSeek V3", "profile": "deepseek-chat", "provider": "deepseek", "enabled": True, "active": True},
+        {"id": "deepseek-reasoner", "name": "DeepSeek R1 (Reasoner)", "profile": "deepseek-reasoner", "provider": "deepseek", "enabled": True, "active": True},
+        {"id": "qwen2.5-coder", "name": "Qwen 2.5 Coder", "profile": "qwen2.5-coder", "provider": "qwen", "enabled": True, "active": True},
+        {"id": "qwen3.8-flash", "name": "Qwen 3.8 Flash", "profile": "qwen3.8-flash", "provider": "custom", "enabled": True, "active": True},
+        {"id": "syra-base", "name": "Syra Base (Autonomous)", "profile": "syra-base", "provider": "syra", "enabled": True, "active": True},
+        {"id": "syra-nano", "name": "Syra Nano (Fast)", "profile": "syra-nano", "provider": "syra", "enabled": True, "active": True},
+        {"id": "syra-havy", "name": "Syra Heavy (Deep)", "profile": "syra-havy", "provider": "syra", "enabled": True, "active": True},
+        {"id": "syra-ultra", "name": "Syra Ultra (Full-Stack)", "profile": "syra-ultra", "provider": "syra", "enabled": True, "active": True},
+    ]
+
+    custom_str = settings_data.get("custom_models") or ""
+    if custom_str:
+        for m in custom_str.split(","):
+            m = m.strip()
+            if m and not any(c["id"] == m or c["profile"] == m for c in curated):
+                curated.append({
+                    "id": m,
+                    "name": m,
+                    "profile": m,
+                    "provider": settings_data.get("provider", "custom"),
+                    "enabled": True,
+                    "active": True,
+                })
+
+    for sp in settings_data.get("saved_providers") or []:
+        if isinstance(sp, dict):
+            p_name = sp.get("name") or sp.get("provider") or "Custom"
+            models_sub = sp.get("models_list") or ([sp.get("model")] if sp.get("model") else [])
+            for m in models_sub:
+                if m and not any(c["id"] == m or c["profile"] == m for c in curated):
+                    curated.append({
+                        "id": m,
+                        "name": f"{m} ({p_name})",
+                        "profile": m,
+                        "provider": sp.get("provider", "custom"),
+                        "enabled": sp.get("active", True),
+                        "active": sp.get("active", True),
+                    })
+
+    return curated
+
+
 @router.get("/health")
 async def stream_health() -> Dict[str, Any]:
     return {"ok": True, "stream": "alive"}
+
+
+@router.get("/models")
+async def stream_models(
+    request: Request,
+    stream: bool = Query(False, description="Stream models as Server-Sent Events"),
+):
+    """List available AI models or stream them over Better-SSE."""
+    from syte.database import get_ai_builder_settings
+    settings_data = await get_ai_builder_settings("global")
+    models_list = get_normalized_models_catalog(settings_data)
+
+    accept = request.headers.get("accept", "")
+    wants_stream = stream or ("text/event-stream" in accept)
+
+    if wants_stream:
+        async def _stream_models_gen():
+            yield f"retry: {RETRY_MS}\n\n".encode("ascii")
+            for m in models_list:
+                payload = json.dumps({"model": m}, separators=(",", ":"))
+                yield f"event: model_stream\ndata: {payload}\n\n".encode("utf-8")
+            yield b"event: done\ndata: [DONE]\n\n"
+
+        return _sse_response(_stream_models_gen())
+
+    return {
+        "ok": True,
+        "available_models": models_list,
+        "models": models_list,
+        "ai_tab_models": models_list,
+        "saved_providers": settings_data.get("saved_providers", []),
+        "current_model": settings_data.get("model", "gpt-4o"),
+        "current_provider": settings_data.get("provider", "openai"),
+    }
 
 
 @router.post("/projects/{project_id}/chat")
 async def stream_chat(
     project_id: str,
     body: Dict[str, Any],
+    request: Request,
     _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
 ):
-    """Start (or attach to) an autonomous agent turn and stream events as SSE.
-
-    Body: ``{"message": "...", "provider?", "model?", "temperature?",
-    "thinking_level?"}``. If a turn is already running for the project the
-    call attaches to the live stream instead of starting a second one.
-    """
+    """Start (or attach to) an autonomous agent turn and stream events over Better-SSE."""
     await _require_project(project_id)
     message = str(body.get("message") or "").strip()
     if not message:
         raise HTTPException(400, "message is required")
 
     overrides = {k: v for k, v in body.items() if k != "message" and v is not None}
-    # Capture the cursor *before* starting the turn: the stream then contains
-    # exactly this turn's events even if the turn finishes before the first
-    # frame is read, and no stale events from previous turns are replayed.
     session = session_manager.get_or_create_session(project_id)
     since_id = session.last_event_id
-    await session_manager.start_turn(project_id=project_id, user_message=message, settings_override=overrides)
+
+    # Start the agent turn
+    await session_manager.start_turn(
+        project_id=project_id,
+        user_message=message,
+        settings_override=overrides if overrides else None,
+    )
 
     async def frames():
-        async for frame in session.subscribe(since_id=since_id):
+        async for frame in session.subscribe(since_id=since_id, request=request):
             yield frame
 
     return _sse_response(frames())
@@ -166,26 +254,115 @@ async def stream_chat(
 @router.get("/projects/{project_id}/events")
 async def stream_events(
     project_id: str,
+    request: Request,
     since_id: int = Query(0, ge=-1, description="Replay events with id > since_id; -1 replays full window"),
     replay: bool = Query(False, description="Shorthand for since_id=-1"),
     last_event_id: Optional[str] = Header(None, alias="Last-Event-ID"),
     _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
 ):
-    """Subscribe to the live agent event stream for a project session.
-
-    Honors browser ``EventSource`` auto-reconnect via the ``Last-Event-ID``
-    header; fetch-based clients can pass ``?since_id=`` instead.
-    """
+    """Subscribe to the live agent event stream for a project session."""
     await _require_project(project_id)
     if last_event_id and last_event_id.isdigit() and since_id <= 0:
         since_id = int(last_event_id)
     session = session_manager.get_or_create_session(project_id)
 
     async def frames():
-        async for frame in session.subscribe(since_id=since_id, replay=replay):
+        async for frame in session.subscribe(since_id=since_id, replay=replay, request=request):
             yield frame
 
     return _sse_response(frames())
+
+
+@router.post("/projects/{project_id}/command")
+async def stream_project_command(
+    project_id: str,
+    body: Dict[str, Any],
+    request: Request,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    """Execute a shell command inside the project workspace and stream stdout/stderr live over SSE."""
+    project = await _require_project(project_id)
+    command = str(body.get("command") or "").strip()
+    if not command:
+        raise HTTPException(400, "command parameter is required")
+
+    cwd_rel = str(body.get("cwd") or "app").strip().lstrip("/\\")
+    from syte.workspace import ensure_workspace
+    ws_dir = ensure_workspace(project_id) / cwd_rel
+    if not ws_dir.exists():
+        ws_dir = ensure_workspace(project_id)
+
+    start_time = time.time()
+
+    async def command_generator():
+        yield f"retry: {RETRY_MS}\n\n".encode("ascii")
+        
+        start_payload = json.dumps({
+            "event": "command_start",
+            "command": command,
+            "cwd": str(ws_dir),
+            "project_id": project_id,
+            "timestamp": time.time(),
+        }, separators=(",", ":"))
+        yield f"event: command_start\ndata: {start_payload}\n\n".encode("utf-8")
+
+        proc = await asyncio.create_subprocess_shell(
+            command,
+            cwd=str(ws_dir),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        if proc.stdout:
+            while True:
+                if await request.is_disconnected():
+                    proc.kill()
+                    return
+                line = await proc.stdout.readline()
+                if not line:
+                    break
+                decoded = line.decode("utf-8", errors="replace")
+                out_payload = json.dumps({
+                    "event": "command_output",
+                    "type": "stdout",
+                    "stream": "stdout",
+                    "text": decoded,
+                    "line": decoded.rstrip("\r\n"),
+                }, separators=(",", ":"))
+                yield f"event: command_output\ndata: {out_payload}\n\n".encode("utf-8")
+
+        if proc.stderr:
+            while True:
+                if await request.is_disconnected():
+                    proc.kill()
+                    return
+                line = await proc.stderr.readline()
+                if not line:
+                    break
+                decoded = line.decode("utf-8", errors="replace")
+                out_payload = json.dumps({
+                    "event": "command_output",
+                    "type": "stderr",
+                    "stream": "stderr",
+                    "text": decoded,
+                    "line": decoded.rstrip("\r\n"),
+                }, separators=(",", ":"))
+                yield f"event: command_output\ndata: {out_payload}\n\n".encode("utf-8")
+
+        await proc.wait()
+        duration_ms = round((time.time() - start_time) * 1000, 1)
+
+        end_payload = json.dumps({
+            "event": "command_end",
+            "command": command,
+            "exit_code": proc.returncode,
+            "duration_ms": duration_ms,
+            "timestamp": time.time(),
+        }, separators=(",", ":"))
+        yield f"event: command_end\ndata: {end_payload}\n\n".encode("utf-8")
+        yield b"event: done\ndata: [DONE]\n\n"
+
+    return _sse_response(command_generator())
 
 
 @router.get("/projects/{project_id}/status")
@@ -193,9 +370,16 @@ async def stream_status(
     project_id: str,
     _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
 ):
+    """Detailed live snapshot of the AI session status, active model, and progress."""
     await _require_project(project_id)
     session = session_manager.get_or_create_session(project_id)
-    return {"ok": True, "session": session.get_status_summary()}
+    from syte.database import get_ai_builder_settings
+    settings_data = await get_ai_builder_settings(project_id)
+    
+    summary = session.get_status_summary()
+    summary["current_model"] = settings_data.get("model", "gpt-4o")
+    summary["current_provider"] = settings_data.get("provider", "openai")
+    return {"ok": True, "session": summary}
 
 
 @router.get("/projects/{project_id}/activity")
@@ -223,15 +407,18 @@ async def stream_answer(
     body: Dict[str, Any],
     _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
 ):
+    """Answer a pending interactive agent question."""
     await _require_project(project_id)
     return await session_manager.handle_user_answer(project_id, body)
 
 
 @router.post("/projects/{project_id}/stop")
+@router.post("/projects/{project_id}/interrupt")
 async def stream_stop(
     project_id: str,
     _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
 ):
+    """Interrupt the running turn and keep runtime session warm."""
     await _require_project(project_id)
     return await session_manager.stop_session(project_id)
 

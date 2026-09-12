@@ -278,6 +278,7 @@ class AIAgentEngine:
             turn_tool_calls: List[Dict[str, Any]] = []
 
             yield {"event": "status", "message": f"Thinking with {client.model}…", "turn": current_turn, "request_id": request_id}
+            yield {"event": "is_working", "is_working": True, "activity": f"Thinking with {client.model}…", "turn": current_turn, "request_id": request_id}
 
             stream_error = None
             async for chunk in client.stream_chat(
@@ -302,12 +303,22 @@ class AIAgentEngine:
                         stream_error = err_msg
                         break
                     yield {"event": "error", "error": err_msg, "request_id": request_id}
+                    yield {"event": "error_log", "level": "error", "message": err_msg, "source": "llm_stream", "turn": current_turn, "request_id": request_id}
+                    yield {"event": "is_working", "is_working": False, "activity": "error", "turn": current_turn, "request_id": request_id}
                     return
 
             if stream_error:
                 yield {
                     "event": "status",
                     "message": f"Gateway timeout, retrying turn {current_turn}…",
+                    "turn": current_turn,
+                    "request_id": request_id,
+                }
+                yield {
+                    "event": "error_log",
+                    "level": "warning",
+                    "message": f"Gateway timeout on turn {current_turn}, retrying…",
+                    "source": "llm_retry",
                     "turn": current_turn,
                     "request_id": request_id,
                 }
@@ -335,6 +346,7 @@ class AIAgentEngine:
                     "turn_duration_ms": int((time.monotonic() - turn_started) * 1000),
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 }
+                yield {"event": "is_working", "is_working": False, "activity": "idle", "turn": current_turn, "request_id": request_id}
                 break
 
             # Save the assistant message with tool calls
@@ -419,6 +431,16 @@ class AIAgentEngine:
                     "turn": current_turn,
                     "timestamp": now_stamp,
                 }
+                yield {
+                    "event": "is_working",
+                    "is_working": True,
+                    "activity": status_msg,
+                    "tool_name": tool_name,
+                    "file_path": file_target,
+                    "command": cmd_target,
+                    "turn": current_turn,
+                    "request_id": request_id,
+                }
 
                 yield {
                     "event": "tool_call_start",
@@ -432,6 +454,16 @@ class AIAgentEngine:
                     "turn": current_turn,
                     "timestamp": now_stamp,
                 }
+
+                if tool_name == "syte_run_command" and cmd_target:
+                    yield {
+                        "event": "command_start",
+                        "command": cmd_target,
+                        "cwd": str(args.get("cwd") or "app"),
+                        "turn": current_turn,
+                        "request_id": request_id,
+                        "timestamp": now_stamp,
+                    }
 
                 # Execute tool
                 tool_exec_started = time.monotonic()
@@ -452,6 +484,17 @@ class AIAgentEngine:
                         "turn": current_turn,
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     }
+                    yield {
+                        "event": "ask_question",
+                        "question": tool_result.get("question") or tool_result.get("prompt") or status_msg,
+                        "options": tool_result.get("options") or [],
+                        "question_type": tool_result.get("type", "input"),
+                        "tool_name": tool_name,
+                        "tool_call_id": call_id,
+                        "turn": current_turn,
+                        "request_id": request_id,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
                     user_resp = await self.session.wait_for_user_answer(tool_result)
                     tool_result = {**tool_result, "user_response": user_resp}
                     yield {
@@ -461,6 +504,33 @@ class AIAgentEngine:
                         "user_response": user_resp,
                         "request_id": request_id,
                         "turn": current_turn,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+
+                # If a shell command ran, emit command_end
+                if tool_name == "syte_run_command" and cmd_target:
+                    yield {
+                        "event": "command_end",
+                        "command": cmd_target,
+                        "exit_code": tool_result.get("exit_code", 0 if tool_result.get("ok") else 1),
+                        "duration_ms": tool_duration_ms,
+                        "output": str(tool_result.get("stdout") or tool_result.get("output") or "")[:2000],
+                        "turn": current_turn,
+                        "request_id": request_id,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+
+                # If tool failed or produced error, emit error_log event
+                if not tool_result.get("ok") or tool_result.get("error"):
+                    err_text = str(tool_result.get("error") or tool_result.get("stderr") or "Tool failed")
+                    yield {
+                        "event": "error_log",
+                        "level": "error" if not tool_result.get("ok") else "warning",
+                        "message": err_text,
+                        "source": tool_name,
+                        "context": {"tool_name": tool_name, "file_path": file_target, "command": cmd_target},
+                        "turn": current_turn,
+                        "request_id": request_id,
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     }
 
