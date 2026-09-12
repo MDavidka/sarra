@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Syte API Reference</title>
+  <title>Syte Documentation</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="/static/vendor/lucide.min.js?v=__VERSION__"></script>
   <style>
@@ -272,6 +272,63 @@
       pre { font-size: 10.5px; padding: 0.7rem 0.75rem; }
     }
 
+    /* Reader redesign: light, editorial, touch-first documentation surface. */
+    :root {
+      --bg: #fbfbfa;
+      --bg-sidebar: #ffffff;
+      --bg-card: #ffffff;
+      --bg-card-hover: #f5f8fa;
+      --bg-input: #f4f5f5;
+      --border: #dedfe1;
+      --border-subtle: #e9e9e8;
+      --text: #17191c;
+      --text-muted: #687078;
+      --text-dim: #92989e;
+      --accent-blue: #0a9dcc;
+      --accent-green: #1d9b65;
+      --accent-orange: #bc7a12;
+      --accent-red: #c44747;
+      --shadow-drawer: 12px 0 32px rgba(16, 24, 32, .13);
+      --radius: 16px;
+      --radius-sm: 10px;
+    }
+    body { font-size: 15px; background: var(--bg); color: var(--text); }
+    .sidebar { box-shadow: 1px 0 0 var(--border-subtle); }
+    .sidebar-top { padding: 1.35rem 1.1rem 1rem; }
+    .sidebar-brand { border: 0; background: transparent; padding: .7rem .35rem; }
+    .brand-icon { border-radius: 50%; background: #e9f8fb; color: #0a9dcc; }
+    .brand-title { font-size: 16px; }
+    .brand-sub { font-size: 12px; }
+    .nav-cat { min-height: 44px; border-radius: 10px; }
+    .nav-cat.active { background: #eef8fa; color: #087da4; }
+    .main-inner { max-width: 900px; padding: 3.75rem 3rem 6rem; }
+    .page-header { margin-bottom: 2.5rem; }
+    .page-header h1 { font-size: clamp(2.6rem, 7vw, 4.75rem); line-height: 1.02; letter-spacing: -.055em; margin-bottom: 1rem; }
+    .page-header p { max-width: 680px; font-size: 1.13rem; line-height: 1.7; color: var(--text-muted); }
+    .page-header a { color: #087da4; }
+    .section { margin-bottom: 4rem; }
+    .section-title { font-size: 1.85rem; letter-spacing: -.035em; padding-bottom: .9rem; }
+    .section-desc { font-size: 1rem; line-height: 1.7; }
+    .endpoint { border-radius: 18px; box-shadow: 0 8px 24px rgba(20, 30, 38, .045); }
+    .endpoint-header { padding: 1.2rem 1.35rem; }
+    .endpoint-body { padding: 0 1.35rem 1.35rem; }
+    .endpoint-path { font-size: 15px; }
+    pre { background: #f6f7f7; color: #24303a; border-color: #e1e4e5; border-radius: 12px; font-size: 12px; padding: 1rem 1.1rem; }
+    .note, .flow-step { background: #f7fafb; }
+    .flow-step { border-color: #e1e6e8; }
+    @media (max-width: 768px) {
+      .mobile-toolbar { min-height: 58px; padding: .65rem .9rem; background: rgba(251,251,250,.96); }
+      .mobile-toolbar-title { font-size: 16px; }
+      .main-inner { padding: 2.3rem 1.2rem calc(3rem + env(safe-area-inset-bottom, 0)); }
+      .page-header { margin-bottom: 2.2rem; }
+      .page-header h1 { font-size: 3.15rem; line-height: .98; }
+      .page-header p { font-size: 1.08rem; line-height: 1.65; }
+      .section-title { font-size: 1.7rem; }
+      .endpoint-header, .endpoint-body { padding-left: 1rem; padding-right: 1rem; }
+      .endpoint { border-radius: 16px; }
+      .mini-tabs { top: 58px; margin-left: -.2rem; margin-right: -.2rem; padding: .6rem .2rem .75rem; background: rgba(251,251,250,.96); }
+      .mini-tab { min-height: 38px; display: inline-flex; align-items: center; }
+    }
   </style>
 </head>
 <body>
@@ -464,8 +521,8 @@
     <main class="main">
       <div class="main-inner">
         <header class="page-header">
-          <h1>Syte API</h1>
-          <p>v__VERSION__ · Machine-readable: <a href="/api/ai.json">/api/ai.json</a> · Sycord: <a href="/sycord/api/">/sycord/api/</a> · Hash routes like <code>#agent/agent-change</code></p>
+          <h1>Welcome to Syte</h1>
+          <p>A self-hostable autonomous deployment platform, zero-downtime runner, and embedded AI builder operating directly on your Linux servers.</p>
         </header>
 
       <div class="mini-tabs" id="tabs-overview" data-tabs-for="overview">
