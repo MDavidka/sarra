@@ -174,7 +174,31 @@ async def verify_api_token(
 
 def require_same_origin_if_present(request: Request) -> None:
     """Allow safe requests from reverse proxy or direct origins without throwing 403."""
-    pass
+    origin = request.headers.get("origin")
+
+    # Use request.url.netloc which considers X-Forwarded-Host if middleware configures it,
+    # or fallback to host header.
+    host = request.url.netloc or request.headers.get("host")
+
+    if origin and host:
+        parsed_origin = urlsplit(origin).netloc
+
+        # Normalize ports
+        def normalize_host(h: str) -> str:
+            if h.endswith(":443"):
+                return h[:-4]
+            if h.endswith(":80"):
+                return h[:-3]
+            return h
+
+        parsed_origin = normalize_host(parsed_origin)
+        host = normalize_host(host)
+
+        if not hmac.compare_digest(parsed_origin, host):
+            raise HTTPException(
+                403,
+                detail={"error": "invalid_origin", "message": "Cross-origin requests are not allowed for this action."},
+            )
 
 
 def _prune_operator_sessions(now: float | None = None) -> None:
