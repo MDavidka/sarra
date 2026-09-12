@@ -209,6 +209,32 @@ class AIAgentEngine:
         # 3. Load AI Builder settings
         ai_settings = await get_ai_builder_settings(self.project_id)
         if settings_override:
+            # If client passed model_profile or modelProfile, map to model
+            if "model_profile" in settings_override and "model" not in settings_override:
+                settings_override["model"] = settings_override["model_profile"]
+            elif "modelProfile" in settings_override and "model" not in settings_override:
+                settings_override["model"] = settings_override["modelProfile"]
+
+            target_model = settings_override.get("model")
+            if target_model and target_model != ai_settings.get("model"):
+                # If target model matches a specific saved provider, switch provider config
+                saved_providers = ai_settings.get("saved_providers") or []
+                matched_sp = None
+                for sp in saved_providers:
+                    if not isinstance(sp, dict):
+                        continue
+                    models_sub = sp.get("models_list") or ([sp.get("model")] if sp.get("model") else [])
+                    if target_model in models_sub or sp.get("model") == target_model:
+                        matched_sp = sp
+                        break
+                if matched_sp:
+                    if matched_sp.get("provider") and "provider" not in settings_override:
+                        settings_override["provider"] = matched_sp["provider"]
+                    if matched_sp.get("api_key") and "api_key" not in settings_override:
+                        settings_override["api_key"] = matched_sp["api_key"]
+                    if matched_sp.get("base_url") and "base_url" not in settings_override:
+                        settings_override["base_url"] = matched_sp["base_url"]
+
             ai_settings.update(settings_override)
 
         client = UnifiedAIClient(
