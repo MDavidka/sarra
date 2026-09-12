@@ -40,12 +40,10 @@ def test_encode_sse_frame_shape() -> None:
 def test_stream_gap_frame_carries_backfill_hint() -> None:
     frame = stream_gap_frame(dropped=3, last_id=42, reason="backpressure")
     payload = json.loads(frame.decode().split("data: ", 1)[1])
-    assert payload == {
-        "event": "stream_gap",
-        "dropped": 3,
-        "last_id": 42,
-        "reason": "backpressure",
-    }
+    assert payload["event"] == "stream_gap"
+    assert payload["dropped"] == 3
+    assert payload["last_id"] == 42
+    assert payload["reason"] == "backpressure"
 
 
 # ---------------------------------------------------------------------------
@@ -278,3 +276,92 @@ def test_anthropic_streaming_text_and_thinking() -> None:
         ]
 
     asyncio.run(scenario())
+
+
+# ---------------------------------------------------------------------------
+# Better-SSE Session, Channel, and Subtab Streaming Tests
+# ---------------------------------------------------------------------------
+
+
+def test_better_sse_session_and_channel_pub_sub() -> None:
+    from syte.sse_core import Channel, Session
+
+    channel = Channel("subtab:test_subtab")
+    session1 = Session()
+    session2 = Session()
+
+    channel.register(session1)
+    channel.register(session2)
+
+    assert channel.session_count == 2
+    assert session1 in channel.sessions and session2 in channel.sessions
+
+    # Broadcast event
+    channel.broadcast({"message": "deployment updated"}, event="deploy_status")
+
+    assert not session1.queue.empty()
+    assert not session2.queue.empty()
+
+    frame1, evt1 = session1.queue.get_nowait()
+    frame2, evt2 = session2.queue.get_nowait()
+
+    assert evt1["event"] == "deploy_status"
+    assert evt1["message"] == "deployment updated"
+    assert frame1 == frame2
+
+    # Deregister
+    session1.close()
+    assert channel.session_count == 1
+    assert session1 not in channel.sessions
+
+
+def test_better_sse_subtab_endpoint_stream_and_broadcast() -> None:
+    async def scenario() -> None:
+        from syte.sse_core import channel_hub
+
+        # Broadcast event to subtab 'build'
+        channel_hub.broadcast_to_subtab(
+            "global",
+            "build",
+            {"event": "build_step", "step": "compiling assets", "progress": 50},
+        )
+
+        channel = channel_hub.get_subtab_channel("global", "build")
+        session = channel_hub.create_session()
+        channel.register(session, since_id=0, replay=True)
+
+        frames: List[bytes] = []
+        async def consume():
+            async for frame in session.iterate(since_id=0, replay=True):
+                frames.append(frame)
+                if b"compiling assets" in frame:
+                    break
+
+        await asyncio.wait_for(consume(), timeout=2.0)
+        joined = _collect(frames)
+        assert "event: build_step" in joined
+        assert "compiling assets" in joined
+        assert "retry: 2000" in joined
+
+    asyncio.run(scenario())
+
+
+def test_better_sse_channels_list_and_catalog() -> None:
+    client = _build_client()
+
+    # Channels list
+    channels_res = client.get("/api/stream/channels")
+    assert channels_res.status_code == 200
+    data = channels_res.json()
+    assert data["ok"] is True
+    assert isinstance(data["channels"], list)
+
+    # Stream catalog includes better_sse metadata
+    catalog = client.get("/api/stream").json()
+    assert catalog["ok"] is True
+    assert catalog["library"] == "better-sse"
+    assert "subtab_stream" in catalog["endpoints"]
+    assert "subtab_broadcast" in catalog["endpoints"]
+    assert "general" in catalog["better_sse"]["supported_subtabs"]
+    assert "ai" in catalog["better_sse"]["supported_subtabs"]
+

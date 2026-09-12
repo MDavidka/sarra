@@ -43,6 +43,9 @@ from syte.sse_core import (
     RETRY_MS,
     SSE_HEADERS,
     SUBSCRIBER_QUEUE_SIZE,
+    Channel,
+    Session,
+    channel_hub,
 )
 
 router = APIRouter(prefix="/api/stream", tags=["Syte Stream API"])
@@ -74,8 +77,14 @@ async def stream_api_catalog() -> Dict[str, Any]:
     return {
         "ok": True,
         "api": "syte-stream",
+        "library": "better-sse",
         "transport": "text/event-stream (SSE)",
         "endpoints": {
+            "subtab_stream": "GET /api/stream/projects/{project_id}/subtabs/{subtab}?since_id=0&replay=false",
+            "subtab_broadcast": "POST /api/stream/projects/{project_id}/subtabs/{subtab}/broadcast",
+            "channel_stream": "GET /api/stream/channels/{channel_name}?since_id=0&replay=false",
+            "channel_broadcast": "POST /api/stream/channels/{channel_name}/broadcast",
+            "channels_list": "GET /api/stream/channels",
             "chat": "POST /api/stream/projects/{project_id}/chat",
             "events": "GET /api/stream/projects/{project_id}/events?since_id=0&replay=false",
             "activity_poll": "GET /api/stream/projects/{project_id}/activity?since_id=0&limit=200",
@@ -84,6 +93,14 @@ async def stream_api_catalog() -> Dict[str, Any]:
             "stop": "POST /api/stream/projects/{project_id}/stop",
             "logs": "GET /api/stream/projects/{project_id}/logs/stream?live=false",
             "preview_logs": "GET /api/stream/projects/{project_id}/preview/logs/stream?live=false",
+        },
+        "better_sse": {
+            "supported_subtabs": [
+                "general", "build", "sources", "domains", "env",
+                "release", "firewall", "redirects", "logs", "speed", "ai", "settings"
+            ],
+            "sessions": "Stateful Session objects with disconnect callbacks and keep-alive heartbeats",
+            "channels": "Pub/Sub Channel broadcast groups with ring-buffer replay and backpressure queues",
         },
         "reconnect": {
             "retry_ms": RETRY_MS,
@@ -250,3 +267,109 @@ async def stream_preview(
     await _require_project(project_id)
     await _verify_log_stream_key(request)
     return _sse_response(stream_preview_logs(project_id, live_only=live))
+
+
+# ---------------------------------------------------------------------------
+# Better-SSE Subtab & Channel Streaming Endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get("/projects/{project_id}/subtabs/{subtab}")
+async def stream_project_subtab(
+    project_id: str,
+    subtab: str,
+    request: Request,
+    since_id: int = Query(0, ge=-1, description="Replay events with id > since_id; -1 replays full buffer"),
+    replay: bool = Query(False, description="Shorthand for since_id=-1"),
+    last_event_id: Optional[str] = Header(None, alias="Last-Event-ID"),
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    """Subscribe to a dedicated Better-SSE stream for a specific project subtab.
+
+    Supported subtabs include: `general`, `build`, `sources`, `domains`, `env`,
+    `release`, `firewall`, `redirects`, `logs`, `speed`, `ai`, `rollbacks`, `settings`.
+    """
+    await _require_project(project_id)
+    if last_event_id and last_event_id.isdigit() and since_id <= 0:
+        since_id = int(last_event_id)
+
+    # Resolve subtab channel
+    channel = channel_hub.get_subtab_channel(project_id, subtab)
+    session = channel_hub.create_session(
+        last_event_id=max(since_id, 0),
+        state={"project_id": project_id, "subtab": subtab},
+    )
+    channel.register(session, since_id=since_id, replay=replay)
+
+    return _sse_response(session.iterate(since_id=since_id, replay=replay, request=request))
+
+
+@router.post("/projects/{project_id}/subtabs/{subtab}/broadcast")
+async def broadcast_project_subtab(
+    project_id: str,
+    subtab: str,
+    body: Dict[str, Any],
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    """Broadcast an event into a project subtab channel via Better-SSE."""
+    await _require_project(project_id)
+    event_name = str(body.get("event") or body.get("event_type") or f"subtab:{subtab}")
+    payload = {k: v for k, v in body.items() if k not in ("event", "event_type")}
+    payload["event"] = event_name
+    payload["event_type"] = event_name
+    payload["subtab"] = subtab
+    payload["project_id"] = project_id
+
+    channel_hub.broadcast_to_subtab(project_id, subtab, payload, event=event_name)
+    return {"ok": True, "broadcast": True, "subtab": subtab, "event": event_name}
+
+
+@router.get("/channels/{channel_name}")
+async def stream_generic_channel(
+    channel_name: str,
+    request: Request,
+    since_id: int = Query(0, ge=-1),
+    replay: bool = Query(False),
+    last_event_id: Optional[str] = Header(None, alias="Last-Event-ID"),
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    """Subscribe to any named Better-SSE channel directly."""
+    if last_event_id and last_event_id.isdigit() and since_id <= 0:
+        since_id = int(last_event_id)
+
+    channel = channel_hub.get_channel(channel_name)
+    if not channel:
+        raise HTTPException(404, "Channel not found")
+
+    session = channel_hub.create_session(
+        last_event_id=max(since_id, 0),
+        state={"channel": channel_name},
+    )
+    channel.register(session, since_id=since_id, replay=replay)
+
+    return _sse_response(session.iterate(since_id=since_id, replay=replay, request=request))
+
+
+@router.post("/channels/{channel_name}/broadcast")
+async def broadcast_generic_channel(
+    channel_name: str,
+    body: Dict[str, Any],
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    """Broadcast an event payload to all subscribers of a Better-SSE channel."""
+    channel = channel_hub.get_channel(channel_name)
+    if not channel:
+        raise HTTPException(404, "Channel not found")
+
+    event_name = str(body.get("event") or body.get("event_type") or "message")
+    channel.broadcast(body, event=event_name)
+    return {"ok": True, "broadcast": True, "channel": channel_name, "subscribers": channel.session_count}
+
+
+@router.get("/channels")
+async def list_stream_channels(
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    """List active Better-SSE channels, subscribers, and stats."""
+    return {"ok": True, "channels": channel_hub.list_channels()}
+

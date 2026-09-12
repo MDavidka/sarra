@@ -1,8 +1,8 @@
 import json
 import time
 import uuid
-from datetime import datetime, timezone
-from typing import Any
+from datetime import datetime, timedelta, timezone
+from typing import Any, Optional
 
 import aiosqlite
 
@@ -313,6 +313,16 @@ CREATE TABLE IF NOT EXISTS ai_chat_messages (
 );
 CREATE INDEX IF NOT EXISTS idx_ai_chat_messages_project
     ON ai_chat_messages(project_id, created_at ASC);
+
+CREATE TABLE IF NOT EXISTS project_deep_focus (
+    project_id TEXT PRIMARY KEY,
+    framework_stack TEXT DEFAULT '{}',
+    architecture_map TEXT DEFAULT '{}',
+    custom_memory TEXT DEFAULT '',
+    index_data TEXT DEFAULT '{}',
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
 """
 
 # Preserve saved provider credentials while moving runtime configuration to the
@@ -1189,7 +1199,7 @@ async def list_project_router_logs(
     if not project:
         return []
     host = project.get("domain") or f"{project.get('name', 'app')}.sycord.site"
-    now_dt = datetime.datetime.now(datetime.timezone.utc)
+    now_dt = datetime.now(timezone.utc)
 
     sample_entries = [
         ("GET", 200, "/", 24.2, "Health check passed"),
@@ -1203,7 +1213,7 @@ async def list_project_router_logs(
 
     seeded = []
     for i, (m, sc, p, lat, msg) in enumerate(sample_entries):
-        ts = (now_dt - datetime.timedelta(minutes=i * 5 + 1)).isoformat()
+        ts = (now_dt - timedelta(minutes=i * 5 + 1)).isoformat()
         seeded.append({
             "id": f"log_{uuid.uuid4().hex[:12]}",
             "project_id": project_id,
@@ -1270,8 +1280,8 @@ async def record_project_visit(
 
 
 async def get_project_visitor_stats_7d(project_id: str) -> dict[str, Any]:
-    now_dt = datetime.datetime.now(datetime.timezone.utc)
-    week_ago_dt = now_dt - datetime.timedelta(days=7)
+    now_dt = datetime.now(timezone.utc)
+    week_ago_dt = now_dt - timedelta(days=7)
     week_ago_iso = week_ago_dt.isoformat()
 
     async with aiosqlite.connect(settings.resolved_db_path) as db:
@@ -1576,3 +1586,63 @@ async def clear_ai_chat_history(project_id: str) -> bool:
         await db.execute("DELETE FROM ai_chat_messages WHERE project_id = ?", (project_id,))
         await db.commit()
     return True
+
+
+async def get_project_deep_focus(project_id: str) -> dict[str, Any]:
+    """Retrieve Deep Focus / project memory index and notes."""
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        async with db.execute(
+            "SELECT project_id, framework_stack, architecture_map, custom_memory, index_data, updated_at "
+            "FROM project_deep_focus WHERE project_id = ?",
+            (project_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+            if not row:
+                return {}
+            return {
+                "project_id": row[0],
+                "framework_stack": json.loads(row[1]) if row[1] else {},
+                "architecture": json.loads(row[2]) if row[2] else {},
+                "custom_memory": row[3] or "",
+                "index_data": json.loads(row[4]) if row[4] else {},
+                "updated_at": row[5],
+            }
+
+
+async def save_project_deep_focus(
+    project_id: str,
+    custom_memory: Optional[str] = None,
+    framework_stack: Optional[dict[str, Any]] = None,
+    architecture_map: Optional[dict[str, Any]] = None,
+    index_data: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    """Save or update Deep Focus / project memory."""
+    now = datetime.now(timezone.utc).isoformat()
+    curr = await get_project_deep_focus(project_id)
+
+    final_custom_mem = custom_memory if custom_memory is not None else curr.get("custom_memory", "")
+    final_stack = json.dumps(framework_stack if framework_stack is not None else curr.get("framework_stack", {}))
+    final_arch = json.dumps(architecture_map if architecture_map is not None else curr.get("architecture", {}))
+    final_idx = json.dumps(index_data if index_data is not None else curr.get("index_data", {}))
+
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        await db.execute(
+            "INSERT INTO project_deep_focus (project_id, framework_stack, architecture_map, custom_memory, index_data, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(project_id) DO UPDATE SET "
+            "framework_stack = excluded.framework_stack, "
+            "architecture_map = excluded.architecture_map, "
+            "custom_memory = excluded.custom_memory, "
+            "index_data = excluded.index_data, "
+            "updated_at = excluded.updated_at",
+            (project_id, final_stack, final_arch, final_custom_mem, final_idx, now),
+        )
+        await db.commit()
+
+    return await get_project_deep_focus(project_id)
+
+
+# Aliases for Project Memory
+get_project_memory = get_project_deep_focus
+save_project_memory = save_project_deep_focus
+

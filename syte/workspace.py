@@ -185,16 +185,24 @@ def clone_or_pull(
     auth_env, askpass = _git_auth_env(http_token)
     try:
         if (repo_dir / ".git").exists():
-            code, out = run_cmd(git_cmd("fetch", "origin"), cwd=repo_dir, env=auth_env)
+            code, out = run_cmd(git_cmd("fetch", "origin", branch), cwd=repo_dir, env=auth_env)
             if code != 0:
-                return False, out
+                code, out = run_cmd(git_cmd("fetch", "origin"), cwd=repo_dir, env=auth_env)
+                if code != 0:
+                    return False, out
             if requested_commit:
                 return checkout_requested_commit()
-            code, out = run_cmd(git_cmd("checkout", branch), cwd=repo_dir, env=auth_env)
+            code, out = run_cmd(git_cmd("checkout", "-f", branch), cwd=repo_dir, env=auth_env)
             if code != 0:
                 return False, out
             code, out = run_cmd(git_cmd("pull", "origin", branch), cwd=repo_dir, env=auth_env)
-            return code == 0, out or "Repository updated."
+            if code != 0:
+                # Fallback to reset --hard if local build artifacts/modifications prevented clean pull
+                reset_code, reset_out = run_cmd(git_cmd("reset", "--hard", f"origin/{branch}"), cwd=repo_dir, env=auth_env)
+                if reset_code == 0:
+                    return True, f"Repository updated to origin/{branch} (clean reset)."
+                return False, out
+            return True, out or "Repository updated."
 
         if repo_dir.exists():
             shutil.rmtree(repo_dir)

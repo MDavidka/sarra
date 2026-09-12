@@ -5,9 +5,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import json
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -482,4 +482,165 @@ async def export_project_ai_diagnostics(
         content=diagnostic_bundle,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.post("/api/projects/{project_id}/ai/upload")
+async def upload_ai_files(
+    project_id: str,
+    files: List[UploadFile] = File(...),
+    extract_to_workspace: bool = Form(False),
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    """Handle mass file uploads (.zip, excel, word, pdf, csv, code, text) and extract structured AI understanding."""
+    if project_id != "global":
+        project = await get_project(project_id)
+        if not project:
+            raise HTTPException(404, "Project not found")
+        from syte.ai.tools import _get_project_workspace_dir
+        ws_dir = _get_project_workspace_dir(project)
+    else:
+        from syte.config import settings
+        ws_dir = settings.data_dir
+
+    from syte.ai.file_parser import extract_zip_to_workspace, parse_uploaded_file
+
+    parsed_results = []
+    extraction_results = []
+    total_bytes = 0
+
+    for file in files:
+        raw_bytes = await file.read()
+        total_bytes += len(raw_bytes)
+        parsed = parse_uploaded_file(file.filename or "uploaded_file", raw_bytes)
+        parsed_results.append(parsed)
+
+        # If user requested to unpack zip directly into the workspace
+        if extract_to_workspace and parsed.get("extension") == ".zip":
+            ext_res = extract_zip_to_workspace(raw_bytes, ws_dir)
+            extraction_results.append({"filename": file.filename, **ext_res})
+
+    # Combine prompt context summary
+    context_blocks = []
+    for p in parsed_results:
+        context_blocks.append(f"### [Uploaded File: {p['filename']} ({p['summary']})]\n{p['parsed_content']}\n")
+    combined_prompt_context = "\n\n".join(context_blocks)
+
+    return {
+        "ok": True,
+        "total_files": len(parsed_results),
+        "total_bytes": total_bytes,
+        "files": parsed_results,
+        "combined_prompt_context": combined_prompt_context,
+        "extraction_results": extraction_results if extraction_results else None,
+        "message": f"Successfully parsed {len(parsed_results)} file(s) for AI understanding.",
+    }
+
+
+class DeepFocusUpdateRequest(BaseModel):
+    custom_memory: Optional[str] = None
+    framework_stack: Optional[Dict[str, Any]] = None
+    architecture: Optional[Dict[str, Any]] = None
+
+
+@router.get("/api/projects/{project_id}/ai/deep-focus")
+@router.get("/api/projects/{project_id}/ai/memory")
+async def get_project_deep_focus_endpoint(project_id: str):
+    """Retrieve Deep Focus (Project Memory) model and cached index."""
+    if project_id != "global":
+        project = await get_project(project_id)
+        if not project:
+            raise HTTPException(404, "Project not found")
+        from syte.ai.tools import _get_project_workspace_dir
+        ws_dir = _get_project_workspace_dir(project)
+    else:
+        ws_dir = None
+
+    from syte.database import get_project_deep_focus
+    from syte.ai.deep_focus import build_deep_focus_index
+
+    stored = await get_project_deep_focus(project_id)
+    custom_mem = stored.get("custom_memory", "") if stored else ""
+    deep_focus = await build_deep_focus_index(project_id, ws_dir=ws_dir, custom_memory=custom_mem)
+
+    return {
+        "ok": True,
+        "project_id": project_id,
+        "deep_focus": deep_focus,
+        "project_memory": deep_focus,
+    }
+
+
+@router.post("/api/projects/{project_id}/ai/deep-focus")
+@router.post("/api/projects/{project_id}/ai/memory")
+async def update_project_deep_focus_endpoint(
+    project_id: str,
+    body: DeepFocusUpdateRequest,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    """Update custom memory notes or Deep Focus configurations."""
+    if project_id != "global":
+        project = await get_project(project_id)
+        if not project:
+            raise HTTPException(404, "Project not found")
+        from syte.ai.tools import _get_project_workspace_dir
+        ws_dir = _get_project_workspace_dir(project)
+    else:
+        ws_dir = None
+
+    from syte.database import save_project_deep_focus
+    from syte.ai.deep_focus import build_deep_focus_index
+
+    saved = await save_project_deep_focus(
+        project_id,
+        custom_memory=body.custom_memory,
+        framework_stack=body.framework_stack,
+        architecture_map=body.architecture,
+    )
+    fresh_df = await build_deep_focus_index(project_id, ws_dir=ws_dir, custom_memory=saved.get("custom_memory", ""))
+
+    return {
+        "ok": True,
+        "message": "Deep Focus / Project Memory updated successfully.",
+        "deep_focus": fresh_df,
+        "project_memory": fresh_df,
+    }
+
+
+@router.post("/api/projects/{project_id}/ai/deep-focus/rebuild")
+@router.post("/api/projects/{project_id}/ai/memory/rebuild")
+async def rebuild_project_deep_focus_endpoint(
+    project_id: str,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    """Re-scan workspace and rebuild Deep Focus index from scratch."""
+    if project_id != "global":
+        project = await get_project(project_id)
+        if not project:
+            raise HTTPException(404, "Project not found")
+        from syte.ai.tools import _get_project_workspace_dir
+        ws_dir = _get_project_workspace_dir(project)
+    else:
+        ws_dir = None
+
+    from syte.database import get_project_deep_focus, save_project_deep_focus
+    from syte.ai.deep_focus import build_deep_focus_index
+
+    stored = await get_project_deep_focus(project_id)
+    custom_mem = stored.get("custom_memory", "") if stored else ""
+
+    fresh_df = await build_deep_focus_index(project_id, ws_dir=ws_dir, custom_memory=custom_mem)
+    await save_project_deep_focus(
+        project_id,
+        custom_memory=custom_mem,
+        framework_stack=fresh_df.get("framework_stack"),
+        architecture_map=fresh_df.get("architecture"),
+    )
+
+    return {
+        "ok": True,
+        "message": "Deep Focus index rebuilt and synchronized from workspace.",
+        "deep_focus": fresh_df,
+        "project_memory": fresh_df,
+    }
+
 

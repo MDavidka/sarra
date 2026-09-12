@@ -670,6 +670,35 @@ def get_ai_tools_schema() -> List[Dict[str, Any]]:
                 },
             },
         },
+        # 11. Deep Focus (Project Memory Alias)
+        {
+            "type": "function",
+            "function": {
+                "name": "syte_get_deep_focus",
+                "description": "Retrieve the Deep Focus index (Project Memory alias) containing the complete project architecture, detected framework, key exports, component registry, and persistent project memory. Use this to instantly understand the project structure without burning tokens reading individual files.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "syte_update_deep_focus",
+                "description": "Update or append notes, architecture decisions, or domain knowledge to Deep Focus (Project Memory) for persistent token-efficient recall.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "notes": {
+                            "type": "string",
+                            "description": "Key memory notes, architectural rules, or domain constraints to persist.",
+                        },
+                    },
+                    "required": ["notes"],
+                },
+            },
+        },
     ]
 
 
@@ -892,11 +921,17 @@ def _build_workspace_tree(ws_dir: Path, max_depth: int = 3) -> Dict[str, Any]:
     return {"root": str(ws_dir.name), "tree": _walk(ws_dir, 1)}
 
 
-async def execute_syte_tool(project_id: str, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+async def execute_syte_tool(project_id: Any, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     """Execute a tool requested by the AI Builder agent against the Syte framework and VM."""
-    project = await get_project(project_id)
-    if not project:
-        return {"ok": False, "error": f"Project '{project_id}' not found."}
+    if isinstance(project_id, dict):
+        project = project_id
+        project_id = project.get("id", "global")
+    elif project_id == "global":
+        project = {"id": "global", "name": "Global Platform"}
+    else:
+        project = await get_project(project_id)
+        if not project:
+            return {"ok": False, "error": f"Project '{project_id}' not found."}
 
     ws_dir = _get_project_workspace_dir(project)
 
@@ -917,7 +952,8 @@ async def execute_syte_tool(project_id: str, tool_name: str, arguments: dict[str
             level = str(arguments.get("log_level") or "all").lower()
             should_diagnose = bool(arguments.get("diagnose", True))
 
-            raw_logs = await get_logs(project_id, limit=limit * 2 if (keyword or level != "all") else limit)
+            raw_logs_str = get_logs(project_id, lines=limit * 2 if (keyword or level != "all") else limit)
+            raw_logs = [line for line in raw_logs_str.splitlines() if line]
             filtered = []
             for line in raw_logs:
                 lower_line = line.lower()
@@ -1431,6 +1467,30 @@ async def execute_syte_tool(project_id: str, tool_name: str, arguments: dict[str
             depth = int(arguments.get("max_depth") or 3)
             tree = _build_workspace_tree(ws_dir, max_depth=depth)
             return {"ok": True, "workspace_tree": tree}
+
+        elif tool_name in ("syte_get_deep_focus", "syte_get_project_memory"):
+            from syte.ai.deep_focus import build_deep_focus_index
+            from syte.database import get_project_deep_focus
+            stored = await get_project_deep_focus(project["id"])
+            custom_mem = stored.get("custom_memory", "") if stored else ""
+            deep_focus = await build_deep_focus_index(project["id"], ws_dir=ws_dir, custom_memory=custom_mem)
+            return {"ok": True, "deep_focus": deep_focus, "project_memory": deep_focus}
+
+        elif tool_name in ("syte_update_deep_focus", "syte_update_project_memory"):
+            from syte.database import save_project_deep_focus, get_project_deep_focus
+            from syte.ai.deep_focus import build_deep_focus_index
+            new_notes = str(arguments.get("notes") or "").strip()
+            stored = await get_project_deep_focus(project["id"])
+            existing_notes = stored.get("custom_memory", "") if stored else ""
+            combined_notes = (existing_notes + "\n" + new_notes).strip() if existing_notes else new_notes
+            saved = await save_project_deep_focus(project["id"], custom_memory=combined_notes)
+            fresh_df = await build_deep_focus_index(project["id"], ws_dir=ws_dir, custom_memory=combined_notes)
+            return {
+                "ok": True,
+                "message": "Deep Focus (Project Memory) updated successfully.",
+                "deep_focus": fresh_df,
+                "project_memory": fresh_df,
+            }
 
         return {"ok": False, "error": f"Unknown tool: '{tool_name}'"}
 

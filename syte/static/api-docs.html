@@ -408,6 +408,7 @@
           <i data-lucide="radio"></i><span>Stream</span>
         </button>
         <div class="nav-mini" data-mini-for="stream">
+          <a href="#stream/stream-subtabs" data-cat="stream" data-ep="stream-subtabs">Better-SSE Subtabs</a>
           <a href="#stream/stream-connect" data-cat="stream" data-ep="stream-connect">Connect SSE</a>
           <a href="#stream/stream-hotpath" data-cat="stream" data-ep="stream-hotpath">Hot path</a>
           <a href="#stream/request-started" data-cat="stream" data-ep="request-started">request_started</a>
@@ -532,6 +533,7 @@
         <a class="mini-tab" href="#agent/agent-skills" data-cat="agent" data-ep="agent-skills">skills</a>
       </div>
       <div class="mini-tabs" id="tabs-stream" data-tabs-for="stream">
+        <a class="mini-tab" href="#stream/stream-subtabs" data-cat="stream" data-ep="stream-subtabs">Better-SSE Subtabs</a>
         <a class="mini-tab" href="#stream/stream-connect" data-cat="stream" data-ep="stream-connect">Connect SSE</a>
         <a class="mini-tab" href="#stream/stream-hotpath" data-cat="stream" data-ep="stream-hotpath">Hot path</a>
         <a class="mini-tab" href="#stream/request-started" data-cat="stream" data-ep="request-started">request_started</a>
@@ -2461,8 +2463,65 @@ data: {&quot;id&quot;:150,&quot;event_type&quot;:&quot;tool_call_started&quot;,â
 
         <div class="cat-panel" id="panel-stream" data-cat="stream">
         <section class="section">
-          <h2 class="section-title">Stream events</h2>
-          <p class="section-desc">Every activity event key emitted on <code>/api/agent_activity/stream</code>. Use mini-tabs to jump. Hot keys are slim; everything else is full cold JSON.</p>
+          <h2 class="section-title">Stream &amp; Subtab Channels</h2>
+          <p class="section-desc">Real-time SSE event channels powered by Better-SSE (<code>Session</code> &amp; <code>Channel</code> pub/sub). Stream specific subtabs (<code>ai</code>, <code>build</code>, <code>logs</code>, <code>speed</code>, <code>env</code>, etc.) with automatic reconnect, Last-Event-ID backfill, and zero-latency token coalescing.</p>
+
+          <div class="endpoint" id="stream-subtabs" data-ep="stream-subtabs">
+            <div class="endpoint-header">
+              <div class="endpoint-base">https://your-syte-host.com/api/stream</div>
+              <div class="endpoint-row">
+                <span class="method sse">GET</span>
+                <span class="endpoint-path">/projects/{project_id}/subtabs/{subtab}</span>
+              </div>
+              <div class="endpoint-name">Better-SSE Subtab Stream (Pub/Sub Channel)</div>
+            </div>
+            <div class="endpoint-body">
+              <div class="note">Stream events targeting a specific subtab (e.g. <code>ai</code>, <code>build</code>, <code>sources</code>, <code>domains</code>, <code>env</code>, <code>release</code>, <code>firewall</code>, <code>redirects</code>, <code>logs</code>, <code>speed</code>, <code>settings</code>).</div>
+              <div class="panel">
+                <div class="panel-title">Path &amp; Query Parameters</div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">project_id<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  <div class="field-desc">Project ID or <code>global</code>.</div>
+                </div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">subtab<span class="req">*</span></span>
+                    <span class="field-type">string</span>
+                  </div>
+                  <div class="field-desc">Target subtab (<code>ai</code>, <code>build</code>, <code>logs</code>, <code>env</code>, <code>speed</code>, <code>domains</code>, etc.).</div>
+                </div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">since_id<span class="opt">?</span></span>
+                    <span class="field-type">integer</span>
+                  </div>
+                  <div class="field-desc">Replay events after this sequence ID. Automatically read from <code>Last-Event-ID</code> header if present.</div>
+                </div>
+                <div class="field">
+                  <div class="field-head">
+                    <span class="field-name">replay<span class="opt">?</span></span>
+                    <span class="field-type">boolean</span>
+                  </div>
+                  <div class="field-desc">Set <code>true</code> to replay full channel ring buffer.</div>
+                </div>
+              </div>
+<div class="seg-label">Example JavaScript / EventSource Usage</div>
+<pre>const sse = new EventSource('/api/stream/projects/my-proj/subtabs/ai');
+
+sse.addEventListener('token_delta', (e) => {
+  const data = JSON.parse(e.data);
+  console.log('Streamed token:', data.delta);
+});
+
+sse.addEventListener('stream_gap', (e) => {
+  const gap = JSON.parse(e.data);
+  console.warn('Missed events due to backpressure:', gap.dropped);
+});</pre>
+            </div>
+          </div>
 
           <div class="endpoint" id="stream-connect" data-ep="stream-connect">
             <div class="endpoint-header">

@@ -403,8 +403,13 @@ async def health():
     return {"status": "ok", "version": __version__}
 
 
-@app.get("/api", include_in_schema=False)
-@app.get("/api/", include_in_schema=False)
+@app.api_route("/api", methods=["GET", "HEAD"], include_in_schema=False)
+@app.api_route("/api/", methods=["GET", "HEAD"], include_in_schema=False)
+@app.api_route("/docs", methods=["GET", "HEAD"], include_in_schema=False)
+@app.api_route("/docs/", methods=["GET", "HEAD"], include_in_schema=False)
+@app.api_route("/api/docs", methods=["GET", "HEAD"], include_in_schema=False)
+@app.api_route("/api-docs", methods=["GET", "HEAD"], include_in_schema=False)
+@app.api_route("/api-docs.html", methods=["GET", "HEAD"], include_in_schema=False)
 async def api_documentation():
     """API reference documentation page."""
     html = (STATIC_DIR / "api-docs.html").read_text()
