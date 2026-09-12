@@ -567,7 +567,7 @@ body.nav-mode-service .sidebar-menu {
   display: flex;
   align-items: center;
   gap: 0.65rem;
-  padding: 0.85rem 1.5rem;
+  padding: 0.5rem 1rem;
   border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
@@ -594,7 +594,7 @@ body.nav-mode-service .sidebar-menu {
 .sidebar-toggle { display: none; }
 
 .breadcrumb {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--text-muted);
   flex: 1;
   min-width: 0;
@@ -669,13 +669,13 @@ body.nav-mode-service .sidebar-menu {
   justify-content: center;
   gap: 0.45rem;
   width: 100%;
-  padding: 0.7rem 1rem;
+  padding: 0.5rem 0.75rem;
   border: none;
-  border-radius: 12px;
+  border-radius: 8px;
   background: var(--accent);
   color: var(--accent-fg);
   font-family: var(--font);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
 }
@@ -999,9 +999,9 @@ body.nav-mode-service .sidebar-menu {
 /* Pill buttons */
 .btn-pill {
   font-family: var(--font);
-  font-size: 0.875rem;
+  font-size: 0.8rem;
   font-weight: 500;
-  padding: 0.6rem 1.15rem;
+  padding: 0.4rem 0.85rem;
   border-radius: var(--radius-sm);
   border: none;
   cursor: pointer;
