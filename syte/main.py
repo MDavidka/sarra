@@ -411,10 +411,8 @@ async def health():
 @app.api_route("/api-docs", methods=["GET", "HEAD"], include_in_schema=False)
 @app.api_route("/api-docs.html", methods=["GET", "HEAD"], include_in_schema=False)
 async def api_documentation():
-    """API reference documentation page."""
-    html = (STATIC_DIR / "api-docs.html").read_text()
-    html = html.replace("__VERSION__", __version__)
-    return HTMLResponse(html, headers={"Cache-Control": NO_CACHE})
+    """Documentation page served via main SPA."""
+    return _index_response()
 
 
 @app.get("/manifest.webmanifest", include_in_schema=False)
