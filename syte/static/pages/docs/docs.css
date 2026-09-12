@@ -5,4 +5,16 @@
 .page-docs button, .page-docs a { -webkit-tap-highlight-color: transparent; }
 @media (max-width: 768px) {
   .page-docs input, .page-docs textarea, .page-docs select { font-size: 16px; }
+  .page-docs .copy-btn, .page-docs button, .page-docs .util-btn { min-width: 44px; min-height: 44px; }
+  .page-docs .field-row { grid-template-columns: 1fr; gap: .8rem; }
+  .page-docs .table-wrap { overflow-x: auto; border-radius: 12px; }
+  .page-docs table { min-width: 560px; }
+  .page-docs .ask-ai { right: 1rem; bottom: calc(1rem + env(safe-area-inset-bottom)); }
 }
+.page-docs .copy-btn { border-radius: 9px; background: #fff; border: 1px solid #dfe3e4; color: #687177; }
+.page-docs .copy-btn:hover { background: #eff9fb; color: #087da4; }
+.page-docs .ask-ai { border: 1px solid #dfe3e4; background: rgba(255,255,255,.96); box-shadow: 0 8px 24px rgba(20,30,36,.1); border-radius: 999px; }
+.page-docs table { border-collapse: separate; border-spacing: 0; overflow: hidden; border: 1px solid #dfe3e4; border-radius: 12px; }
+.page-docs th { background: #f5f7f7; color: #30363a; font-weight: 600; }
+.page-docs td, .page-docs th { padding: .75rem .85rem; border-bottom: 1px solid #eceeed; }
+.page-docs tr:last-child td { border-bottom: 0; }
