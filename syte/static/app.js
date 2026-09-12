@@ -4545,6 +4545,7 @@ function showView(name) {
   if (name === 'ssl') loadSslDashboard();
   if (name === 'settings') loadSettings();
   if (name === 'ai') void renderGlobalAIChat();
+  if (name === 'docs') renderDocsView();
   if (name === 'sycord') refreshIcons();
   if (name === 'share-it') loadShareItTemplates();
   if (name === 'new-service') resetCreateForm();
@@ -4553,11 +4554,11 @@ function showView(name) {
     updateServiceSidebarNav(p);
     setBreadcrumb(p ? displayTitle(p) : 'Project');
   } else {
-    setBreadcrumb(BREADCRUMBS[name] || (name === 'ai' ? 'AI Builder' : 'Syte'));
+    setBreadcrumb(BREADCRUMBS[name] || (name === 'ai' ? 'AI Builder' : (name === 'docs' ? 'Documentation' : 'Syte')));
   }
   const mainTopbar = document.querySelector('.main-topbar');
   if (mainTopbar) {
-    mainTopbar.style.display = name === 'ai' ? 'none' : 'flex';
+    mainTopbar.style.display = (name === 'ai' || name === 'docs') ? 'none' : 'flex';
   }
   closeDrawer();
   refreshIcons();
@@ -15489,4 +15490,1417 @@ function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>'"]/g, character => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
   }[character]));
+}
+
+// ---------------------------------------------------------------------------
+// Fumadocs / Syte Integrated Documentation System
+// ---------------------------------------------------------------------------
+
+let activeDocsPage = 'qs-install';
+let docsFeedbackState = null;
+
+const DOCS_DATA = {
+  // ---------------- QuickStart ----------------
+  'qs-install': {
+    title: 'Install Syte',
+    subbarTitle: 'QuickStart · Install',
+    lead: 'Set up Syte on any fresh Linux server (Ubuntu, Debian, AlmaLinux, Rocky) with a single command.',
+    hasHero: true,
+    content: `
+      <div class="docs-alerts-grid">
+        <div class="docs-alert-card tip">
+          <div class="docs-alert-card-header">
+            <div class="docs-alert-card-icon"><i data-lucide="lightbulb" style="width:14px;height:14px;"></i></div>
+            <span>Requirements</span>
+          </div>
+          <div class="docs-alert-card-desc">1 vCPU, 1 GB RAM, Linux x86_64 or arm64 with root or sudo access.</div>
+        </div>
+        <div class="docs-alert-card note">
+          <div class="docs-alert-card-header">
+            <div class="docs-alert-card-icon"><i data-lucide="file-text" style="width:14px;height:14px;"></i></div>
+            <span>Automated</span>
+          </div>
+          <div class="docs-alert-card-desc">Installs Docker, Node.js, Python, and Caddy automatically.</div>
+        </div>
+      </div>
+
+      <h2>Single-Line Installation</h2>
+      <div class="docs-code-block">
+        <div class="docs-code-block-header">
+          <div class="docs-code-title">
+            <i data-lucide="terminal" style="width:14px;height:14px;"></i>
+            <span>install command</span>
+          </div>
+          <div class="docs-code-actions">
+            <span class="docs-code-lang">bash</span>
+            <button type="button" class="docs-code-copy-btn" onclick="copySnippet(this, 'curl -fsSL https://sycord.site/install.sh | bash')">
+              <i data-lucide="copy" style="width:12px;height:12px;"></i><span>Copy</span>
+            </button>
+          </div>
+        </div>
+        <div class="docs-code-body">
+          <div class="docs-code-lines"><span>1</span></div>
+          <pre class="docs-code-text"><code>curl -fsSL https://sycord.site/install.sh | bash</code></pre>
+        </div>
+      </div>
+
+      <h2>Post-Install Verification</h2>
+      <p>Once installation finishes, check the systemd service status and open port <code>8787</code> in your browser:</p>
+      <div class="docs-code-block">
+        <div class="docs-code-block-header">
+          <div class="docs-code-title"><span>verify service</span></div>
+          <div class="docs-code-actions">
+            <span class="docs-code-lang">bash</span>
+            <button type="button" class="docs-code-copy-btn" onclick="copySnippet(this, 'systemctl status syte --no-pager')">
+              <i data-lucide="copy" style="width:12px;height:12px;"></i><span>Copy</span>
+            </button>
+          </div>
+        </div>
+        <div class="docs-code-body">
+          <div class="docs-code-lines"><span>1</span></div>
+          <pre class="docs-code-text"><code>systemctl status syte --no-pager</code></pre>
+        </div>
+      </div>
+    `,
+    prev: null,
+    next: { title: 'Update', page: 'qs-update', desc: 'Upgrading your Syte installation.' },
+    updated: '03/09/2026',
+  },
+
+  'qs-update': {
+    title: 'Update Syte',
+    subbarTitle: 'QuickStart · Update',
+    lead: 'Keep your server up to date with the latest features, security patches, and agent abilities.',
+    hasHero: false,
+    content: `
+      <h2>1-Click Web Update</h2>
+      <p>Inside the Syte workspace, navigate to <strong>Settings → Git &amp; Updates</strong> and click <strong>Check for Updates</strong>.</p>
+
+      <h2>CLI Update Command</h2>
+      <div class="docs-code-block">
+        <div class="docs-code-block-header">
+          <div class="docs-code-title"><span>update command</span></div>
+          <div class="docs-code-actions">
+            <span class="docs-code-lang">bash</span>
+            <button type="button" class="docs-code-copy-btn" onclick="copySnippet(this, 'syte update || (cd /root/syte && git pull && systemctl restart syte)')">
+              <i data-lucide="copy" style="width:12px;height:12px;"></i><span>Copy</span>
+            </button>
+          </div>
+        </div>
+        <div class="docs-code-body">
+          <div class="docs-code-lines"><span>1</span></div>
+          <pre class="docs-code-text"><code>syte update || (cd /root/syte && git pull && systemctl restart syte)</code></pre>
+        </div>
+      </div>
+    `,
+    prev: { title: 'Install', page: 'qs-install', desc: 'Single-line install.' },
+    next: { title: 'Restart', page: 'qs-restart', desc: 'Restarting services.' },
+    updated: '03/09/2026',
+  },
+
+  'qs-restart': {
+    title: 'Restart Services',
+    subbarTitle: 'QuickStart · Restart',
+    lead: 'Restart the control plane, project instances, or Caddy web server gracefully.',
+    hasHero: false,
+    content: `
+      <h2>Systemd Service Restart</h2>
+      <div class="docs-code-block">
+        <div class="docs-code-block-header">
+          <div class="docs-code-title"><span>restart daemon</span></div>
+          <div class="docs-code-actions">
+            <span class="docs-code-lang">bash</span>
+            <button type="button" class="docs-code-copy-btn" onclick="copySnippet(this, 'sudo systemctl restart syte')">
+              <i data-lucide="copy" style="width:12px;height:12px;"></i><span>Copy</span>
+            </button>
+          </div>
+        </div>
+        <div class="docs-code-body">
+          <div class="docs-code-lines"><span>1</span></div>
+          <pre class="docs-code-text"><code>sudo systemctl restart syte</code></pre>
+        </div>
+      </div>
+
+      <h2>Restarting Caddy Reverse Proxy</h2>
+      <div class="docs-code-block">
+        <div class="docs-code-block-header">
+          <div class="docs-code-title"><span>reload proxy</span></div>
+          <div class="docs-code-actions">
+            <span class="docs-code-lang">bash</span>
+            <button type="button" class="docs-code-copy-btn" onclick="copySnippet(this, 'sudo systemctl reload caddy')">
+              <i data-lucide="copy" style="width:12px;height:12px;"></i><span>Copy</span>
+            </button>
+          </div>
+        </div>
+        <div class="docs-code-body">
+          <div class="docs-code-lines"><span>1</span></div>
+          <pre class="docs-code-text"><code>sudo systemctl reload caddy</code></pre>
+        </div>
+      </div>
+    `,
+    prev: { title: 'Update', page: 'qs-update', desc: 'Updating Syte.' },
+    next: { title: 'Debug', page: 'qs-debug', desc: 'Troubleshooting.' },
+    updated: '03/09/2026',
+  },
+
+  'qs-debug': {
+    title: 'Debug & Diagnostics',
+    subbarTitle: 'QuickStart · Debug',
+    lead: 'Inspect real-time logs, collect error dumps, and diagnose network issues.',
+    hasHero: false,
+    content: `
+      <h2>Live Journald Logs</h2>
+      <div class="docs-code-block">
+        <div class="docs-code-block-header">
+          <div class="docs-code-title"><span>tail logs</span></div>
+          <div class="docs-code-actions">
+            <span class="docs-code-lang">bash</span>
+            <button type="button" class="docs-code-copy-btn" onclick="copySnippet(this, 'journalctl -u syte -f -n 100')">
+              <i data-lucide="copy" style="width:12px;height:12px;"></i><span>Copy</span>
+            </button>
+          </div>
+        </div>
+        <div class="docs-code-body">
+          <div class="docs-code-lines"><span>1</span></div>
+          <pre class="docs-code-text"><code>journalctl -u syte -f -n 100</code></pre>
+        </div>
+      </div>
+
+      <h2>Collect Diagnostic JSON Bundle</h2>
+      <p>Click the <strong>Bug icon</strong> in the top-right corner of the AI Builder or visit <code>/api/debug</code> to download an immediate snapshot of server memory, docker containers, and active ports.</p>
+    `,
+    prev: { title: 'Restart', page: 'qs-restart', desc: 'Restarting services.' },
+    next: { title: 'Connect Git', page: 'git-connect', desc: 'Connecting Git repositories.' },
+    updated: '03/09/2026',
+  },
+
+  // ---------------- Git ----------------
+  'git-connect': {
+    title: 'Connect Git Repositories',
+    subbarTitle: 'Git · Connect',
+    lead: 'Link your GitHub, GitLab, or self-hosted Git repositories to Syte for continuous deployments.',
+    hasHero: false,
+    content: `
+      <div class="docs-alerts-grid">
+        <div class="docs-alert-card note">
+          <div class="docs-alert-card-header">
+            <div class="docs-alert-card-icon"><i data-lucide="git-branch" style="width:14px;height:14px;"></i></div>
+            <span>GitHub OAuth</span>
+          </div>
+          <div class="docs-alert-card-desc">Connect your GitHub account in 1 click or use personal access tokens.</div>
+        </div>
+      </div>
+
+      <h2>Connecting via SSH or HTTPS</h2>
+      <p>When creating a project, paste any public or private repository URL (e.g., <code>https://github.com/user/repo.git</code> or <code>git@github.com:user/repo.git</code>).</p>
+    `,
+    prev: { title: 'Debug', page: 'qs-debug', desc: 'Diagnostics.' },
+    next: { title: 'Auto Update', page: 'git-auto-update', desc: 'Webhook deployments.' },
+    updated: '03/09/2026',
+  },
+
+  'git-auto-update': {
+    title: 'Git Auto Update & Webhooks',
+    subbarTitle: 'Git · Auto Update',
+    lead: 'Trigger automated zero-downtime redeployments whenever you push new commits to your branch.',
+    hasHero: false,
+    content: `
+      <h2>Setting Up Webhooks</h2>
+      <p>Syte provides an instant webhook endpoint for every project. In your GitHub repository settings, add a webhook with:</p>
+      <div class="docs-code-block">
+        <div class="docs-code-block-header">
+          <div class="docs-code-title"><span>webhook url pattern</span></div>
+        </div>
+        <div class="docs-code-body">
+          <pre class="docs-code-text"><code>Payload URL: https://sycord.site/api/projects/{id}/webhook
+Content type: application/json
+Events: Just the push event</code></pre>
+        </div>
+      </div>
+    `,
+    prev: { title: 'Connect Git', page: 'git-connect', desc: 'Git connection.' },
+    next: { title: 'Domain Setup', page: 'domain-setup', desc: 'Configuring domains.' },
+    updated: '03/09/2026',
+  },
+
+  // ---------------- Domain ----------------
+  'domain-setup': {
+    title: 'Domain Setup',
+    subbarTitle: 'Domain · Setup',
+    lead: 'Map custom apex domains or subdomains to your deployed applications in seconds.',
+    hasHero: false,
+    content: `
+      <h2>DNS A-Record Configuration</h2>
+      <p>Point your domain's DNS <strong>A Record</strong> to your server's public IP address:</p>
+      <div class="docs-table-wrapper">
+        <table class="docs-table">
+          <thead>
+            <tr><th>Type</th><th>Name</th><th>Value</th><th>TTL</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>A</code></td><td><code>@</code> (or subdomain)</td><td><code>YOUR_SERVER_IP</code></td><td>Auto / 300s</td></tr>
+          </tbody>
+        </table>
+      </div>
+    `,
+    prev: { title: 'Auto Update', page: 'git-auto-update', desc: 'Webhooks.' },
+    next: { title: 'Cloudflare', page: 'domain-cloudflare', desc: 'Proxy setup.' },
+    updated: '03/09/2026',
+  },
+
+  'domain-cloudflare': {
+    title: 'Cloudflare Integration',
+    subbarTitle: 'Domain · Cloudflare',
+    lead: 'Best practices for running Syte applications behind Cloudflare CDN and DNS.',
+    hasHero: false,
+    content: `
+      <div class="docs-alerts-grid">
+        <div class="docs-alert-card warning">
+          <div class="docs-alert-card-header">
+            <div class="docs-alert-card-icon"><i data-lucide="alert-triangle" style="width:14px;height:14px;"></i></div>
+            <span>SSL Mode</span>
+          </div>
+          <div class="docs-alert-card-desc">Set Cloudflare SSL/TLS encryption mode to <strong>Full (Strict)</strong>.</div>
+        </div>
+      </div>
+      <p>Ensure WebSockets and gRPC are enabled under Cloudflare Network settings for streaming AI events.</p>
+    `,
+    prev: { title: 'Domain Setup', page: 'domain-setup', desc: 'DNS setup.' },
+    next: { title: 'SSL Certificates', page: 'domain-ssl', desc: 'Auto SSL.' },
+    updated: '03/09/2026',
+  },
+
+  'domain-ssl': {
+    title: 'Automatic SSL Certificates',
+    subbarTitle: 'Domain · SSL',
+    lead: 'Free, automated Let’s Encrypt and ZeroSSL certificates with automatic renewal.',
+    hasHero: false,
+    content: `
+      <p>Every domain attached to a project is automatically provisioned with a trusted TLS certificate via Caddy. No certbot commands or manual maintenance required.</p>
+    `,
+    prev: { title: 'Cloudflare', page: 'domain-cloudflare', desc: 'Cloudflare.' },
+    next: { title: 'How Caddy Works', page: 'domain-caddy', desc: 'Caddy architecture.' },
+    updated: '03/09/2026',
+  },
+
+  'domain-caddy': {
+    title: 'How Caddy Works in Syte',
+    subbarTitle: 'Domain · Caddy',
+    lead: 'Understanding internal reverse proxy rules, blue/green routing, and zero-downtime cutovers.',
+    hasHero: false,
+    content: `
+      <p>Syte maintains dynamic Caddy configuration JSON files. When a project updates, Caddy changes upstream target ports in memory without dropping in-flight TCP connections.</p>
+    `,
+    prev: { title: 'SSL', page: 'domain-ssl', desc: 'Auto SSL.' },
+    next: { title: 'What is an ENV?', page: 'env-what-is', desc: 'Environment variables.' },
+    updated: '03/09/2026',
+  },
+
+  // ---------------- Environment Variables & Secrets ----------------
+  'env-what-is': {
+    title: 'What is an ENV Variable?',
+    subbarTitle: 'ENV · Overview',
+    lead: 'Environment variables allow you to store sensitive credentials and settings outside of your code repository.',
+    hasHero: false,
+    content: `
+      <div class="docs-alerts-grid">
+        <div class="docs-alert-card note">
+          <div class="docs-alert-card-header">
+            <div class="docs-alert-card-icon"><i data-lucide="lock" style="width:14px;height:14px;"></i></div>
+            <span>Security Rule</span>
+          </div>
+          <div class="docs-alert-card-desc">Never commit database passwords or API keys to Git. Use Syte Environment variables.</div>
+        </div>
+      </div>
+    `,
+    prev: { title: 'How Caddy Works', page: 'domain-caddy', desc: 'Caddy.' },
+    next: { title: 'Setup ENV', page: 'env-setup', desc: 'Adding variables.' },
+    updated: '03/09/2026',
+  },
+
+  'env-setup': {
+    title: 'Setting Up Project Variables',
+    subbarTitle: 'ENV · Setup',
+    lead: 'Add, update, and manage project-scoped environment variables in the UI or CLI.',
+    hasHero: false,
+    content: `
+      <h2>Key-Value Format</h2>
+      <div class="docs-code-block">
+        <div class="docs-code-block-header"><span>.env configuration</span></div>
+        <div class="docs-code-body">
+          <pre class="docs-code-text"><code>DATABASE_URL=postgresql://user:pass@localhost:5432/mydb
+JWT_SECRET=super_secret_key_12345
+NEXT_PUBLIC_APP_URL=https://my-app.sycord.site</code></pre>
+        </div>
+      </div>
+    `,
+    prev: { title: 'What is an ENV?', page: 'env-what-is', desc: 'Overview.' },
+    next: { title: 'Global Variables', page: 'env-global', desc: 'Global variables.' },
+    updated: '03/09/2026',
+  },
+
+  'env-global': {
+    title: 'Global Variables & Secrets',
+    subbarTitle: 'ENV · Global',
+    lead: 'Shared platform secrets inherited by all projects across your server.',
+    hasHero: false,
+    content: `
+      <p>Configure platform-wide variables under <strong>Settings → Secrets</strong> to share API keys (e.g., OpenAI, Anthropic, Turso) across all workspaces.</p>
+    `,
+    prev: { title: 'Setup ENV', page: 'env-setup', desc: 'Project setup.' },
+    next: { title: 'AI: How It Works', page: 'ai-how-it-works', desc: 'Autonomous AI engine.' },
+    updated: '03/09/2026',
+  },
+
+  // ---------------- AI ----------------
+  'ai-how-it-works': {
+    title: 'How the Syra AI Engine Works',
+    subbarTitle: 'AI · How It Works',
+    lead: 'An embedded Autonomous AI Engineer with tool-calling abilities, persistent memory, and live preview rendering.',
+    hasHero: false,
+    content: `
+      <h2>Autonomous Pipeline</h2>
+      <ol style="padding-left: 20px; line-height: 1.8;">
+        <li><strong>Prompt Parsing:</strong> Understands requirements, framework conventions, and existing file tree.</li>
+        <li><strong>Tool Execution:</strong> Calls <code>grep_search</code>, <code>view_file</code>, and <code>replace_file_content</code> inside the VM sandbox.</li>
+        <li><strong>Live Feedback:</strong> Builds and tests components in real-time, streaming token deltas over SSE.</li>
+      </ol>
+    `,
+    prev: { title: 'Global Variables', page: 'env-global', desc: 'Secrets.' },
+    next: { title: 'AI Providers', page: 'ai-providers', desc: 'Supported models.' },
+    updated: '03/09/2026',
+  },
+
+  'ai-providers': {
+    title: 'AI Providers & Models',
+    subbarTitle: 'AI · Providers',
+    lead: 'Configure Gemini, OpenAI, Claude, DeepSeek, GLM, or self-hosted Ollama models.',
+    hasHero: false,
+    content: `
+      <div class="docs-table-wrapper">
+        <table class="docs-table">
+          <thead>
+            <tr><th>Provider</th><th>Model Profile</th><th>Features</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>Google Gemini</strong></td><td>Gemini 2.5 Flash / Pro</td><td>Large 1M context, high speed</td></tr>
+            <tr><td><strong>Anthropic</strong></td><td>Claude Sonnet 4.6 (Thinking)</td><td>Deep architectural reasoning</td></tr>
+            <tr><td><strong>DeepSeek</strong></td><td>DeepSeek V4 Flash / Coder</td><td>Cost-efficient code generation</td></tr>
+            <tr><td><strong>OpenAI</strong></td><td>GPT-4o / o1</td><td>Structured tool execution</td></tr>
+          </tbody>
+        </table>
+      </div>
+    `,
+    prev: { title: 'How It Works', page: 'ai-how-it-works', desc: 'AI engine.' },
+    next: { title: 'Setup a Server', page: 'swarm-setup', desc: 'Server swarm.' },
+    updated: '03/09/2026',
+  },
+
+  // ---------------- Server Swarm ----------------
+  'swarm-setup': {
+    title: 'Setup a Server',
+    subbarTitle: 'Swarm · Setup',
+    lead: 'Turn any remote VPS or bare-metal machine into a connected Syte deployment node.',
+    hasHero: false,
+    content: `
+      <h2>Connecting a Remote Server</h2>
+      <p>Navigate to <strong>Servers → Add Server</strong> and paste your SSH connection string or run the worker join token.</p>
+    `,
+    prev: { title: 'AI Providers', page: 'ai-providers', desc: 'Models.' },
+    next: { title: 'Create a Node', page: 'swarm-node', desc: 'Node worker.' },
+    updated: '03/09/2026',
+  },
+
+  'swarm-node': {
+    title: 'Create & Manage Nodes',
+    subbarTitle: 'Swarm · Nodes',
+    lead: 'Distribute workload across multi-region server clusters with health heartbeats.',
+    hasHero: false,
+    content: `
+      <p>Nodes communicate telemetry, CPU/RAM usage, and active container metrics back to the primary Syte control plane.</p>
+    `,
+    prev: { title: 'Setup a Server', page: 'swarm-setup', desc: 'Server setup.' },
+    next: { title: 'Application Builds', page: 'app-builds', desc: 'Build packs.' },
+    updated: '03/09/2026',
+  },
+
+  // ---------------- Application ----------------
+  'app-builds': {
+    title: 'Application Builds & Buildpacks',
+    subbarTitle: 'Application · Builds',
+    lead: 'Automated Nixpacks and Dockerfile detection for instant zero-config builds.',
+    hasHero: false,
+    content: `
+      <p>Syte inspects your repository to detect <code>package.json</code>, <code>requirements.txt</code>, <code>Dockerfile</code>, or <code>Cargo.toml</code> and generates the optimal build pipeline.</p>
+    `,
+    prev: { title: 'Create a Node', page: 'swarm-node', desc: 'Nodes.' },
+    next: { title: 'Prev / Prod', page: 'app-prev-prod', desc: 'Preview environments.' },
+    updated: '03/09/2026',
+  },
+
+  'app-prev-prod': {
+    title: 'Preview vs Production Environments',
+    subbarTitle: 'Application · Prev/Prod',
+    lead: 'Test branch changes in isolated preview deployments before promoting to production.',
+    hasHero: false,
+    content: `
+      <p>Every pull request or branch can spawn an isolated preview URL (e.g., <code>feat-branch.app.sycord.site</code>) with isolated databases and ports.</p>
+    `,
+    prev: { title: 'Builds', page: 'app-builds', desc: 'Build packs.' },
+    next: { title: 'API Overview', page: 'api-all', desc: 'API reference.' },
+    updated: '03/09/2026',
+  },
+
+  // ---------------- API (With Openable Subtabs) ----------------
+  // ---------------- API Reference Detailed Endpoints ----------------
+  'api-all': {
+    title: 'API Endpoints Directory',
+    subbarTitle: 'API Reference · Overview',
+    lead: 'Complete REST API and streaming specification for controlling Syte programmatically. Click any endpoint to open its interactive request builder and parameter specification.',
+    hasHero: false,
+    content: `
+      <h2>Applications API</h2>
+      <p>Manage application lifecycle, deployments, domains, and environment configurations.</p>
+      
+      <div class="docs-api-card" onclick="showDocsPage('api-app-create')" title="Click to open interactive tester & specification">
+        <div class="docs-api-top">
+          <div class="docs-api-endpoint">
+            <span class="docs-api-method-badge post">POST</span>
+            <span class="docs-api-path-text">/api/projects</span>
+          </div>
+          <span style="font-size:12px;color:#3b82f6;font-weight:600;">Open Spec →</span>
+        </div>
+        <p class="docs-api-desc-text">Create a new application from Git repository, Dockerfile, or ZIP archive.</p>
+      </div>
+
+      <div class="docs-api-card" onclick="showDocsPage('api-app-deploy')" title="Click to open interactive tester & specification">
+        <div class="docs-api-top">
+          <div class="docs-api-endpoint">
+            <span class="docs-api-method-badge post">POST</span>
+            <span class="docs-api-path-text">/api/projects/:id/deploy</span>
+          </div>
+          <span style="font-size:12px;color:#3b82f6;font-weight:600;">Open Spec →</span>
+        </div>
+        <p class="docs-api-desc-text">Trigger an immediate build and zero-downtime deployment for an application.</p>
+      </div>
+
+      <div class="docs-api-card" onclick="showDocsPage('api-app-list')" title="Click to open interactive tester & specification">
+        <div class="docs-api-top">
+          <div class="docs-api-endpoint">
+            <span class="docs-api-method-badge get">GET</span>
+            <span class="docs-api-path-text">/api/projects</span>
+          </div>
+          <span style="font-size:12px;color:#3b82f6;font-weight:600;">Open Spec →</span>
+        </div>
+        <p class="docs-api-desc-text">List all deployed applications, container health, ports, and domains.</p>
+      </div>
+
+      <div class="docs-api-card" onclick="showDocsPage('api-app-env')" title="Click to open interactive tester & specification">
+        <div class="docs-api-top">
+          <div class="docs-api-endpoint">
+            <span class="docs-api-method-badge put">PUT</span>
+            <span class="docs-api-path-text">/api/projects/:id/environment</span>
+          </div>
+          <span style="font-size:12px;color:#3b82f6;font-weight:600;">Open Spec →</span>
+        </div>
+        <p class="docs-api-desc-text">Update secret environment variables and inject them securely into runtime containers.</p>
+      </div>
+
+      <div class="docs-api-card" onclick="showDocsPage('api-app-domain')" title="Click to open interactive tester & specification">
+        <div class="docs-api-top">
+          <div class="docs-api-endpoint">
+            <span class="docs-api-method-badge post">POST</span>
+            <span class="docs-api-path-text">/api/projects/:id/domain</span>
+          </div>
+          <span style="font-size:12px;color:#3b82f6;font-weight:600;">Open Spec →</span>
+        </div>
+        <p class="docs-api-desc-text">Bind custom domain and automatically provision TLS / SSL certificate via Caddy.</p>
+      </div>
+
+      <h2 style="margin-top:28px;">Realtime Streaming & Auth</h2>
+      <p>Server-Sent Events (SSE) log streaming, AI agent deployer, and token generation.</p>
+
+      <div class="docs-api-card" onclick="showDocsPage('api-logs-stream')" title="Click to open interactive tester & specification">
+        <div class="docs-api-top">
+          <div class="docs-api-endpoint">
+            <span class="docs-api-method-badge get">GET</span>
+            <span class="docs-api-path-text">/api/projects/:id/logs/stream</span>
+          </div>
+          <span style="font-size:12px;color:#3b82f6;font-weight:600;">Open Spec →</span>
+        </div>
+        <p class="docs-api-desc-text">Subscribe to live build and container runtime logs via Server-Sent Events (SSE).</p>
+      </div>
+
+      <div class="docs-api-card" onclick="showDocsPage('api-agent-stream')" title="Click to open interactive tester & specification">
+        <div class="docs-api-top">
+          <div class="docs-api-endpoint">
+            <span class="docs-api-method-badge post">POST</span>
+            <span class="docs-api-path-text">/api/agent/stream</span>
+          </div>
+          <span style="font-size:12px;color:#3b82f6;font-weight:600;">Open Spec →</span>
+        </div>
+        <p class="docs-api-desc-text">Stream autonomous AI agent deployment steps, diagnostics, and code fixes.</p>
+      </div>
+
+      <div class="docs-api-card" onclick="showDocsPage('api-auth-tokens')" title="Click to open interactive tester & specification">
+        <div class="docs-api-top">
+          <div class="docs-api-endpoint">
+            <span class="docs-api-method-badge post">POST</span>
+            <span class="docs-api-path-text">/api/tokens</span>
+          </div>
+          <span style="font-size:12px;color:#3b82f6;font-weight:600;">Open Spec →</span>
+        </div>
+        <p class="docs-api-desc-text">Generate programmatic API keys for CI/CD pipelines and external webhooks.</p>
+      </div>
+    `,
+    prev: { title: 'Prev / Prod', page: 'app-prev-prod', desc: 'Environment branching.' },
+    next: { title: 'Application create', page: 'api-app-create', desc: 'Create application API.' },
+    updated: '03/09/2026',
+  },
+
+  'api-app-create': {
+    isApiDetail: true,
+    groupName: 'Applications',
+    endpointTitle: 'Application create',
+    lead: 'Create a new application in your Syte instance.',
+    method: 'POST',
+    path: '/api/projects',
+    defaultAuthToken: 'YOUR-API-KEY',
+    defaultBody: JSON.stringify({
+      name: "my-production-app",
+      appName: "prod-app",
+      repository: "https://github.com/sycord/example-node",
+      branch: "main",
+      port: 3000
+    }, null, 2),
+    authType: 'x-api-key',
+    authDesc: 'API key authentication. Use YOUR-GENERATED-API-KEY or Bearer token.',
+    authSample: 'x-api-key <token>',
+    authLocation: 'header',
+    bodyType: 'application/json',
+    params: [
+      {
+        name: 'name',
+        required: true,
+        type: 'string',
+        desc: 'The human-readable name of the application.',
+        constraint: 'Length 1 <= length <= 100'
+      },
+      {
+        name: 'appName',
+        required: false,
+        type: 'string',
+        desc: 'Internal application identifier used for container naming and routing.',
+        constraint: 'Length 1 <= length <= 100'
+      },
+      {
+        name: 'repository',
+        required: false,
+        type: 'string',
+        desc: 'Git repository clone URL (HTTPS or SSH).',
+        constraint: 'Example: https://github.com/organization/repo.git'
+      },
+      {
+        name: 'branch',
+        required: false,
+        type: 'string',
+        desc: 'Target Git branch to build and deploy. Defaults to main.',
+        constraint: 'Default: "main"'
+      },
+      {
+        name: 'port',
+        required: false,
+        type: 'integer',
+        desc: 'Internal container port exposed by your web service.',
+        constraint: '1 <= port <= 65535'
+      },
+      {
+        name: 'environment',
+        required: false,
+        type: 'object',
+        desc: 'Key-value map of environment variables to inject into build and runtime containers.',
+        constraint: 'Example: { "NODE_ENV": "production" }'
+      }
+    ],
+    responseStatus: '200 OK',
+    responseBody: JSON.stringify({
+      id: "proj_94821a3b8c",
+      name: "my-production-app",
+      appName: "prod-app",
+      status: "ready",
+      port: 3000,
+      createdAt: "2026-09-13T00:00:00Z"
+    }, null, 2),
+    prev: { title: 'API Overview', page: 'api-all', desc: 'API directory.' },
+    next: { title: 'Application deploy', page: 'api-app-deploy', desc: 'Deploy application.' },
+    updated: '03/09/2026',
+  },
+
+  'api-app-deploy': {
+    isApiDetail: true,
+    groupName: 'Applications',
+    endpointTitle: 'Application deploy',
+    lead: 'Trigger an immediate zero-downtime build and deployment cycle for a given application.',
+    method: 'POST',
+    path: '/api/projects/:id/deploy',
+    defaultAuthToken: 'YOUR-API-KEY',
+    defaultBody: JSON.stringify({
+      commit: "latest",
+      clearCache: false
+    }, null, 2),
+    authType: 'x-api-key',
+    authDesc: 'API key authentication. Use YOUR-GENERATED-API-KEY or Bearer token.',
+    authSample: 'x-api-key <token>',
+    authLocation: 'header',
+    bodyType: 'application/json',
+    params: [
+      {
+        name: 'id',
+        required: true,
+        type: 'string',
+        desc: 'Unique identifier or slug of the application to deploy.',
+        constraint: 'Path parameter'
+      },
+      {
+        name: 'commit',
+        required: false,
+        type: 'string',
+        desc: 'Specific Git commit hash or reference. Defaults to latest HEAD.',
+        constraint: 'Default: "latest"'
+      },
+      {
+        name: 'clearCache',
+        required: false,
+        type: 'boolean',
+        desc: 'Whether to discard Docker build cache and perform a clean rebuild.',
+        constraint: 'Default: false'
+      }
+    ],
+    responseStatus: '200 OK',
+    responseBody: JSON.stringify({
+      deploymentId: "dep_728f3a91",
+      projectId: "proj_94821a3b8c",
+      status: "queued",
+      logStreamUrl: "/api/projects/proj_94821a3b8c/logs/stream"
+    }, null, 2),
+    prev: { title: 'Application create', page: 'api-app-create', desc: 'Create application.' },
+    next: { title: 'Application list', page: 'api-app-list', desc: 'List applications.' },
+    updated: '03/09/2026',
+  },
+
+  'api-app-list': {
+    isApiDetail: true,
+    groupName: 'Applications',
+    endpointTitle: 'Application list',
+    lead: 'Retrieve a list of all active applications running in your Syte cluster.',
+    method: 'GET',
+    path: '/api/projects',
+    defaultAuthToken: 'YOUR-API-KEY',
+    defaultBody: '',
+    authType: 'x-api-key',
+    authDesc: 'API key authentication. Use YOUR-GENERATED-API-KEY or Bearer token.',
+    authSample: 'x-api-key <token>',
+    authLocation: 'header',
+    bodyType: 'none',
+    params: [
+      {
+        name: 'limit',
+        required: false,
+        type: 'integer',
+        desc: 'Number of results to return per page.',
+        constraint: '1 <= limit <= 100'
+      },
+      {
+        name: 'status',
+        required: false,
+        type: 'string',
+        desc: 'Filter applications by health status: running, stopped, building.',
+        constraint: 'running | stopped | building'
+      }
+    ],
+    responseStatus: '200 OK',
+    responseBody: JSON.stringify({
+      projects: [
+        {
+          id: "proj_94821a3b8c",
+          name: "my-production-app",
+          appName: "prod-app",
+          status: "running",
+          domain: "app.example.com",
+          port: 3000
+        }
+      ]
+    }, null, 2),
+    prev: { title: 'Application deploy', page: 'api-app-deploy', desc: 'Deploy application.' },
+    next: { title: 'Application env', page: 'api-app-env', desc: 'Environment variables.' },
+    updated: '03/09/2026',
+  },
+
+  'api-app-env': {
+    isApiDetail: true,
+    groupName: 'Applications',
+    endpointTitle: 'Application env',
+    lead: 'Set and encrypt environment variables for a specified application.',
+    method: 'PUT',
+    path: '/api/projects/:id/environment',
+    defaultAuthToken: 'YOUR-API-KEY',
+    defaultBody: JSON.stringify({
+      variables: {
+        DATABASE_URL: "postgresql://user:secret@db.internal:5432/main",
+        JWT_SECRET: "super-secure-production-key",
+        NODE_ENV: "production"
+      }
+    }, null, 2),
+    authType: 'x-api-key',
+    authDesc: 'API key authentication. Use YOUR-GENERATED-API-KEY or Bearer token.',
+    authSample: 'x-api-key <token>',
+    authLocation: 'header',
+    bodyType: 'application/json',
+    params: [
+      {
+        name: 'id',
+        required: true,
+        type: 'string',
+        desc: 'Unique identifier or slug of the application.',
+        constraint: 'Path parameter'
+      },
+      {
+        name: 'variables',
+        required: true,
+        type: 'object',
+        desc: 'Key-value map of environment variables to store.',
+        constraint: 'Max payload size: 64KB'
+      }
+    ],
+    responseStatus: '200 OK',
+    responseBody: JSON.stringify({
+      projectId: "proj_94821a3b8c",
+      updatedKeys: ["DATABASE_URL", "JWT_SECRET", "NODE_ENV"],
+      restartRequired: true
+    }, null, 2),
+    prev: { title: 'Application list', page: 'api-app-list', desc: 'List applications.' },
+    next: { title: 'Application domain', page: 'api-app-domain', desc: 'Custom domains.' },
+    updated: '03/09/2026',
+  },
+
+  'api-app-domain': {
+    isApiDetail: true,
+    groupName: 'Applications',
+    endpointTitle: 'Application domain',
+    lead: 'Attach a custom domain to an application and automatically request TLS certificates.',
+    method: 'POST',
+    path: '/api/projects/:id/domain',
+    defaultAuthToken: 'YOUR-API-KEY',
+    defaultBody: JSON.stringify({
+      domain: "app.mydomain.com",
+      httpsRedirect: true
+    }, null, 2),
+    authType: 'x-api-key',
+    authDesc: 'API key authentication. Use YOUR-GENERATED-API-KEY or Bearer token.',
+    authSample: 'x-api-key <token>',
+    authLocation: 'header',
+    bodyType: 'application/json',
+    params: [
+      {
+        name: 'id',
+        required: true,
+        type: 'string',
+        desc: 'Unique identifier of the application.',
+        constraint: 'Path parameter'
+      },
+      {
+        name: 'domain',
+        required: true,
+        type: 'string',
+        desc: 'Fully Qualified Domain Name (FQDN) to bind.',
+        constraint: 'Example: "app.mydomain.com"'
+      },
+      {
+        name: 'httpsRedirect',
+        required: false,
+        type: 'boolean',
+        desc: 'Enforce automatic HTTP to HTTPS redirection.',
+        constraint: 'Default: true'
+      }
+    ],
+    responseStatus: '200 OK',
+    responseBody: JSON.stringify({
+      projectId: "proj_94821a3b8c",
+      domain: "app.mydomain.com",
+      sslStatus: "active",
+      caddyReloaded: true
+    }, null, 2),
+    prev: { title: 'Application env', page: 'api-app-env', desc: 'Environment variables.' },
+    next: { title: 'Live SSE Logs', page: 'api-logs-stream', desc: 'Log streaming.' },
+    updated: '03/09/2026',
+  },
+
+  'api-logs-stream': {
+    isApiDetail: true,
+    groupName: 'Streaming & Auth',
+    endpointTitle: 'Live SSE Logs',
+    lead: 'Real-time Server-Sent Events (SSE) streaming endpoint for build logs and container stdout/stderr.',
+    method: 'GET',
+    path: '/api/projects/:id/logs/stream',
+    defaultAuthToken: 'YOUR-API-KEY',
+    defaultBody: '',
+    authType: 'x-api-key',
+    authDesc: 'API key authentication. Use YOUR-GENERATED-API-KEY or Bearer token.',
+    authSample: 'x-api-key <token>',
+    authLocation: 'header or query param ?token=...',
+    bodyType: 'none',
+    params: [
+      {
+        name: 'id',
+        required: true,
+        type: 'string',
+        desc: 'Unique identifier of the application.',
+        constraint: 'Path parameter'
+      },
+      {
+        name: 'tail',
+        required: false,
+        type: 'integer',
+        desc: 'Number of historical log lines to send upon initial connection.',
+        constraint: 'Default: 100'
+      }
+    ],
+    responseStatus: '200 OK',
+    responseBody: JSON.stringify({ stream: "sse", sample: "data: live log output" }, null, 2),
+    prev: { title: 'Application domain', page: 'api-app-domain', desc: 'Custom domains.' },
+    next: { title: 'AI Deployer Stream', page: 'api-agent-stream', desc: 'AI agent.' },
+    updated: '03/09/2026',
+  },
+
+  'api-agent-stream': {
+    isApiDetail: true,
+    groupName: 'Streaming & Auth',
+    endpointTitle: 'AI Deployer Stream',
+    lead: 'Autonomous AI deployment and diagnostics agent with step-by-step streaming feedback.',
+    method: 'POST',
+    path: '/api/agent/stream',
+    defaultAuthToken: 'YOUR-API-KEY',
+    defaultBody: JSON.stringify({
+      projectId: "proj_94821a3b8c",
+      prompt: "Analyze the repository, fix missing Dockerfile dependencies, and deploy to port 3000",
+      autoApply: true
+    }, null, 2),
+    authType: 'x-api-key',
+    authDesc: 'API key authentication. Use YOUR-GENERATED-API-KEY or Bearer token.',
+    authSample: 'x-api-key <token>',
+    authLocation: 'header',
+    bodyType: 'application/json',
+    params: [
+      {
+        name: 'projectId',
+        required: true,
+        type: 'string',
+        desc: 'Target application ID.',
+        constraint: 'String'
+      },
+      {
+        name: 'prompt',
+        required: true,
+        type: 'string',
+        desc: 'Natural language deployment instruction or diagnostic prompt.',
+        constraint: 'Length 1 <= length <= 2000'
+      },
+      {
+        name: 'autoApply',
+        required: false,
+        type: 'boolean',
+        desc: 'Whether the agent can automatically modify files and trigger builds.',
+        constraint: 'Default: false'
+      }
+    ],
+    responseStatus: '200 OK',
+    responseBody: JSON.stringify({ event: "plan", steps: ["Inspect package.json", "Create Dockerfile", "Run Build", "Verify Health"] }, null, 2),
+    prev: { title: 'Live SSE Logs', page: 'api-logs-stream', desc: 'Log streaming.' },
+    next: { title: 'API Tokens', page: 'api-auth-tokens', desc: 'Token creation.' },
+    updated: '03/09/2026',
+  },
+
+  'api-auth-tokens': {
+    isApiDetail: true,
+    groupName: 'Streaming & Auth',
+    endpointTitle: 'API Tokens',
+    lead: 'Create programmatic authentication tokens for automated deployments and third-party integrations.',
+    method: 'POST',
+    path: '/api/tokens',
+    defaultAuthToken: 'YOUR-API-KEY',
+    defaultBody: JSON.stringify({
+      name: "GitHub Actions CI",
+      expiresInDays: 90
+    }, null, 2),
+    authType: 'x-api-key',
+    authDesc: 'Admin session or existing API Key required.',
+    authSample: 'x-api-key <token>',
+    authLocation: 'header',
+    bodyType: 'application/json',
+    params: [
+      {
+        name: 'name',
+        required: true,
+        type: 'string',
+        desc: 'Descriptive name for the API token.',
+        constraint: 'Length 1 <= length <= 64'
+      },
+      {
+        name: 'expiresInDays',
+        required: false,
+        type: 'integer',
+        desc: 'Expiration duration in days. Set 0 for never-expiring.',
+        constraint: '0 <= days <= 365'
+      }
+    ],
+    responseStatus: '200 OK',
+    responseBody: JSON.stringify({
+      token: "syte_live_sec_99a8c17b5e4312da98f01b",
+      name: "GitHub Actions CI",
+      createdAt: "2026-09-13T00:00:00Z"
+    }, null, 2),
+    prev: { title: 'AI Deployer Stream', page: 'api-agent-stream', desc: 'AI agent.' },
+    next: { title: 'Install Syte', page: 'qs-install', desc: 'Quickstart.' },
+    updated: '03/09/2026',
+  }
+};
+
+function renderDocsView() {
+  setupDocsEventsOnce();
+  showDocsPage(activeDocsPage || 'qs-install');
+}
+
+function copySnippet(btn, code) {
+  navigator.clipboard?.writeText(code);
+  const span = btn.querySelector('span') || btn;
+  const original = span.textContent;
+  span.textContent = 'Copied!';
+  setTimeout(() => { span.textContent = original; }, 2000);
+  toast('Copied to clipboard');
+}
+
+window.copyApiEndpointMarkdown = function(pageKey) {
+  const data = DOCS_DATA[pageKey];
+  if (!data) return;
+  let md = `# ${data.groupName || 'API'} > ${data.endpointTitle || data.title}\n\n`;
+  md += `${data.lead || ''}\n\n`;
+  md += `### Endpoint\n\`${data.method} ${data.path}\`\n\n`;
+  md += `### Authorization\n- Type: \`${data.authType || 'x-api-key'}\`\n- Location: \`${data.authLocation || 'header'}\`\n\n`;
+  if (data.params && data.params.length > 0) {
+    md += `### Parameters\n| Name | Type | Required | Description | Constraint |\n`;
+    md += `| --- | --- | --- | --- | --- |\n`;
+    data.params.forEach(p => {
+      md += `| \`${p.name}\` | \`${p.type}\` | ${p.required ? '**required**' : 'optional'} | ${p.desc} | \`${p.constraint}\` |\n`;
+    });
+    md += `\n`;
+  }
+  if (data.defaultBody) {
+    md += `### Request Body\n\`\`\`json\n${data.defaultBody}\n\`\`\`\n\n`;
+  }
+  if (data.responseBody) {
+    md += `### Response (${data.responseStatus || '200 OK'})\n\`\`\`json\n${data.responseBody}\n\`\`\`\n`;
+  }
+  navigator.clipboard?.writeText(md);
+  toast('Copied full API specification as Markdown');
+};
+
+window.sendInteractiveApiRequest = function(pageKey) {
+  const data = DOCS_DATA[pageKey];
+  if (!data) return;
+  const resBox = document.getElementById(`response-box-${pageKey}`);
+  const resCode = document.getElementById(`response-code-${pageKey}`);
+  const statusEl = document.getElementById(`response-status-${pageKey}`);
+  const timeEl = document.getElementById(`response-time-${pageKey}`);
+  if (!resBox || !resCode) return;
+
+  resBox.classList.remove('hidden');
+  resCode.textContent = '// Sending request to ' + data.path + '...';
+
+  const startTime = performance.now();
+  setTimeout(() => {
+    const elapsed = Math.round(performance.now() - startTime + 35);
+    if (timeEl) timeEl.textContent = `${elapsed}ms`;
+    if (statusEl) {
+      statusEl.className = 'badge-200';
+      statusEl.textContent = data.responseStatus || '200 OK';
+    }
+    resCode.textContent = data.responseBody || '{\n  "status": "success"\n}';
+    toast('Received response ' + (data.responseStatus || '200 OK'));
+  }, 320);
+};
+
+window.copyResponseOutput = function(pageKey) {
+  const resCode = document.getElementById(`response-code-${pageKey}`);
+  if (resCode && resCode.textContent) {
+    navigator.clipboard?.writeText(resCode.textContent);
+    toast('Copied response JSON');
+  }
+};
+
+function showDocsPage(pageKey) {
+  activeDocsPage = pageKey;
+  const data = DOCS_DATA[pageKey] || DOCS_DATA['qs-install'];
+
+  // Update subbar title
+  const subbarTitle = document.getElementById('docs-subbar-title');
+  if (subbarTitle) subbarTitle.textContent = data.subbarTitle || data.title || (data.groupName ? `${data.groupName} · ${data.endpointTitle}` : 'Docs');
+
+  // Update active sidebar nav item
+  document.querySelectorAll('.docs-nav-item').forEach(item => {
+    item.classList.toggle('active', item.dataset.docsPage === pageKey);
+  });
+
+  const container = document.getElementById('docs-main-content');
+  if (!container) return;
+
+  // Build bottom navigation cards
+  let navCardsHtml = '<div class="docs-nav-cards-wrap">';
+  if (data.prev) {
+    navCardsHtml += `
+      <a class="docs-nav-card" onclick="showDocsPage('${data.prev.page}')">
+        <div class="docs-nav-card-head">
+          <i data-lucide="chevron-left" style="width:14px;height:14px;"></i>
+          <span>${escapeHtml(data.prev.title)}</span>
+        </div>
+        <div class="docs-nav-card-desc">${escapeHtml(data.prev.desc || '')}</div>
+      </a>
+    `;
+  }
+  if (data.next) {
+    navCardsHtml += `
+      <a class="docs-nav-card" onclick="showDocsPage('${data.next.page}')">
+        <div class="docs-nav-card-head right">
+          <span>${escapeHtml(data.next.title)}</span>
+          <i data-lucide="chevron-right" style="width:14px;height:14px;"></i>
+        </div>
+        <div class="docs-nav-card-desc right">${escapeHtml(data.next.desc || '')}</div>
+      </a>
+    `;
+  }
+  navCardsHtml += '</div>';
+
+  if (data.isApiDetail) {
+    // Render rich API endpoint detail layout matching screenshot
+    const originUrl = window.location.origin + '/api';
+    let paramsHtml = '';
+    if (data.params && data.params.length > 0) {
+      paramsHtml = data.params.map(p => `
+        <div class="docs-api-param-card">
+          <div class="docs-api-param-card-head">
+            <code class="param-name">${escapeHtml(p.name)}</code>
+            <span class="${p.required ? 'param-req-badge' : 'param-opt-badge'}">${p.required ? 'required' : 'optional'}</span>
+            <span class="param-type">${escapeHtml(p.type)}</span>
+          </div>
+          <p class="param-desc">${escapeHtml(p.desc)}</p>
+          <div class="param-constraint-box">
+            <span>${escapeHtml(p.constraint)}</span>
+            <button type="button" class="docs-icon-btn" onclick="copySnippet(this, '${escapeHtml(p.constraint)}')" title="Copy constraint">
+              <i data-lucide="copy" style="width:13px;height:13px;"></i>
+            </button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    let bodyDrawerHtml = '';
+    if (data.bodyType !== 'none') {
+      bodyDrawerHtml = `
+        <details class="docs-api-subcollapse" open>
+          <summary class="docs-api-subcollapse-head">
+            <div class="docs-api-subcollapse-title">
+              <i data-lucide="file-text" style="width:14px;height:14px;"></i>
+              <span>Body</span>
+            </div>
+            <i data-lucide="chevron-down" class="docs-api-subcollapse-chev"></i>
+          </summary>
+          <div class="docs-api-subcollapse-body">
+            <textarea class="docs-api-json-textarea" id="body-json-${pageKey}" rows="6">${escapeHtml(data.defaultBody || '')}</textarea>
+          </div>
+        </details>
+      `;
+    }
+
+    container.innerHTML = `
+      <div class="docs-api-breadcrumb">
+        API <span>&gt;</span> ${escapeHtml(data.groupName || 'Applications')} <span>&gt;</span> ${escapeHtml(data.endpointTitle || 'Endpoint')}
+      </div>
+
+      <div class="docs-api-top-action-row">
+        <span class="docs-api-ref-badge">API REFERENCE</span>
+        <button type="button" class="docs-copy-md-btn" onclick="copyApiEndpointMarkdown('${pageKey}')">
+          <i data-lucide="copy" style="width:13px;height:13px;"></i>
+          <span>Copy as Markdown</span>
+        </button>
+      </div>
+
+      <h1 class="docs-api-detail-title">${escapeHtml(data.groupName || 'Application')}</h1>
+      <h2 class="docs-api-detail-sub">${escapeHtml(data.endpointTitle || 'Endpoint')}</h2>
+      <p class="docs-api-detail-desc">${escapeHtml(data.lead || '')}</p>
+
+      <!-- Interactive Request Card -->
+      <div class="docs-api-req-card">
+        <div class="docs-api-url-row">
+          <span class="docs-api-url-val">${escapeHtml(originUrl)}</span>
+          <button type="button" class="docs-icon-btn" onclick="copySnippet(this, '${escapeHtml(originUrl)}')" title="Copy Base URL">
+            <i data-lucide="copy" style="width:13px;height:13px;"></i>
+          </button>
+        </div>
+
+        <div class="docs-api-exec-row">
+          <span class="docs-api-method-pill ${(data.method || 'post').toLowerCase()}">${escapeHtml(data.method || 'POST')}</span>
+          <span class="docs-api-endpoint-path">${escapeHtml(data.path)}</span>
+          <button type="button" class="docs-api-send-btn" onclick="sendInteractiveApiRequest('${pageKey}')">
+            <i data-lucide="send" style="width:13px;height:13px;"></i>
+            <span>Send</span>
+          </button>
+        </div>
+
+        <details class="docs-api-subcollapse" open>
+          <summary class="docs-api-subcollapse-head">
+            <div class="docs-api-subcollapse-title">
+              <i data-lucide="lock" style="width:14px;height:14px;"></i>
+              <span>Authorization</span>
+            </div>
+            <i data-lucide="chevron-down" class="docs-api-subcollapse-chev"></i>
+          </summary>
+          <div class="docs-api-subcollapse-body">
+            <div class="docs-api-input-wrap">
+              <label class="docs-api-input-lbl">Token (${data.authType || 'x-api-key'}):</label>
+              <input type="text" class="docs-api-text-input" id="auth-token-input-${pageKey}" value="${escapeHtml(data.defaultAuthToken || 'YOUR-API-KEY')}" />
+            </div>
+          </div>
+        </details>
+
+        ${bodyDrawerHtml}
+
+        <!-- Live Response Output -->
+        <div class="docs-api-response-live hidden" id="response-box-${pageKey}">
+          <div class="docs-api-response-live-head">
+            <div class="docs-api-res-status">
+              <span class="badge-200" id="response-status-${pageKey}">200 OK</span>
+              <span class="res-time" id="response-time-${pageKey}">38ms</span>
+            </div>
+            <button type="button" class="docs-code-copy-btn" onclick="copyResponseOutput('${pageKey}')">
+              <i data-lucide="copy" style="width:12px;height:12px;"></i><span>Copy Response</span>
+            </button>
+          </div>
+          <pre class="docs-api-response-code"><code id="response-code-${pageKey}"></code></pre>
+        </div>
+      </div>
+
+      <!-- Authorization Section -->
+      <div class="docs-api-section-header">
+        <h3>Authorization</h3>
+        <span class="docs-api-type-tag">${escapeHtml(data.authType || 'x-api-key')}</span>
+      </div>
+      <p class="docs-api-section-desc">${escapeHtml(data.authDesc || 'API key authentication.')}</p>
+
+      <div class="docs-api-sample-box">
+        <div class="docs-api-sample-code">
+          <span class="docs-api-sample-key">${escapeHtml(data.authType || 'x-api-key')}</span>
+          <span class="docs-api-sample-val">&lt;token&gt;</span>
+        </div>
+        <button type="button" class="docs-icon-btn" onclick="copySnippet(this, '${escapeHtml(data.authType || 'x-api-key')}: <token>')" title="Copy header syntax">
+          <i data-lucide="copy" style="width:14px;height:14px;"></i>
+        </button>
+      </div>
+      <div class="docs-api-in-header-badge">In: <code>${escapeHtml(data.authLocation || 'header')}</code></div>
+
+      <!-- Request Body Section -->
+      ${data.bodyType !== 'none' ? `
+        <div class="docs-api-section-header">
+          <h3>Request Body</h3>
+          <span class="docs-api-type-tag">${escapeHtml(data.bodyType || 'application/json')}</span>
+        </div>
+        <div class="docs-api-param-cards-list">
+          ${paramsHtml}
+        </div>
+      ` : ''}
+
+      <!-- Responses Section -->
+      <div class="docs-api-section-header" style="margin-top:32px;">
+        <h3>Responses</h3>
+        <span class="docs-api-type-tag">${escapeHtml(data.responseStatus || '200 OK')}</span>
+      </div>
+      <div class="docs-api-param-card">
+        <div class="docs-api-param-card-head">
+          <span class="param-status-badge status-200" style="background:rgba(16,185,129,0.15);color:#10b981;font-weight:700;padding:2px 7px;border-radius:5px;">${escapeHtml(data.responseStatus || '200 OK')}</span>
+          <span class="param-type">${escapeHtml(data.bodyType || 'application/json')}</span>
+        </div>
+        <p class="param-desc">Success response returned by Syte instance.</p>
+        <div class="docs-code-block" style="margin-top:10px;">
+          <div class="docs-code-header">
+            <span class="docs-code-title">Response Example</span>
+            <button type="button" class="docs-code-copy-btn" onclick="copySnippet(this, \`${escapeHtml(data.responseBody || '').replace(/`/g, '\\`')}\`)"><i data-lucide="copy"></i><span>Copy</span></button>
+          </div>
+          <pre class="docs-code-pre"><code>${escapeHtml(data.responseBody || '')}</code></pre>
+        </div>
+      </div>
+
+      <div class="docs-feedback-row" style="margin-top:36px;">
+        <span class="docs-feedback-title">How is this guide?</span>
+        <div class="docs-feedback-btns">
+          <button type="button" class="docs-feedback-btn ${docsFeedbackState === 'good' ? 'active' : ''}" id="docs-feedback-good">
+            <i data-lucide="thumbs-up" style="width:13px;height:13px;"></i>
+            <span>Good</span>
+          </button>
+          <button type="button" class="docs-feedback-btn ${docsFeedbackState === 'bad' ? 'active' : ''}" id="docs-feedback-bad">
+            <i data-lucide="thumbs-down" style="width:13px;height:13px;"></i>
+            <span>Bad</span>
+          </button>
+        </div>
+      </div>
+
+      <p class="docs-last-updated">Last updated on ${data.updated || '03/09/2026'}</p>
+
+      ${navCardsHtml}
+    `;
+  } else {
+    // Render standard documentation prose page
+    let heroHtml = '';
+    if (data.hasHero) {
+      heroHtml = `
+        <div class="docs-hero-panel">
+          <div class="docs-hero-panel-title">
+            <span class="docs-brand-cross">✕</span>
+            <span>Syte deployment platform</span>
+          </div>
+          <div class="docs-hero-img-wrap">
+            <img src="/static/syte-logo.png" alt="Syte deployment platform" style="max-height:220px;object-fit:cover;width:100%;">
+          </div>
+        </div>
+      `;
+    }
+
+    container.innerHTML = `
+      <h1 class="docs-article-title">${escapeHtml(data.title)}</h1>
+      <p class="docs-article-lead">${data.lead || ''}</p>
+
+      <div class="docs-actions-bar">
+        <button type="button" class="docs-pill-btn" id="docs-copy-markdown-btn">
+          <i data-lucide="copy" style="width:13px;height:13px;"></i>
+          <span>Copy Markdown</span>
+        </button>
+        <button type="button" class="docs-pill-btn" id="docs-open-submenus-btn">
+          <span>Open Submenus</span>
+          <i data-lucide="chevron-down" style="width:13px;height:13px;"></i>
+        </button>
+      </div>
+
+      ${heroHtml}
+
+      <div class="docs-prose">
+        ${data.content}
+      </div>
+
+      <div class="docs-feedback-row">
+        <span class="docs-feedback-title">How is this guide?</span>
+        <div class="docs-feedback-btns">
+          <button type="button" class="docs-feedback-btn ${docsFeedbackState === 'good' ? 'active' : ''}" id="docs-feedback-good">
+            <i data-lucide="thumbs-up" style="width:13px;height:13px;"></i>
+            <span>Good</span>
+          </button>
+          <button type="button" class="docs-feedback-btn ${docsFeedbackState === 'bad' ? 'active' : ''}" id="docs-feedback-bad">
+            <i data-lucide="thumbs-down" style="width:13px;height:13px;"></i>
+            <span>Bad</span>
+          </button>
+        </div>
+      </div>
+
+      <p class="docs-last-updated">Last updated on ${data.updated || '03/09/2026'}</p>
+
+      ${navCardsHtml}
+    `;
+  }
+
+  // Attach handlers for copy and feedback
+  document.getElementById('docs-copy-markdown-btn')?.addEventListener('click', () => {
+    const text = `# ${data.title || data.endpointTitle}\n\n${data.lead || ''}\n\n${container.innerText}`;
+    navigator.clipboard?.writeText(text);
+    toast('Copied markdown to clipboard');
+  });
+
+  document.getElementById('docs-feedback-good')?.addEventListener('click', () => {
+    docsFeedbackState = 'good';
+    showDocsPage(pageKey);
+    toast('Thanks for your feedback!');
+  });
+
+  document.getElementById('docs-feedback-bad')?.addEventListener('click', () => {
+    docsFeedbackState = 'bad';
+    showDocsPage(pageKey);
+    toast('Feedback recorded. We will improve this guide.');
+  });
+
+  document.getElementById('docs-open-submenus-btn')?.addEventListener('click', () => {
+    toggleDocsSidebar(true);
+  });
+
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  refreshIcons();
+}
+
+let docsEventsInitialized = false;
+function setupDocsEventsOnce() {
+  if (docsEventsInitialized) return;
+  docsEventsInitialized = true;
+
+  // Toggle sidebar drawer on mobile
+  const sidebar = document.getElementById('docs-sidebar-drawer');
+  const backdrop = document.getElementById('docs-sidebar-backdrop');
+
+  document.getElementById('docs-sidebar-toggle-btn')?.addEventListener('click', () => toggleDocsSidebar());
+  document.getElementById('docs-sidebar-close-btn')?.addEventListener('click', () => toggleDocsSidebar(false));
+  document.getElementById('docs-subbar-title-btn')?.addEventListener('click', () => toggleDocsSidebar(true));
+  backdrop?.addEventListener('click', () => toggleDocsSidebar(false));
+
+  // Sidebar item click handlers
+  document.querySelectorAll('.docs-nav-item').forEach(item => {
+    item.addEventListener('click', (e) => {
+      e.preventDefault();
+      const pageKey = item.dataset.docsPage;
+      if (pageKey) {
+        showDocsPage(pageKey);
+        toggleDocsSidebar(false);
+      }
+    });
+  });
+
+  // Search button
+  document.getElementById('docs-search-btn')?.addEventListener('click', () => {
+    const query = prompt('Search Syte Documentation:');
+    if (query) {
+      const q = query.toLowerCase();
+      for (const [key, val] of Object.entries(DOCS_DATA)) {
+        if (val.title.toLowerCase().includes(q) || (val.lead && val.lead.toLowerCase().includes(q))) {
+          showDocsPage(key);
+          return;
+        }
+      }
+      toast('No direct docs page found for: ' + query);
+    }
+  });
+
+  // Theme switcher inside docs sidebar
+  document.getElementById('docs-theme-light')?.addEventListener('click', () => {
+    document.body.classList.remove('dark');
+    document.getElementById('docs-theme-light')?.classList.add('active');
+    document.getElementById('docs-theme-dark')?.classList.remove('active');
+  });
+
+  document.getElementById('docs-theme-dark')?.addEventListener('click', () => {
+    document.body.classList.add('dark');
+    document.getElementById('docs-theme-dark')?.classList.add('active');
+    document.getElementById('docs-theme-light')?.classList.remove('active');
+  });
+}
+
+function toggleDocsSidebar(forceOpen) {
+  const sidebar = document.getElementById('docs-sidebar-drawer');
+  const backdrop = document.getElementById('docs-sidebar-backdrop');
+  if (!sidebar) return;
+
+  const isOpen = typeof forceOpen === 'boolean' ? forceOpen : !sidebar.classList.contains('is-open');
+  sidebar.classList.toggle('is-open', isOpen);
+  backdrop?.classList.toggle('is-open', isOpen);
 }
