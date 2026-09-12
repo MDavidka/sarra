@@ -104,7 +104,7 @@ class AgentCommunicateRequest(BaseModel):
     message: str
     model_profile: str | None = Field(None, description="syra-nano | syra-ultra | syra-havy")
     model_id: str | None = None
-    thinking_level: int | None = Field(None, ge=1, le=6)
+    thinking_level: str | int | None = None
     improve_from_screenshot: bool = False
     visual_analysis_id: str | None = None
     api_key: str | None = None
@@ -117,7 +117,7 @@ class AgentChangeRequest(BaseModel):
     model_profile: str | None = None
     model_name: str | None = None
     model_id: str | None = None
-    thinking_level: int | None = Field(None, ge=1, le=6)
+    thinking_level: str | int | None = None
     plan_mode: str | None = None
     agent_mode: str | None = None
     improve_from_screenshot: bool = False
@@ -865,9 +865,10 @@ async def api_agent_change(
     body: AgentChangeRequest,
     _token: dict[str, Any] = Depends(verify_api_token),
 ):
-    project = await get_project(body.uuid)
-    if not project:
-        _http_error(404, "not_found", "Project not found")
+    if body.uuid != "global":
+        project = await get_project(body.uuid)
+        if not project:
+            _http_error(404, "not_found", "Project not found")
 
     req_id = f"req_{uuid_mod.uuid4().hex[:8]}"
     sess_id = f"sess_{body.uuid[:8]}"
@@ -900,9 +901,10 @@ async def api_agent_communicate(
     body: AgentCommunicateRequest,
     _token: dict[str, Any] = Depends(verify_api_token),
 ):
-    project = await get_project(body.uuid)
-    if not project:
-        _http_error(404, "not_found", "Project not found")
+    if body.uuid != "global":
+        project = await get_project(body.uuid)
+        if not project:
+            _http_error(404, "not_found", "Project not found")
 
     req_id = f"req_{uuid_mod.uuid4().hex[:8]}"
     sess_id = f"sess_{body.uuid[:8]}"

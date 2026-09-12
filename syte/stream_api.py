@@ -178,6 +178,17 @@ def get_normalized_models_catalog(settings_data: Dict[str, Any]) -> List[Dict[st
                         "active": sp.get("active", True),
                     })
 
+    active_m = str(settings_data.get("model") or "").strip()
+    if active_m and not any(c["id"] == active_m or c["profile"] == active_m for c in curated):
+        curated.insert(0, {
+            "id": active_m,
+            "name": f"{active_m} (Active)",
+            "profile": active_m,
+            "provider": settings_data.get("provider", "custom"),
+            "enabled": True,
+            "active": True,
+        })
+
     return curated
 
 
