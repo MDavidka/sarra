@@ -240,6 +240,7 @@ async def stream_models(
                     "event": "model_stream",
                     "model": m,
                     "active": m.get("active", False),
+                    "is_active_in_ai_tab": m.get("is_active_in_ai_tab", False),
                     "active_model": active_model_name,
                     "active_provider": active_provider,
                 }, separators=(",", ":"))

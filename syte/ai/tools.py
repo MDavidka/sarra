@@ -935,6 +935,66 @@ async def execute_syte_tool(project_id: Any, tool_name: str, arguments: dict[str
 
     ws_dir = _get_project_workspace_dir(project)
 
+    # Normalize tools.md / Hungarian tool specification names to syte_* handlers
+    tool_aliases = {
+        "read_file": "syte_read_file",
+        "readFile": "syte_read_file",
+        "write_file": "syte_write_file",
+        "writeFile": "syte_write_file",
+        "createFile": "syte_write_file",
+        "edit_file": "syte_edit_file",
+        "editFile": "syte_edit_file",
+        "delete_file": "syte_delete_file",
+        "deleteFile": "syte_delete_file",
+        "rename_file": "syte_move_file",
+        "renameFile": "syte_move_file",
+        "move_file": "syte_move_file",
+        "list_files": "syte_list_files",
+        "listFiles": "syte_list_files",
+        "run_command": "syte_run_command",
+        "execute_command": "syte_run_command",
+        "executeCommand": "syte_run_command",
+        "start_preview": "syte_start_preview",
+        "startPreview": "syte_start_preview",
+        "set_domain": "syte_set_domain",
+        "setDomain": "syte_set_domain",
+        "take_screenshot": "syte_take_screenshot",
+        "screenshot": "syte_take_screenshot",
+        "planning": "syte_create_plan",
+        "ask_question": "syte_ask_question",
+        "ask_user": "syte_ask_question",
+        "search_files": "syte_search_files",
+        "grep": "syte_search_files",
+        "searchInFiles": "syte_search_files",
+        "get_project_structure": "syte_get_workspace_tree",
+        "get_workspace_tree": "syte_get_workspace_tree",
+        "apply_patch": "syte_apply_patch",
+        "read_multiple_files": "syte_read_files",
+        "read_files": "syte_read_files",
+        "write_files": "syte_write_files",
+        "check_types": "syte_check_types",
+        "typeCheck": "syte_check_types",
+        "run_lint": "syte_security_lint_scan",
+        "lintCheck": "syte_security_lint_scan",
+        "install_package": "syte_install_package",
+        "create_folder": "syte_create_folder",
+        "detect_framework": "syte_detect_framework",
+    }
+    tool_name = tool_aliases.get(tool_name, tool_name)
+
+    # Normalize common argument aliases
+    if "path" not in arguments:
+        for alt_k in ("file", "filePath", "file_path", "filename"):
+            if alt_k in arguments:
+                arguments["path"] = arguments[alt_k]
+                break
+    if "old_text" not in arguments and "old_string" in arguments:
+        arguments["old_text"] = arguments["old_string"]
+    if "new_text" not in arguments and "new_string" in arguments:
+        arguments["new_text"] = arguments["new_string"]
+    if "command" not in arguments and "cmd" in arguments:
+        arguments["command"] = arguments["cmd"]
+
     try:
         if tool_name == "syte_create_deployment":
             branch = arguments.get("branch") or project.get("branch") or "main"
@@ -1491,6 +1551,136 @@ async def execute_syte_tool(project_id: Any, tool_name: str, arguments: dict[str
                 "deep_focus": fresh_df,
                 "project_memory": fresh_df,
             }
+
+        elif tool_name == "syte_create_folder":
+            rel_path = str(arguments.get("path") or "").lstrip("/\\").strip()
+            if not rel_path:
+                return {"ok": False, "error": "Missing 'path' parameter for folder creation."}
+            folder_path = ws_dir / rel_path
+            if not folder_path.resolve().is_relative_to(ws_dir.resolve()):
+                return {"ok": False, "error": "Access denied: Path escapes project workspace."}
+            folder_path.mkdir(parents=True, exist_ok=True)
+            return {"ok": True, "path": rel_path, "message": f"Folder '{rel_path}' created successfully."}
+
+        elif tool_name == "syte_write_files":
+            files_list = arguments.get("files") or []
+            results = []
+            for f in files_list:
+                f_path = str(f.get("path") or f.get("file") or "").lstrip("/\\").strip()
+                f_content = f.get("content", "")
+                if not f_path:
+                    continue
+                file_p = ws_dir / f_path
+                if not file_p.resolve().is_relative_to(ws_dir.resolve()):
+                    results.append({"path": f_path, "ok": False, "error": "Access denied"})
+                    continue
+                file_p.parent.mkdir(parents=True, exist_ok=True)
+                file_p.write_text(f_content, encoding="utf-8")
+                results.append({"path": f_path, "ok": True, "size_bytes": len(f_content)})
+            return {"ok": True, "files_written": len(results), "results": results}
+
+        elif tool_name == "syte_read_files":
+            paths_list = arguments.get("paths") or arguments.get("files") or []
+            contents = {}
+            for p in paths_list:
+                p_clean = str(p).lstrip("/\\").strip()
+                file_p = ws_dir / p_clean
+                if file_p.exists() and file_p.resolve().is_relative_to(ws_dir.resolve()) and not file_p.is_dir():
+                    contents[p_clean] = file_p.read_text(encoding="utf-8", errors="replace")
+                else:
+                    contents[p_clean] = None
+            return {"ok": True, "files": contents}
+
+        elif tool_name == "syte_install_package":
+            pkg = str(arguments.get("package_name") or arguments.get("package") or arguments.get("name") or "").strip()
+            if not pkg:
+                return {"ok": False, "error": "package_name is required."}
+            cmd = f"npm install {pkg}"
+            proc = await asyncio.create_subprocess_shell(
+                cmd,
+                cwd=str(ws_dir),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            try:
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=180)
+                return {
+                    "ok": proc.returncode == 0,
+                    "package": pkg,
+                    "exit_code": proc.returncode,
+                    "stdout": stdout.decode("utf-8", errors="replace"),
+                    "stderr": stderr.decode("utf-8", errors="replace"),
+                }
+            except asyncio.TimeoutError:
+                proc.kill()
+                return {"ok": False, "package": pkg, "error": "Package installation timed out."}
+
+        elif tool_name == "syte_detect_framework":
+            pkg_file = ws_dir / "package.json"
+            if not pkg_file.exists():
+                return {"ok": True, "framework": "unknown", "build_tool": "unknown", "css": "unknown"}
+            try:
+                pkg_data = json.loads(pkg_file.read_text(encoding="utf-8"))
+                deps = {**pkg_data.get("dependencies", {}), **pkg_data.get("devDependencies", {})}
+                framework = "Next.js" if "next" in deps else ("React" if "react" in deps else ("Vue" if "vue" in deps else "Static"))
+                build_tool = "Vite" if "vite" in deps else ("Next.js" if "next" in deps else "Webpack/Custom")
+                css = "Tailwind CSS" if "tailwindcss" in deps else "CSS/Other"
+                return {
+                    "ok": True,
+                    "framework": framework,
+                    "build_tool": build_tool,
+                    "css": css,
+                    "dependencies_count": len(deps),
+                    "package_name": pkg_data.get("name", "app"),
+                }
+            except Exception as e:
+                return {"ok": False, "error": f"Failed to parse package.json: {str(e)}"}
+
+        elif tool_name == "syte_check_types":
+            proc = await asyncio.create_subprocess_shell(
+                "npx tsc --noEmit",
+                cwd=str(ws_dir),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            try:
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+                return {
+                    "ok": proc.returncode == 0,
+                    "exit_code": proc.returncode,
+                    "stdout": stdout.decode("utf-8", errors="replace"),
+                    "stderr": stderr.decode("utf-8", errors="replace"),
+                }
+            except asyncio.TimeoutError:
+                proc.kill()
+                return {"ok": False, "error": "Type check timed out."}
+
+        elif tool_name == "syte_apply_patch":
+            patch_content = str(arguments.get("patch") or "").strip()
+            target_path = str(arguments.get("path") or arguments.get("file") or "").lstrip("/\\").strip()
+            if not target_path or not patch_content:
+                return {"ok": False, "error": "Both 'path' and 'patch' are required for apply_patch."}
+            file_p = ws_dir / target_path
+            if not file_p.resolve().is_relative_to(ws_dir.resolve()):
+                return {"ok": False, "error": "Access denied: Path escapes workspace."}
+            if not file_p.exists():
+                return {"ok": False, "error": f"File '{target_path}' does not exist."}
+
+            old_content = file_p.read_text(encoding="utf-8", errors="replace")
+            # If unified diff or simple search-replace patch format
+            lines = patch_content.splitlines()
+            removals = [l[1:] for l in lines if l.startswith("-") and not l.startswith("---")]
+            additions = [l[1:] for l in lines if l.startswith("+") and not l.startswith("+++")]
+            if removals and additions and len(removals) == len(additions):
+                temp = old_content
+                for r, a in zip(removals, additions):
+                    temp = temp.replace(r, a, 1)
+                file_p.write_text(temp, encoding="utf-8")
+                return {"ok": True, "path": target_path, "message": "Patch applied successfully via diff substitution."}
+
+            # Fallback: direct content write if whole content supplied
+            file_p.write_text(patch_content, encoding="utf-8")
+            return {"ok": True, "path": target_path, "message": "File updated with patch content."}
 
         return {"ok": False, "error": f"Unknown tool: '{tool_name}'"}
 
