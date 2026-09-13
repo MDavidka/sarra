@@ -15963,519 +15963,806 @@ NEXT_PUBLIC_APP_URL=https://my-app.sycord.site</code></pre>
 
   // ---------------- API (With Openable Subtabs) ----------------
   // ---------------- API Reference Detailed Endpoints ----------------
-  'api-all': {
-    title: 'API Endpoints Directory',
-    subbarTitle: 'API Reference · Overview',
-    lead: 'Complete REST API and streaming specification for controlling Syte programmatically. Click any endpoint to open its interactive request builder and parameter specification.',
-    hasHero: false,
-    content: `
-      <h2>Applications API</h2>
-      <p>Manage application lifecycle, deployments, domains, and environment configurations.</p>
-      
-      <div class="docs-api-card" onclick="showDocsPage('api-app-create')" title="Click to open interactive tester & specification">
-        <div class="docs-api-top">
-          <div class="docs-api-endpoint">
-            <span class="docs-api-method-badge post">POST</span>
-            <span class="docs-api-path-text">/api/projects</span>
-          </div>
-          <span style="font-size:12px;color:#3b82f6;font-weight:600;">Open Spec →</span>
-        </div>
-        <p class="docs-api-desc-text">Create a new application from Git repository, Dockerfile, or ZIP archive.</p>
-      </div>
-
-      <div class="docs-api-card" onclick="showDocsPage('api-app-deploy')" title="Click to open interactive tester & specification">
-        <div class="docs-api-top">
-          <div class="docs-api-endpoint">
-            <span class="docs-api-method-badge post">POST</span>
-            <span class="docs-api-path-text">/api/projects/:id/deploy</span>
-          </div>
-          <span style="font-size:12px;color:#3b82f6;font-weight:600;">Open Spec →</span>
-        </div>
-        <p class="docs-api-desc-text">Trigger an immediate build and zero-downtime deployment for an application.</p>
-      </div>
-
-      <div class="docs-api-card" onclick="showDocsPage('api-app-list')" title="Click to open interactive tester & specification">
-        <div class="docs-api-top">
-          <div class="docs-api-endpoint">
-            <span class="docs-api-method-badge get">GET</span>
-            <span class="docs-api-path-text">/api/projects</span>
-          </div>
-          <span style="font-size:12px;color:#3b82f6;font-weight:600;">Open Spec →</span>
-        </div>
-        <p class="docs-api-desc-text">List all deployed applications, container health, ports, and domains.</p>
-      </div>
-
-      <div class="docs-api-card" onclick="showDocsPage('api-app-env')" title="Click to open interactive tester & specification">
-        <div class="docs-api-top">
-          <div class="docs-api-endpoint">
-            <span class="docs-api-method-badge put">PUT</span>
-            <span class="docs-api-path-text">/api/projects/:id/environment</span>
-          </div>
-          <span style="font-size:12px;color:#3b82f6;font-weight:600;">Open Spec →</span>
-        </div>
-        <p class="docs-api-desc-text">Update secret environment variables and inject them securely into runtime containers.</p>
-      </div>
-
-      <div class="docs-api-card" onclick="showDocsPage('api-app-domain')" title="Click to open interactive tester & specification">
-        <div class="docs-api-top">
-          <div class="docs-api-endpoint">
-            <span class="docs-api-method-badge post">POST</span>
-            <span class="docs-api-path-text">/api/projects/:id/domain</span>
-          </div>
-          <span style="font-size:12px;color:#3b82f6;font-weight:600;">Open Spec →</span>
-        </div>
-        <p class="docs-api-desc-text">Bind custom domain and automatically provision TLS / SSL certificate via Caddy.</p>
-      </div>
-
-      <h2 style="margin-top:28px;">Realtime Streaming & Auth</h2>
-      <p>Server-Sent Events (SSE) log streaming, AI agent deployer, and token generation.</p>
-
-      <div class="docs-api-card" onclick="showDocsPage('api-logs-stream')" title="Click to open interactive tester & specification">
-        <div class="docs-api-top">
-          <div class="docs-api-endpoint">
-            <span class="docs-api-method-badge get">GET</span>
-            <span class="docs-api-path-text">/api/projects/:id/logs/stream</span>
-          </div>
-          <span style="font-size:12px;color:#3b82f6;font-weight:600;">Open Spec →</span>
-        </div>
-        <p class="docs-api-desc-text">Subscribe to live build and container runtime logs via Server-Sent Events (SSE).</p>
-      </div>
-
-      <div class="docs-api-card" onclick="showDocsPage('api-agent-stream')" title="Click to open interactive tester & specification">
-        <div class="docs-api-top">
-          <div class="docs-api-endpoint">
-            <span class="docs-api-method-badge post">POST</span>
-            <span class="docs-api-path-text">/api/agent/stream</span>
-          </div>
-          <span style="font-size:12px;color:#3b82f6;font-weight:600;">Open Spec →</span>
-        </div>
-        <p class="docs-api-desc-text">Stream autonomous AI agent deployment steps, diagnostics, and code fixes.</p>
-      </div>
-
-      <div class="docs-api-card" onclick="showDocsPage('api-auth-tokens')" title="Click to open interactive tester & specification">
-        <div class="docs-api-top">
-          <div class="docs-api-endpoint">
-            <span class="docs-api-method-badge post">POST</span>
-            <span class="docs-api-path-text">/api/tokens</span>
-          </div>
-          <span style="font-size:12px;color:#3b82f6;font-weight:600;">Open Spec →</span>
-        </div>
-        <p class="docs-api-desc-text">Generate programmatic API keys for CI/CD pipelines and external webhooks.</p>
-      </div>
-    `,
-    prev: { title: 'Prev / Prod', page: 'app-prev-prod', desc: 'Environment branching.' },
-    next: { title: 'Application create', page: 'api-app-create', desc: 'Create application API.' },
-    updated: '03/09/2026',
-  },
-
-  'api-app-create': {
+    'api-projects-get': {
     isApiDetail: true,
-    groupName: 'Applications',
-    endpointTitle: 'Application create',
-    lead: 'Create a new application in your Syte instance.',
-    method: 'POST',
-    path: '/api/projects',
-    defaultAuthToken: 'YOUR-API-KEY',
-    defaultBody: JSON.stringify({
-      name: "my-production-app",
-      appName: "prod-app",
-      repository: "https://github.com/sycord/example-node",
-      branch: "main",
-      port: 3000
-    }, null, 2),
-    authType: 'x-api-key',
-    authDesc: 'API key authentication. Use YOUR-GENERATED-API-KEY or Bearer token.',
-    authSample: 'x-api-key <token>',
-    authLocation: 'header',
-    bodyType: 'application/json',
-    params: [
-      {
-        name: 'name',
-        required: true,
-        type: 'string',
-        desc: 'The human-readable name of the application.',
-        constraint: 'Length 1 <= length <= 100'
-      },
-      {
-        name: 'appName',
-        required: false,
-        type: 'string',
-        desc: 'Internal application identifier used for container naming and routing.',
-        constraint: 'Length 1 <= length <= 100'
-      },
-      {
-        name: 'repository',
-        required: false,
-        type: 'string',
-        desc: 'Git repository clone URL (HTTPS or SSH).',
-        constraint: 'Example: https://github.com/organization/repo.git'
-      },
-      {
-        name: 'branch',
-        required: false,
-        type: 'string',
-        desc: 'Target Git branch to build and deploy. Defaults to main.',
-        constraint: 'Default: "main"'
-      },
-      {
-        name: 'port',
-        required: false,
-        type: 'integer',
-        desc: 'Internal container port exposed by your web service.',
-        constraint: '1 <= port <= 65535'
-      },
-      {
-        name: 'environment',
-        required: false,
-        type: 'object',
-        desc: 'Key-value map of environment variables to inject into build and runtime containers.',
-        constraint: 'Example: { "NODE_ENV": "production" }'
-      }
-    ],
-    responseStatus: '200 OK',
-    responseBody: JSON.stringify({
-      id: "proj_94821a3b8c",
-      name: "my-production-app",
-      appName: "prod-app",
-      status: "ready",
-      port: 3000,
-      createdAt: "2026-09-13T00:00:00Z"
-    }, null, 2),
-    prev: { title: 'API Overview', page: 'api-all', desc: 'API directory.' },
-    next: { title: 'Application deploy', page: 'api-app-deploy', desc: 'Deploy application.' },
+    method: "GET",
+    path: "get/<uuid>/project",
+    realPath: "/api/projects/{project_id}",
+    summary: "this api for retriving data from the project ,",
+    pills: ["projectID?", "auth", "stats", "branch"],
+    desc: "using this api , syte will return the project details on the specified <a href=\"#params\" class=\"docs-api-link\">UUID</a>",
+    codeFilename: "source.config.ts",
+    codeSnippet: `import { getProject } from '@syte/sdk'
+
+export const project = await getProject({
+  projectId: '<uuid>',
+  includeStats: true,
+});`,
+    responseJson: `{
+  "id": "uuid-8f92-4a11-b0e2",
+  "name": "production-service",
+  "appName": "prod-app",
+  "status": "running",
+  "port": 3000,
+  "domain": "app.sycord.site",
+  "createdAt": "2026-09-13T00:00:00Z"
+}`,
+    prev: {"title": "Install", "page": "qs-install"},
+    next: {"title": "List Projects", "page": "api-projects-list"},
     updated: '03/09/2026',
   },
-
-  'api-app-deploy': {
+  'api-projects-list': {
     isApiDetail: true,
-    groupName: 'Applications',
-    endpointTitle: 'Application deploy',
-    lead: 'Trigger an immediate zero-downtime build and deployment cycle for a given application.',
-    method: 'POST',
-    path: '/api/projects/:id/deploy',
-    defaultAuthToken: 'YOUR-API-KEY',
-    defaultBody: JSON.stringify({
-      commit: "latest",
-      clearCache: false
-    }, null, 2),
-    authType: 'x-api-key',
-    authDesc: 'API key authentication. Use YOUR-GENERATED-API-KEY or Bearer token.',
-    authSample: 'x-api-key <token>',
-    authLocation: 'header',
-    bodyType: 'application/json',
-    params: [
-      {
-        name: 'id',
-        required: true,
-        type: 'string',
-        desc: 'Unique identifier or slug of the application to deploy.',
-        constraint: 'Path parameter'
-      },
-      {
-        name: 'commit',
-        required: false,
-        type: 'string',
-        desc: 'Specific Git commit hash or reference. Defaults to latest HEAD.',
-        constraint: 'Default: "latest"'
-      },
-      {
-        name: 'clearCache',
-        required: false,
-        type: 'boolean',
-        desc: 'Whether to discard Docker build cache and perform a clean rebuild.',
-        constraint: 'Default: false'
-      }
-    ],
-    responseStatus: '200 OK',
-    responseBody: JSON.stringify({
-      deploymentId: "dep_728f3a91",
-      projectId: "proj_94821a3b8c",
-      status: "queued",
-      logStreamUrl: "/api/projects/proj_94821a3b8c/logs/stream"
-    }, null, 2),
-    prev: { title: 'Application create', page: 'api-app-create', desc: 'Create application.' },
-    next: { title: 'Application list', page: 'api-app-list', desc: 'List applications.' },
+    method: "GET",
+    path: "get/projects",
+    realPath: "/api/projects",
+    summary: "retrieve all active projects, health statuses, and listening ports across your server ,",
+    pills: ["limit?", "status?", "auth"],
+    desc: "using this api , syte will return an array of all configured applications and their current <a href=\"#status\" class=\"docs-api-link\">runtime health</a>",
+    codeFilename: "list-apps.ts",
+    codeSnippet: `import { listProjects } from '@syte/sdk'
+
+const apps = await listProjects({
+  status: 'running',
+  limit: 50,
+});`,
+    responseJson: `{
+  "projects": [
+    {
+      "id": "uuid-8f92-4a11-b0e2",
+      "name": "web-frontend",
+      "status": "running",
+      "port": 3000
+    }
+  ]
+}`,
+    prev: {"title": "Get Project", "page": "api-projects-get"},
+    next: {"title": "Create Project", "page": "api-projects-create"},
     updated: '03/09/2026',
   },
-
-  'api-app-list': {
+  'api-projects-create': {
     isApiDetail: true,
-    groupName: 'Applications',
-    endpointTitle: 'Application list',
-    lead: 'Retrieve a list of all active applications running in your Syte cluster.',
-    method: 'GET',
-    path: '/api/projects',
-    defaultAuthToken: 'YOUR-API-KEY',
-    defaultBody: '',
-    authType: 'x-api-key',
-    authDesc: 'API key authentication. Use YOUR-GENERATED-API-KEY or Bearer token.',
-    authSample: 'x-api-key <token>',
-    authLocation: 'header',
-    bodyType: 'none',
-    params: [
-      {
-        name: 'limit',
-        required: false,
-        type: 'integer',
-        desc: 'Number of results to return per page.',
-        constraint: '1 <= limit <= 100'
-      },
-      {
-        name: 'status',
-        required: false,
-        type: 'string',
-        desc: 'Filter applications by health status: running, stopped, building.',
-        constraint: 'running | stopped | building'
-      }
-    ],
-    responseStatus: '200 OK',
-    responseBody: JSON.stringify({
-      projects: [
-        {
-          id: "proj_94821a3b8c",
-          name: "my-production-app",
-          appName: "prod-app",
-          status: "running",
-          domain: "app.example.com",
-          port: 3000
-        }
-      ]
-    }, null, 2),
-    prev: { title: 'Application deploy', page: 'api-app-deploy', desc: 'Deploy application.' },
-    next: { title: 'Application env', page: 'api-app-env', desc: 'Environment variables.' },
+    method: "POST",
+    path: "post/projects",
+    realPath: "/api/projects",
+    summary: "create and provision a new application from Git or Dockerfile ,",
+    pills: ["name", "repository", "branch", "port?"],
+    desc: "using this api , syte will clone the specified repository, generate build configurations, and register container routing for the specified <a href=\"#repo\" class=\"docs-api-link\">Git URL</a>",
+    codeFilename: "create-app.ts",
+    codeSnippet: `import { createProject } from '@syte/sdk'
+
+const newApp = await createProject({
+  name: 'my-new-app',
+  repository: 'https://github.com/organization/repo.git',
+  branch: 'main',
+  port: 3000,
+});`,
+    responseJson: `{
+  "id": "uuid-3c19-91aa-e501",
+  "name": "my-new-app",
+  "status": "ready",
+  "port": 3000
+}`,
+    prev: {"title": "List Projects", "page": "api-projects-list"},
+    next: {"title": "Deploy Application", "page": "api-deploy-trigger"},
     updated: '03/09/2026',
   },
-
-  'api-app-env': {
+  'api-projects-update': {
     isApiDetail: true,
-    groupName: 'Applications',
-    endpointTitle: 'Application env',
-    lead: 'Set and encrypt environment variables for a specified application.',
-    method: 'PUT',
-    path: '/api/projects/:id/environment',
-    defaultAuthToken: 'YOUR-API-KEY',
-    defaultBody: JSON.stringify({
-      variables: {
-        DATABASE_URL: "postgresql://user:secret@db.internal:5432/main",
-        JWT_SECRET: "super-secure-production-key",
-        NODE_ENV: "production"
-      }
-    }, null, 2),
-    authType: 'x-api-key',
-    authDesc: 'API key authentication. Use YOUR-GENERATED-API-KEY or Bearer token.',
-    authSample: 'x-api-key <token>',
-    authLocation: 'header',
-    bodyType: 'application/json',
-    params: [
-      {
-        name: 'id',
-        required: true,
-        type: 'string',
-        desc: 'Unique identifier or slug of the application.',
-        constraint: 'Path parameter'
-      },
-      {
-        name: 'variables',
-        required: true,
-        type: 'object',
-        desc: 'Key-value map of environment variables to store.',
-        constraint: 'Max payload size: 64KB'
-      }
-    ],
-    responseStatus: '200 OK',
-    responseBody: JSON.stringify({
-      projectId: "proj_94821a3b8c",
-      updatedKeys: ["DATABASE_URL", "JWT_SECRET", "NODE_ENV"],
-      restartRequired: true
-    }, null, 2),
-    prev: { title: 'Application list', page: 'api-app-list', desc: 'List applications.' },
-    next: { title: 'Application domain', page: 'api-app-domain', desc: 'Custom domains.' },
+    method: "PUT",
+    path: "put/<uuid>/project",
+    realPath: "/api/projects/{project_id}",
+    summary: "update build settings, exposed ports, and configuration for an existing project ,",
+    pills: ["projectID?", "name?", "port?", "branch?"],
+    desc: "using this api , syte will update metadata and runtime attributes on the specified <a href=\"#params\" class=\"docs-api-link\">UUID</a>",
+    codeFilename: "update-app.ts",
+    codeSnippet: `import { updateProject } from '@syte/sdk'
+
+await updateProject('<uuid>', {
+  port: 8080,
+  branch: 'staging',
+});`,
+    responseJson: `{
+  "success": true,
+  "updatedFields": ["port", "branch"]
+}`,
+    prev: {"title": "Create Project", "page": "api-projects-create"},
+    next: {"title": "Delete Project", "page": "api-projects-delete"},
     updated: '03/09/2026',
   },
-
-  'api-app-domain': {
+  'api-projects-delete': {
     isApiDetail: true,
-    groupName: 'Applications',
-    endpointTitle: 'Application domain',
-    lead: 'Attach a custom domain to an application and automatically request TLS certificates.',
-    method: 'POST',
-    path: '/api/projects/:id/domain',
-    defaultAuthToken: 'YOUR-API-KEY',
-    defaultBody: JSON.stringify({
-      domain: "app.mydomain.com",
-      httpsRedirect: true
-    }, null, 2),
-    authType: 'x-api-key',
-    authDesc: 'API key authentication. Use YOUR-GENERATED-API-KEY or Bearer token.',
-    authSample: 'x-api-key <token>',
-    authLocation: 'header',
-    bodyType: 'application/json',
-    params: [
-      {
-        name: 'id',
-        required: true,
-        type: 'string',
-        desc: 'Unique identifier of the application.',
-        constraint: 'Path parameter'
-      },
-      {
-        name: 'domain',
-        required: true,
-        type: 'string',
-        desc: 'Fully Qualified Domain Name (FQDN) to bind.',
-        constraint: 'Example: "app.mydomain.com"'
-      },
-      {
-        name: 'httpsRedirect',
-        required: false,
-        type: 'boolean',
-        desc: 'Enforce automatic HTTP to HTTPS redirection.',
-        constraint: 'Default: true'
-      }
-    ],
-    responseStatus: '200 OK',
-    responseBody: JSON.stringify({
-      projectId: "proj_94821a3b8c",
-      domain: "app.mydomain.com",
-      sslStatus: "active",
-      caddyReloaded: true
-    }, null, 2),
-    prev: { title: 'Application env', page: 'api-app-env', desc: 'Environment variables.' },
-    next: { title: 'Live SSE Logs', page: 'api-logs-stream', desc: 'Log streaming.' },
+    method: "DELETE",
+    path: "delete/<uuid>/project",
+    realPath: "/api/projects/{project_id}",
+    summary: "permanently remove an application, destroy runtime containers, and unbind domains ,",
+    pills: ["projectID?", "purgeData?"],
+    desc: "using this api , syte will terminate the container and delete project assets on the specified <a href=\"#params\" class=\"docs-api-link\">UUID</a>",
+    codeFilename: "delete-app.ts",
+    codeSnippet: `import { deleteProject } from '@syte/sdk'
+
+await deleteProject('<uuid>', {
+  purgeData: true,
+});`,
+    responseJson: `{
+  "success": true,
+  "deletedProjectId": "uuid-8f92-4a11-b0e2"
+}`,
+    prev: {"title": "Update Project", "page": "api-projects-update"},
+    next: {"title": "Start Container", "page": "api-projects-start"},
     updated: '03/09/2026',
   },
+  'api-projects-start': {
+    isApiDetail: true,
+    method: "POST",
+    path: "post/<uuid>/start",
+    realPath: "/api/projects/{project_id}/start",
+    summary: "start the application container instance ,",
+    pills: ["projectID?", "auth"],
+    desc: "using this api , syte will start stopped application containers on the specified <a href=\"#params\" class=\"docs-api-link\">UUID</a>",
+    codeFilename: "start.ts",
+    codeSnippet: `await fetch('/api/projects/<uuid>/start', { method: 'POST' });`,
+    responseJson: `{ "status": "running" }`,
+    prev: {"title": "Delete Project", "page": "api-projects-delete"},
+    next: {"title": "Stop Container", "page": "api-projects-stop"},
+    updated: '03/09/2026',
+  },
+  'api-projects-stop': {
+    isApiDetail: true,
+    method: "POST",
+    path: "post/<uuid>/stop",
+    realPath: "/api/projects/{project_id}/stop",
+    summary: "stop the running application container gracefully ,",
+    pills: ["projectID?", "auth"],
+    desc: "using this api , syte will send SIGTERM and stop container processes on the specified <a href=\"#params\" class=\"docs-api-link\">UUID</a>",
+    codeFilename: "stop.ts",
+    codeSnippet: `await fetch('/api/projects/<uuid>/stop', { method: 'POST' });`,
+    responseJson: `{ "status": "stopped" }`,
+    prev: {"title": "Start Container", "page": "api-projects-start"},
+    next: {"title": "Project Health", "page": "api-projects-health"},
+    updated: '03/09/2026',
+  },
+  'api-projects-health': {
+    isApiDetail: true,
+    method: "GET",
+    path: "get/<uuid>/health",
+    realPath: "/api/projects/{project_id}/health",
+    summary: "inspect real-time health check response and uptime status ,",
+    pills: ["projectID?", "auth"],
+    desc: "using this api , syte will probe the internal container port on the specified <a href=\"#params\" class=\"docs-api-link\">UUID</a>",
+    codeFilename: "health.ts",
+    codeSnippet: `const res = await fetch('/api/projects/<uuid>/health');`,
+    responseJson: `{ "healthy": true, "httpStatus": 200, "latencyMs": 14 }`,
+    prev: {"title": "Stop Container", "page": "api-projects-stop"},
+    next: {"title": "Deploy Application", "page": "api-deploy-trigger"},
+    updated: '03/09/2026',
+  },
+  'api-deploy-trigger': {
+    isApiDetail: true,
+    method: "POST",
+    path: "post/<uuid>/deploy",
+    realPath: "/api/projects/{project_id}/deploy",
+    summary: "trigger an immediate zero-downtime build and deployment cycle ,",
+    pills: ["projectID?", "commit?", "clearCache?"],
+    desc: "using this api , syte will pull latest commits, build new Docker images, and switch traffic seamlessly for the specified <a href=\"#params\" class=\"docs-api-link\">UUID</a>",
+    codeFilename: "deploy.ts",
+    codeSnippet: `import { deployProject } from '@syte/sdk'
 
+const build = await deployProject('<uuid>', {
+  commit: 'latest',
+  clearCache: false,
+});`,
+    responseJson: `{
+  "deploymentId": "dep_728f3a91",
+  "status": "building",
+  "streamUrl": "/api/projects/<uuid>/logs/stream"
+}`,
+    prev: {"title": "Project Health", "page": "api-projects-health"},
+    next: {"title": "List Builds", "page": "api-builds-list"},
+    updated: '03/09/2026',
+  },
+  'api-builds-list': {
+    isApiDetail: true,
+    method: "GET",
+    path: "get/<uuid>/builds",
+    realPath: "/api/projects/{project_id}/builds",
+    summary: "list historical build runs, durations, and commit hashes ,",
+    pills: ["projectID?", "limit?", "page?"],
+    desc: "using this api , syte will return paginated deployment records on the specified <a href=\"#params\" class=\"docs-api-link\">UUID</a>",
+    codeFilename: "builds.ts",
+    codeSnippet: `const builds = await fetch('/api/projects/<uuid>/builds').then(r => r.json());`,
+    responseJson: `{
+  "builds": [
+    { "id": "bld_9421", "commit": "e7f59ea", "status": "success", "durationSec": 42 }
+  ]
+}`,
+    prev: {"title": "Deploy Application", "page": "api-deploy-trigger"},
+    next: {"title": "Build Logs", "page": "api-builds-logs"},
+    updated: '03/09/2026',
+  },
+  'api-builds-logs': {
+    isApiDetail: true,
+    method: "GET",
+    path: "get/<uuid>/builds/<build_id>/logs",
+    realPath: "/api/projects/{project_id}/builds/{build_id}/logs",
+    summary: "fetch stdout/stderr build console output for a specific build run ,",
+    pills: ["projectID?", "buildID?", "auth"],
+    desc: "using this api , syte will return the full build output on the specified <a href=\"#params\" class=\"docs-api-link\">UUID</a>",
+    codeFilename: "build-logs.ts",
+    codeSnippet: `const logs = await fetch('/api/projects/<uuid>/builds/<build_id>/logs').then(r => r.text());`,
+    responseJson: `{ "logs": "[1/4] Resolving dependencies...\n[2/4] Building Next.js bundle...\nDone in 14.2s" }`,
+    prev: {"title": "List Builds", "page": "api-builds-list"},
+    next: {"title": "Live SSE Stream", "page": "api-logs-stream"},
+    updated: '03/09/2026',
+  },
+  'api-logs-container': {
+    isApiDetail: true,
+    method: "GET",
+    path: "get/<uuid>/logs",
+    realPath: "/api/projects/{project_id}/logs",
+    summary: "fetch container stdout and stderr runtime logs ,",
+    pills: ["projectID?", "tail?", "timestamps?"],
+    desc: "using this api , syte will return recent container logs for the specified <a href=\"#params\" class=\"docs-api-link\">UUID</a>",
+    codeFilename: "container-logs.ts",
+    codeSnippet: `const logs = await fetch('/api/projects/<uuid>/logs?tail=200').then(r => r.json());`,
+    responseJson: `{ "logs": "Listening on port 3000\nConnected to database" }`,
+    prev: {"title": "Build Logs", "page": "api-builds-logs"},
+    next: {"title": "Live SSE Stream", "page": "api-logs-stream"},
+    updated: '03/09/2026',
+  },
   'api-logs-stream': {
     isApiDetail: true,
-    groupName: 'Streaming & Auth',
-    endpointTitle: 'Live SSE Logs',
-    lead: 'Real-time Server-Sent Events (SSE) streaming endpoint for build logs and container stdout/stderr.',
-    method: 'GET',
-    path: '/api/projects/:id/logs/stream',
-    defaultAuthToken: 'YOUR-API-KEY',
-    defaultBody: '',
-    authType: 'x-api-key',
-    authDesc: 'API key authentication. Use YOUR-GENERATED-API-KEY or Bearer token.',
-    authSample: 'x-api-key <token>',
-    authLocation: 'header or query param ?token=...',
-    bodyType: 'none',
-    params: [
-      {
-        name: 'id',
-        required: true,
-        type: 'string',
-        desc: 'Unique identifier of the application.',
-        constraint: 'Path parameter'
-      },
-      {
-        name: 'tail',
-        required: false,
-        type: 'integer',
-        desc: 'Number of historical log lines to send upon initial connection.',
-        constraint: 'Default: 100'
-      }
-    ],
-    responseStatus: '200 OK',
-    responseBody: JSON.stringify({ stream: "sse", sample: "data: live log output" }, null, 2),
-    prev: { title: 'Application domain', page: 'api-app-domain', desc: 'Custom domains.' },
-    next: { title: 'AI Deployer Stream', page: 'api-agent-stream', desc: 'AI agent.' },
+    method: "GET",
+    path: "get/<uuid>/logs/stream",
+    realPath: "/api/projects/{project_id}/logs/stream",
+    summary: "subscribe to live Server-Sent Events (SSE) log stream in real time ,",
+    pills: ["projectID?", "token?"],
+    desc: "using this api , syte will stream real-time logs via SSE for the specified <a href=\"#params\" class=\"docs-api-link\">UUID</a>",
+    codeFilename: "stream-logs.ts",
+    codeSnippet: `const evtSource = new EventSource('/api/projects/<uuid>/logs/stream');
+evtSource.onmessage = (event) => {
+  console.log('Log:', event.data);
+};`,
+    responseJson: `data: {"timestamp":"2026-09-13T18:00:00Z","message":"Ready to accept traffic"}`,
+    prev: {"title": "Container Logs", "page": "api-logs-container"},
+    next: {"title": "Rollback Release", "page": "api-deploy-rollback"},
     updated: '03/09/2026',
   },
-
+  'api-deploy-rollback': {
+    isApiDetail: true,
+    method: "POST",
+    path: "post/<uuid>/deployments/<run_id>/rollback",
+    realPath: "/api/projects/{project_id}/deployments/{run_id}/rollback",
+    summary: "revert container deployment to a previous healthy release instantaneously ,",
+    pills: ["projectID?", "runID?", "auth"],
+    desc: "using this api , syte will restore the container image and routing table for the specified <a href=\"#params\" class=\"docs-api-link\">UUID</a>",
+    codeFilename: "rollback.ts",
+    codeSnippet: `await fetch('/api/projects/<uuid>/deployments/<run_id>/rollback', { method: 'POST' });`,
+    responseJson: `{ "status": "rolled_back", "restoredRunId": "run_4810" }`,
+    prev: {"title": "Live SSE Stream", "page": "api-logs-stream"},
+    next: {"title": "Set Variables", "page": "api-env-set"},
+    updated: '03/09/2026',
+  },
+  'api-env-set': {
+    isApiDetail: true,
+    method: "PUT",
+    path: "put/<uuid>/environment",
+    realPath: "/api/projects/{project_id}/environment",
+    summary: "set and encrypt environment variables for a given application ,",
+    pills: ["projectID?", "variables", "auth"],
+    desc: "using this api , syte will store encrypted secret keys for the specified <a href=\"#params\" class=\"docs-api-link\">UUID</a>",
+    codeFilename: "env.ts",
+    codeSnippet: `await fetch('/api/projects/<uuid>/environment', {
+  method: 'PUT',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ variables: { NODE_ENV: 'production', PORT: '3000' } }),
+});`,
+    responseJson: `{ "success": true, "keysUpdated": ["NODE_ENV", "PORT"] }`,
+    prev: {"title": "Rollback Release", "page": "api-deploy-rollback"},
+    next: {"title": "Delete Variable", "page": "api-env-delete"},
+    updated: '03/09/2026',
+  },
+  'api-env-delete': {
+    isApiDetail: true,
+    method: "DELETE",
+    path: "delete/<uuid>/environment/<key>",
+    realPath: "/api/projects/{project_id}/environment/{key}",
+    summary: "delete a specific environment variable by key name ,",
+    pills: ["projectID?", "key", "auth"],
+    desc: "using this api , syte will remove the specified variable from the specified <a href=\"#params\" class=\"docs-api-link\">UUID</a>",
+    codeFilename: "del-env.ts",
+    codeSnippet: `await fetch('/api/projects/<uuid>/environment/SECRET_KEY', { method: 'DELETE' });`,
+    responseJson: `{ "success": true, "deletedKey": "SECRET_KEY" }`,
+    prev: {"title": "Set Variables", "page": "api-env-set"},
+    next: {"title": "Bind Domain", "page": "api-domain-add"},
+    updated: '03/09/2026',
+  },
+  'api-domain-add': {
+    isApiDetail: true,
+    method: "POST",
+    path: "post/<uuid>/domain",
+    realPath: "/api/projects/{project_id}/domain",
+    summary: "bind a custom domain name and trigger automatic SSL certificate provisioning ,",
+    pills: ["projectID?", "domain", "httpsRedirect?"],
+    desc: "using this api , syte will configure Caddy reverse proxy and issue Let's Encrypt certificates for the specified <a href=\"#params\" class=\"docs-api-link\">UUID</a>",
+    codeFilename: "domain.ts",
+    codeSnippet: `await fetch('/api/projects/<uuid>/domain', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ domain: 'app.example.com', httpsRedirect: true }),
+});`,
+    responseJson: `{ "domain": "app.example.com", "ssl": "active", "caddyReloaded": true }`,
+    prev: {"title": "Delete Variable", "page": "api-env-delete"},
+    next: {"title": "Remove Domain", "page": "api-domain-remove"},
+    updated: '03/09/2026',
+  },
+  'api-domain-remove': {
+    isApiDetail: true,
+    method: "DELETE",
+    path: "delete/<uuid>/domain",
+    realPath: "/api/projects/{project_id}/domain",
+    summary: "unbind custom domain and revert to internal fallback routing ,",
+    pills: ["projectID?", "auth"],
+    desc: "using this api , syte will detach the domain rule from the specified <a href=\"#params\" class=\"docs-api-link\">UUID</a>",
+    codeFilename: "del-domain.ts",
+    codeSnippet: `await fetch('/api/projects/<uuid>/domain', { method: 'DELETE' });`,
+    responseJson: `{ "success": true, "domainRemoved": true }`,
+    prev: {"title": "Bind Domain", "page": "api-domain-add"},
+    next: {"title": "SSL Status", "page": "api-ssl-status"},
+    updated: '03/09/2026',
+  },
+  'api-ssl-status': {
+    isApiDetail: true,
+    method: "GET",
+    path: "get/ssl",
+    realPath: "/api/ssl",
+    summary: "inspect SSL/TLS certificate renewal status across all active domains ,",
+    pills: ["auth"],
+    desc: "using this api , syte will return Caddy certificate validity and expiration dates",
+    codeFilename: "ssl.ts",
+    codeSnippet: `const sslStatus = await fetch('/api/ssl').then(r => r.json());`,
+    responseJson: `{ "certificates": [{ "domain": "app.sycord.site", "valid": true, "daysLeft": 82 }] }`,
+    prev: {"title": "Remove Domain", "page": "api-domain-remove"},
+    next: {"title": "Issue Certificate", "page": "api-cert-issue"},
+    updated: '03/09/2026',
+  },
+  'api-cert-issue': {
+    isApiDetail: true,
+    method: "POST",
+    path: "post/certificates/issue",
+    realPath: "/api/certificates/issue",
+    summary: "request on-demand ACME TLS certificate for a domain ,",
+    pills: ["domain", "auth"],
+    desc: "using this api , syte will perform HTTP-01 or DNS-01 ACME challenge",
+    codeFilename: "issue-cert.ts",
+    codeSnippet: `await fetch('/api/certificates/issue', {
+  method: 'POST',
+  body: JSON.stringify({ domain: 'api.example.com' }),
+});`,
+    responseJson: `{ "success": true, "issued": true }`,
+    prev: {"title": "SSL Status", "page": "api-ssl-status"},
+    next: {"title": "GitHub Status", "page": "api-git-status"},
+    updated: '03/09/2026',
+  },
+  'api-git-status': {
+    isApiDetail: true,
+    method: "GET",
+    path: "get/projects/git/github/status",
+    realPath: "/api/projects/git/github/status",
+    summary: "check GitHub OAuth connection and token validity ,",
+    pills: ["auth"],
+    desc: "using this api , syte will verify connection with GitHub API",
+    codeFilename: "gh-status.ts",
+    codeSnippet: `const gh = await fetch('/api/projects/git/github/status').then(r => r.json());`,
+    responseJson: `{ "connected": true, "username": "MDavidka" }`,
+    prev: {"title": "Issue Certificate", "page": "api-cert-issue"},
+    next: {"title": "Import GitHub Repo", "page": "api-git-import-gh"},
+    updated: '03/09/2026',
+  },
+  'api-git-import-gh': {
+    isApiDetail: true,
+    method: "POST",
+    path: "post/projects/import/github",
+    realPath: "/api/projects/import/github",
+    summary: "import a repository from connected GitHub account ,",
+    pills: ["repository", "branch?", "name"],
+    desc: "using this api , syte will create a deployment pipeline directly from GitHub",
+    codeFilename: "import-gh.ts",
+    codeSnippet: `await fetch('/api/projects/import/github', {
+  method: 'POST',
+  body: JSON.stringify({ repository: 'MDavidka/sarra', branch: 'main', name: 'sarra' }),
+});`,
+    responseJson: `{ "projectId": "uuid-901b", "status": "cloning" }`,
+    prev: {"title": "GitHub Status", "page": "api-git-status"},
+    next: {"title": "Import ZIP Archive", "page": "api-git-import-zip"},
+    updated: '03/09/2026',
+  },
+  'api-git-import-zip': {
+    isApiDetail: true,
+    method: "POST",
+    path: "post/projects/import/zip",
+    realPath: "/api/projects/import/zip",
+    summary: "upload and extract a project source code ZIP bundle ,",
+    pills: ["file", "name"],
+    desc: "using this api , syte will unpack the zip archive and detect runtime stack automatically",
+    codeFilename: "import-zip.ts",
+    codeSnippet: `const form = new FormData();
+form.append('file', zipBlob, 'app.zip');
+await fetch('/api/projects/import/zip', { method: 'POST', body: form });`,
+    responseJson: `{ "projectId": "uuid-71bc", "detected": "Node.js" }`,
+    prev: {"title": "Import GitHub Repo", "page": "api-git-import-gh"},
+    next: {"title": "List Repositories", "page": "api-git-repos"},
+    updated: '03/09/2026',
+  },
+  'api-git-repos': {
+    isApiDetail: true,
+    method: "GET",
+    path: "get/projects/git/github/repositories",
+    realPath: "/api/projects/git/github/repositories",
+    summary: "list accessible repositories from connected GitHub account ,",
+    pills: ["limit?", "page?"],
+    desc: "using this api , syte will fetch user repositories list",
+    codeFilename: "repos.ts",
+    codeSnippet: `const repos = await fetch('/api/projects/git/github/repositories').then(r => r.json());`,
+    responseJson: `{ "repositories": [{ "name": "sarra", "fullName": "MDavidka/sarra" }] }`,
+    prev: {"title": "Import ZIP Archive", "page": "api-git-import-zip"},
+    next: {"title": "List Files", "page": "api-fs-files"},
+    updated: '03/09/2026',
+  },
+  'api-fs-files': {
+    isApiDetail: true,
+    method: "GET",
+    path: "get/<uuid>/workspace/files",
+    realPath: "/api/projects/{project_id}/workspace/files",
+    summary: "browse directory tree and file list in project workspace ,",
+    pills: ["projectID?", "path?"],
+    desc: "using this api , syte will return the directory structure on the specified <a href=\"#params\" class=\"docs-api-link\">UUID</a>",
+    codeFilename: "files.ts",
+    codeSnippet: `const files = await fetch('/api/projects/<uuid>/workspace/files').then(r => r.json());`,
+    responseJson: `{ "files": [{ "name": "package.json", "type": "file", "size": 1420 }] }`,
+    prev: {"title": "List Repositories", "page": "api-git-repos"},
+    next: {"title": "Read File", "page": "api-fs-read"},
+    updated: '03/09/2026',
+  },
+  'api-fs-read': {
+    isApiDetail: true,
+    method: "GET",
+    path: "get/<uuid>/workspace/file",
+    realPath: "/api/projects/{project_id}/workspace/file",
+    summary: "read raw text content of a workspace file ,",
+    pills: ["projectID?", "path"],
+    desc: "using this api , syte will return file contents for the specified <a href=\"#params\" class=\"docs-api-link\">UUID</a>",
+    codeFilename: "read-file.ts",
+    codeSnippet: `const content = await fetch('/api/projects/<uuid>/workspace/file?path=package.json').then(r => r.text());`,
+    responseJson: `{ "content": "{\n  \"name\": \"my-app\"\n}" }`,
+    prev: {"title": "List Files", "page": "api-fs-files"},
+    next: {"title": "Write File", "page": "api-fs-write"},
+    updated: '03/09/2026',
+  },
+  'api-fs-write': {
+    isApiDetail: true,
+    method: "POST",
+    path: "post/<uuid>/workspace/file",
+    realPath: "/api/projects/{project_id}/workspace/file",
+    summary: "create or overwrite a workspace file ,",
+    pills: ["projectID?", "path", "content"],
+    desc: "using this api , syte will write code files directly into workspace on the specified <a href=\"#params\" class=\"docs-api-link\">UUID</a>",
+    codeFilename: "write-file.ts",
+    codeSnippet: `await fetch('/api/projects/<uuid>/workspace/file', {
+  method: 'POST',
+  body: JSON.stringify({ path: 'src/index.ts', content: 'console.log("hello");' }),
+});`,
+    responseJson: `{ "success": true, "bytesWritten": 24 }`,
+    prev: {"title": "Read File", "page": "api-fs-read"},
+    next: {"title": "Create Directory", "page": "api-fs-mkdir"},
+    updated: '03/09/2026',
+  },
+  'api-fs-mkdir': {
+    isApiDetail: true,
+    method: "POST",
+    path: "post/<uuid>/workspace/mkdir",
+    realPath: "/api/projects/{project_id}/workspace/mkdir",
+    summary: "create a new subdirectory inside workspace ,",
+    pills: ["projectID?", "path"],
+    desc: "using this api , syte will create folder tree on the specified <a href=\"#params\" class=\"docs-api-link\">UUID</a>",
+    codeFilename: "mkdir.ts",
+    codeSnippet: `await fetch('/api/projects/<uuid>/workspace/mkdir', {
+  method: 'POST',
+  body: JSON.stringify({ path: 'src/components' }),
+});`,
+    responseJson: `{ "success": true }`,
+    prev: {"title": "Write File", "page": "api-fs-write"},
+    next: {"title": "Delete File", "page": "api-fs-delete"},
+    updated: '03/09/2026',
+  },
+  'api-fs-delete': {
+    isApiDetail: true,
+    method: "DELETE",
+    path: "delete/<uuid>/workspace/file",
+    realPath: "/api/projects/{project_id}/workspace/file",
+    summary: "delete a file or folder from project workspace ,",
+    pills: ["projectID?", "path"],
+    desc: "using this api , syte will delete file assets on the specified <a href=\"#params\" class=\"docs-api-link\">UUID</a>",
+    codeFilename: "del-file.ts",
+    codeSnippet: `await fetch('/api/projects/<uuid>/workspace/file?path=temp.log', { method: 'DELETE' });`,
+    responseJson: `{ "success": true }`,
+    prev: {"title": "Create Directory", "page": "api-fs-mkdir"},
+    next: {"title": "Upload File", "page": "api-fs-upload"},
+    updated: '03/09/2026',
+  },
+  'api-fs-upload': {
+    isApiDetail: true,
+    method: "POST",
+    path: "post/<uuid>/workspace/upload",
+    realPath: "/api/projects/{project_id}/workspace/upload",
+    summary: "upload binary asset or attachment into workspace ,",
+    pills: ["projectID?", "file", "destinationPath?"],
+    desc: "using this api , syte will upload assets on the specified <a href=\"#params\" class=\"docs-api-link\">UUID</a>",
+    codeFilename: "upload.ts",
+    codeSnippet: `const formData = new FormData();
+formData.append('file', fileBlob, 'logo.png');
+await fetch('/api/projects/<uuid>/workspace/upload', { method: 'POST', body: formData });`,
+    responseJson: `{ "success": true, "path": "public/logo.png" }`,
+    prev: {"title": "Delete File", "page": "api-fs-delete"},
+    next: {"title": "List Redirects", "page": "api-redirects-list"},
+    updated: '03/09/2026',
+  },
+  'api-redirects-list': {
+    isApiDetail: true,
+    method: "GET",
+    path: "get/<uuid>/redirects",
+    realPath: "/api/projects/{project_id}/redirects",
+    summary: "list all URL redirection and proxy rules ,",
+    pills: ["projectID?"],
+    desc: "using this api , syte will return custom redirect rules for the specified <a href=\"#params\" class=\"docs-api-link\">UUID</a>",
+    codeFilename: "redirects.ts",
+    codeSnippet: `const redirects = await fetch('/api/projects/<uuid>/redirects').then(r => r.json());`,
+    responseJson: `{ "redirects": [{ "source": "/old", "destination": "/new", "code": 301 }] }`,
+    prev: {"title": "Upload File", "page": "api-fs-upload"},
+    next: {"title": "Create Redirect", "page": "api-redirects-create"},
+    updated: '03/09/2026',
+  },
+  'api-redirects-create': {
+    isApiDetail: true,
+    method: "POST",
+    path: "post/<uuid>/redirects",
+    realPath: "/api/projects/{project_id}/redirects",
+    summary: "create a new URL redirect or rewrite rule ,",
+    pills: ["projectID?", "source", "destination", "code?"],
+    desc: "using this api , syte will update Caddy proxy routing table on the specified <a href=\"#params\" class=\"docs-api-link\">UUID</a>",
+    codeFilename: "add-redirect.ts",
+    codeSnippet: `await fetch('/api/projects/<uuid>/redirects', {
+  method: 'POST',
+  body: JSON.stringify({ source: '/docs/*', destination: '/documentation/:splat', code: 301 }),
+});`,
+    responseJson: `{ "id": "red_104a", "success": true }`,
+    prev: {"title": "List Redirects", "page": "api-redirects-list"},
+    next: {"title": "Delete Redirect", "page": "api-redirects-delete"},
+    updated: '03/09/2026',
+  },
+  'api-redirects-delete': {
+    isApiDetail: true,
+    method: "DELETE",
+    path: "delete/<uuid>/redirects/<redirect_id>",
+    realPath: "/api/projects/{project_id}/redirects/{redirect_id}",
+    summary: "remove an existing redirect rule ,",
+    pills: ["projectID?", "redirectID?"],
+    desc: "using this api , syte will delete routing rule on the specified <a href=\"#params\" class=\"docs-api-link\">UUID</a>",
+    codeFilename: "del-redirect.ts",
+    codeSnippet: `await fetch('/api/projects/<uuid>/redirects/<redirect_id>', { method: 'DELETE' });`,
+    responseJson: `{ "success": true }`,
+    prev: {"title": "Create Redirect", "page": "api-redirects-create"},
+    next: {"title": "Resource Stats", "page": "api-stats-resources"},
+    updated: '03/09/2026',
+  },
+  'api-stats-resources': {
+    isApiDetail: true,
+    method: "GET",
+    path: "get/<uuid>/stats",
+    realPath: "/api/projects/{project_id}/stats",
+    summary: "fetch real-time CPU, RAM, and disk utilization ,",
+    pills: ["projectID?"],
+    desc: "using this api , syte will query container cgroups on the specified <a href=\"#params\" class=\"docs-api-link\">UUID</a>",
+    codeFilename: "stats.ts",
+    codeSnippet: `const stats = await fetch('/api/projects/<uuid>/stats').then(r => r.json());`,
+    responseJson: `{ "cpuPercent": 4.2, "memoryBytes": 134217728, "memoryHuman": "128 MB" }`,
+    prev: {"title": "Delete Redirect", "page": "api-redirects-delete"},
+    next: {"title": "Performance Metrics", "page": "api-stats-perf"},
+    updated: '03/09/2026',
+  },
+  'api-stats-perf': {
+    isApiDetail: true,
+    method: "GET",
+    path: "get/<uuid>/performance",
+    realPath: "/api/projects/{project_id}/performance",
+    summary: "fetch HTTP response times and p95/p99 latency distribution ,",
+    pills: ["projectID?", "range?"],
+    desc: "using this api , syte will calculate latency histogram for the specified <a href=\"#params\" class=\"docs-api-link\">UUID</a>",
+    codeFilename: "perf.ts",
+    codeSnippet: `const perf = await fetch('/api/projects/<uuid>/performance?range=24h').then(r => r.json());`,
+    responseJson: `{ "avgLatencyMs": 28, "p95Ms": 64, "p99Ms": 110, "requestsTotal": 42900 }`,
+    prev: {"title": "Resource Stats", "page": "api-stats-resources"},
+    next: {"title": "Visitor Traffic", "page": "api-stats-visitors"},
+    updated: '03/09/2026',
+  },
+  'api-stats-visitors': {
+    isApiDetail: true,
+    method: "GET",
+    path: "get/<uuid>/visitors",
+    realPath: "/api/projects/{project_id}/visitors",
+    summary: "fetch traffic analytics, unique IP counts, and top geographic locations ,",
+    pills: ["projectID?", "interval?"],
+    desc: "using this api , syte will return analytics breakdown on the specified <a href=\"#params\" class=\"docs-api-link\">UUID</a>",
+    codeFilename: "visitors.ts",
+    codeSnippet: `const visitors = await fetch('/api/projects/<uuid>/visitors').then(r => r.json());`,
+    responseJson: `{ "uniqueVisitors": 1420, "pageViews": 8900 }`,
+    prev: {"title": "Performance Metrics", "page": "api-stats-perf"},
+    next: {"title": "User Login", "page": "api-auth-login"},
+    updated: '03/09/2026',
+  },
+  'api-auth-login': {
+    isApiDetail: true,
+    method: "POST",
+    path: "post/auth/login",
+    realPath: "/api/auth/login",
+    summary: "authenticate user account and establish session cookie ,",
+    pills: ["email", "password"],
+    desc: "using this api , syte will verify credentials and issue secure session",
+    codeFilename: "login.ts",
+    codeSnippet: `await fetch('/api/auth/login', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ email: 'user@example.com', password: '***' }),
+});`,
+    responseJson: `{ "authenticated": true, "user": { "email": "user@example.com" } }`,
+    prev: {"title": "Visitor Traffic", "page": "api-stats-visitors"},
+    next: {"title": "Check Session", "page": "api-auth-session"},
+    updated: '03/09/2026',
+  },
+  'api-auth-session': {
+    isApiDetail: true,
+    method: "GET",
+    path: "get/auth/session",
+    realPath: "/api/auth/session",
+    summary: "check current authenticated operator session ,",
+    pills: ["cookie"],
+    desc: "using this api , syte will return current active operator session",
+    codeFilename: "session.ts",
+    codeSnippet: `const session = await fetch('/api/auth/session').then(r => r.json());`,
+    responseJson: `{ "authenticated": true, "role": "admin" }`,
+    prev: {"title": "User Login", "page": "api-auth-login"},
+    next: {"title": "List Tokens", "page": "api-tokens-list"},
+    updated: '03/09/2026',
+  },
+  'api-tokens-list': {
+    isApiDetail: true,
+    method: "GET",
+    path: "get/tokens",
+    realPath: "/api/tokens",
+    summary: "list all active programmatic API tokens and keys ,",
+    pills: ["auth"],
+    desc: "using this api , syte will list configured API tokens",
+    codeFilename: "tokens.ts",
+    codeSnippet: `const tokens = await fetch('/api/tokens').then(r => r.json());`,
+    responseJson: `{ "tokens": [{ "id": "tok_1", "name": "CI/CD Token", "createdAt": "2026-09-13T00:00:00Z" }] }`,
+    prev: {"title": "Check Session", "page": "api-auth-session"},
+    next: {"title": "Create Token", "page": "api-tokens-create"},
+    updated: '03/09/2026',
+  },
+  'api-tokens-create': {
+    isApiDetail: true,
+    method: "POST",
+    path: "post/tokens",
+    realPath: "/api/tokens",
+    summary: "generate a new bearer API token for automated CI/CD pipelines ,",
+    pills: ["name", "expiresInDays?"],
+    desc: "using this api , syte will generate an encrypted API token",
+    codeFilename: "create-token.ts",
+    codeSnippet: `const token = await fetch('/api/tokens', {
+  method: 'POST',
+  body: JSON.stringify({ name: 'GitHub Actions', expiresInDays: 90 }),
+}).then(r => r.json());`,
+    responseJson: `{ "token": "syte_live_sec_99a8c17b5e4312da", "name": "GitHub Actions" }`,
+    prev: {"title": "List Tokens", "page": "api-tokens-list"},
+    next: {"title": "Revoke Token", "page": "api-tokens-delete"},
+    updated: '03/09/2026',
+  },
+  'api-tokens-delete': {
+    isApiDetail: true,
+    method: "DELETE",
+    path: "delete/tokens/<token_id>",
+    realPath: "/api/tokens/{token_id}",
+    summary: "revoke and invalidate an existing API token ,",
+    pills: ["tokenID?"],
+    desc: "using this api , syte will permanently revoke token credentials",
+    codeFilename: "del-token.ts",
+    codeSnippet: `await fetch('/api/tokens/<token_id>', { method: 'DELETE' });`,
+    responseJson: `{ "success": true }`,
+    prev: {"title": "Create Token", "page": "api-tokens-create"},
+    next: {"title": "Health Check", "page": "api-system-health"},
+    updated: '03/09/2026',
+  },
+  'api-system-health': {
+    isApiDetail: true,
+    method: "GET",
+    path: "get/health",
+    realPath: "/api/health",
+    summary: "verify core API and background daemon health ,",
+    pills: ["public"],
+    desc: "using this api , load balancers and uptime monitors can verify service availability",
+    codeFilename: "health-check.ts",
+    codeSnippet: `const health = await fetch('/api/health').then(r => r.json());`,
+    responseJson: `{ "status": "ok", "version": "2.4.0", "uptimeSec": 86400 }`,
+    prev: {"title": "Revoke Token", "page": "api-tokens-delete"},
+    next: {"title": "System Stats", "page": "api-system-info"},
+    updated: '03/09/2026',
+  },
+  'api-system-info': {
+    isApiDetail: true,
+    method: "GET",
+    path: "get/system",
+    realPath: "/api/system",
+    summary: "fetch host operating system specs, disk space, and Docker version ,",
+    pills: ["auth"],
+    desc: "using this api , syte will return host server hardware telemetry",
+    codeFilename: "system-info.ts",
+    codeSnippet: `const sys = await fetch('/api/system').then(r => r.json());`,
+    responseJson: `{ "hostname": "sycord.site", "cores": 4, "totalMemoryBytes": 8589934592 }`,
+    prev: {"title": "Health Check", "page": "api-system-health"},
+    next: {"title": "System Update", "page": "api-system-update"},
+    updated: '03/09/2026',
+  },
+  'api-system-update': {
+    isApiDetail: true,
+    method: "POST",
+    path: "post/system/update",
+    realPath: "/api/system/update",
+    summary: "trigger automated platform upgrade and daemon reload ,",
+    pills: ["auth"],
+    desc: "using this api , syte will pull and apply latest platform releases",
+    codeFilename: "system-update.ts",
+    codeSnippet: `await fetch('/api/system/update', { method: 'POST' });`,
+    responseJson: `{ "status": "updating", "targetVersion": "latest" }`,
+    prev: {"title": "System Stats", "page": "api-system-info"},
+    next: {"title": "AI Agent Stream", "page": "api-agent-stream"},
+    updated: '03/09/2026',
+  },
   'api-agent-stream': {
     isApiDetail: true,
-    groupName: 'Streaming & Auth',
-    endpointTitle: 'AI Deployer Stream',
-    lead: 'Autonomous AI deployment and diagnostics agent with step-by-step streaming feedback.',
-    method: 'POST',
-    path: '/api/agent/stream',
-    defaultAuthToken: 'YOUR-API-KEY',
-    defaultBody: JSON.stringify({
-      projectId: "proj_94821a3b8c",
-      prompt: "Analyze the repository, fix missing Dockerfile dependencies, and deploy to port 3000",
-      autoApply: true
-    }, null, 2),
-    authType: 'x-api-key',
-    authDesc: 'API key authentication. Use YOUR-GENERATED-API-KEY or Bearer token.',
-    authSample: 'x-api-key <token>',
-    authLocation: 'header',
-    bodyType: 'application/json',
-    params: [
-      {
-        name: 'projectId',
-        required: true,
-        type: 'string',
-        desc: 'Target application ID.',
-        constraint: 'String'
-      },
-      {
-        name: 'prompt',
-        required: true,
-        type: 'string',
-        desc: 'Natural language deployment instruction or diagnostic prompt.',
-        constraint: 'Length 1 <= length <= 2000'
-      },
-      {
-        name: 'autoApply',
-        required: false,
-        type: 'boolean',
-        desc: 'Whether the agent can automatically modify files and trigger builds.',
-        constraint: 'Default: false'
-      }
-    ],
-    responseStatus: '200 OK',
-    responseBody: JSON.stringify({ event: "plan", steps: ["Inspect package.json", "Create Dockerfile", "Run Build", "Verify Health"] }, null, 2),
-    prev: { title: 'Live SSE Logs', page: 'api-logs-stream', desc: 'Log streaming.' },
-    next: { title: 'API Tokens', page: 'api-auth-tokens', desc: 'Token creation.' },
+    method: "POST",
+    path: "post/agent/stream",
+    realPath: "/api/agent/stream",
+    summary: "run autonomous AI deployment agent with live step streaming ,",
+    pills: ["prompt", "projectId", "autoApply?"],
+    desc: "using this api , syte AI agent will analyze repository structure, fix missing configurations, and deploy applications",
+    codeFilename: "agent-stream.ts",
+    codeSnippet: `const res = await fetch('/api/agent/stream', {
+  method: 'POST',
+  body: JSON.stringify({ projectId: '<uuid>', prompt: 'Fix build errors and deploy' }),
+});`,
+    responseJson: `event: plan\ndata: {"steps":["Inspect files","Fix Dockerfile","Deploy"]}\n\nevent: step\ndata: {"step":1,"status":"done"}`,
+    prev: {"title": "System Update", "page": "api-system-update"},
+    next: {"title": "AI Code Diagnostics", "page": "api-agent-analyze"},
     updated: '03/09/2026',
   },
-
-  'api-auth-tokens': {
+  'api-agent-analyze': {
     isApiDetail: true,
-    groupName: 'Streaming & Auth',
-    endpointTitle: 'API Tokens',
-    lead: 'Create programmatic authentication tokens for automated deployments and third-party integrations.',
-    method: 'POST',
-    path: '/api/tokens',
-    defaultAuthToken: 'YOUR-API-KEY',
-    defaultBody: JSON.stringify({
-      name: "GitHub Actions CI",
-      expiresInDays: 90
-    }, null, 2),
-    authType: 'x-api-key',
-    authDesc: 'Admin session or existing API Key required.',
-    authSample: 'x-api-key <token>',
-    authLocation: 'header',
-    bodyType: 'application/json',
-    params: [
-      {
-        name: 'name',
-        required: true,
-        type: 'string',
-        desc: 'Descriptive name for the API token.',
-        constraint: 'Length 1 <= length <= 64'
-      },
-      {
-        name: 'expiresInDays',
-        required: false,
-        type: 'integer',
-        desc: 'Expiration duration in days. Set 0 for never-expiring.',
-        constraint: '0 <= days <= 365'
-      }
-    ],
-    responseStatus: '200 OK',
-    responseBody: JSON.stringify({
-      token: "syte_live_sec_99a8c17b5e4312da98f01b",
-      name: "GitHub Actions CI",
-      createdAt: "2026-09-13T00:00:00Z"
-    }, null, 2),
-    prev: { title: 'AI Deployer Stream', page: 'api-agent-stream', desc: 'AI agent.' },
-    next: { title: 'Install Syte', page: 'qs-install', desc: 'Quickstart.' },
+    method: "POST",
+    path: "post/<uuid>/analyze",
+    realPath: "/api/projects/{project_id}/analyze",
+    summary: "run AI diagnostic analysis on workspace files and logs ,",
+    pills: ["projectID?", "focus?"],
+    desc: "using this api , syte will analyze logs and output recommended optimizations on the specified <a href=\"#params\" class=\"docs-api-link\">UUID</a>",
+    codeFilename: "analyze.ts",
+    codeSnippet: `const analysis = await fetch('/api/projects/<uuid>/analyze', { method: 'POST' }).then(r => r.json());`,
+    responseJson: `{ "framework": "Next.js", "nodeVersion": "20.x", "recommendedPort": 3000 }`,
+    prev: {"title": "AI Agent Stream", "page": "api-agent-stream"},
+    next: {"title": "QuickStart", "page": "qs-install"},
     updated: '03/09/2026',
-  }
+  },
 };
 
-function renderDocsView() {
+function renderDocsView(){
   setupDocsEventsOnce();
   showDocsPage(activeDocsPage || 'qs-install');
 }
@@ -16606,164 +16893,55 @@ function showDocsPage(pageKey) {
   }
   navCardsHtml += '</div>';
 
-  if (data.isApiDetail) {
-    // Render minimalist, high-readability API endpoint detail layout
-    const originUrl = window.location.origin + '/api';
-    let paramsHtml = '';
-    if (data.params && data.params.length > 0) {
-      paramsHtml = data.params.map(p => `
-        <div class="docs-api-param-card">
-          <div class="docs-api-param-card-head">
-            <code class="param-name">${escapeHtml(p.name)}</code>
-            <span class="${p.required ? 'param-req-badge' : 'param-opt-badge'}">${p.required ? 'required' : 'optional'}</span>
-            <span class="param-type">${escapeHtml(p.type)}</span>
-          </div>
-          <p class="param-desc">${escapeHtml(p.desc)}</p>
-          <div class="param-constraint-box">
-            <span>${escapeHtml(p.constraint)}</span>
-            <button type="button" class="docs-icon-btn" onclick="copySnippet(this, '${escapeHtml(p.constraint)}')" title="Copy constraint">
-              <i data-lucide="copy" style="width:13px;height:13px;"></i>
-            </button>
-          </div>
-        </div>
-      `).join('');
-    }
-
-    let bodyDrawerHtml = '';
-    if (data.bodyType !== 'none') {
-      bodyDrawerHtml = `
-        <details class="docs-api-subcollapse" open>
-          <summary class="docs-api-subcollapse-head">
-            <div class="docs-api-subcollapse-title">
-              <i data-lucide="file-text" style="width:14px;height:14px;"></i>
-              <span>Body (JSON)</span>
-            </div>
-            <i data-lucide="chevron-down" class="docs-api-subcollapse-chev"></i>
-          </summary>
-          <div class="docs-api-subcollapse-body">
-            <textarea class="docs-api-json-textarea" id="body-json-${pageKey}" rows="5">${escapeHtml(data.defaultBody || '')}</textarea>
-          </div>
-        </details>
-      `;
-    }
+  if (data.isApiDetail || (data.method && data.path)) {
+    // Render exact layout from media_1789303525729.jpg
+    const pillsHtml = (data.pills || []).map(p => `
+      <span class="docs-api-pill ${p.includes('!') ? 'required' : ''}">${escapeHtml(p)}</span>
+    `).join('');
 
     container.innerHTML = `
-      <div class="docs-api-breadcrumb">
-        API <span>&gt;</span> ${escapeHtml(data.groupName || 'Applications')} <span>&gt;</span> ${escapeHtml(data.endpointTitle || 'Endpoint')}
-      </div>
-
-      <div class="docs-api-top-action-row">
-        <span class="docs-api-ref-badge">API REFERENCE</span>
-        <button type="button" class="docs-copy-md-btn" onclick="copyApiEndpointMarkdown('${pageKey}')">
+      <div class="docs-actions-bar" style="margin-bottom:18px;">
+        <button type="button" class="docs-pill-btn" id="docs-copy-markdown-btn">
           <i data-lucide="copy" style="width:13px;height:13px;"></i>
-          <span>Copy as Markdown</span>
+          <span>Copy Markdown</span>
+        </button>
+        <button type="button" class="docs-pill-btn" id="docs-open-submenus-btn">
+          <span>Open Sidebar</span>
+          <i data-lucide="chevron-down" style="width:13px;height:13px;"></i>
         </button>
       </div>
 
-      <h1 class="docs-api-detail-title">${escapeHtml(data.groupName || 'Application')}</h1>
-      <h2 class="docs-api-detail-sub">${escapeHtml(data.endpointTitle || 'Endpoint')}</h2>
-      <p class="docs-api-detail-desc">${escapeHtml(data.lead || '')}</p>
+      <div class="docs-api-header-row">
+        <span class="docs-api-method-badge ${(data.method || 'GET').toLowerCase()}">${escapeHtml(data.method || 'GET')}</span>
+        <span class="docs-api-path">${escapeHtml(data.path || '/api/projects')}</span>
+      </div>
 
-      <!-- Minimalist Interactive Request Card -->
-      <div class="docs-api-req-card">
-        <div class="docs-api-url-row">
-          <span class="docs-api-url-val">${escapeHtml(originUrl)}</span>
-          <button type="button" class="docs-icon-btn" onclick="copySnippet(this, '${escapeHtml(originUrl)}')" title="Copy Base URL">
-            <i data-lucide="copy" style="width:13px;height:13px;"></i>
+      <p class="docs-api-summary">${escapeHtml(data.summary || data.lead || '')}</p>
+
+      <div class="docs-api-pills-row">
+        ${pillsHtml}
+      </div>
+
+      <p class="docs-api-desc">${data.desc || data.lead || ''}</p>
+
+      <div class="docs-code-block" style="margin:20px 0 28px;">
+        <div class="docs-code-block-header">
+          <div class="docs-code-title">
+            <span>${escapeHtml(data.codeFilename || 'source.config.ts')}</span>
+          </div>
+          <button type="button" class="docs-code-copy-btn" onclick="copySnippet(this, \`${escapeHtml(data.codeSnippet || '').replace(/`/g, '\\`')}\`)" title="Copy snippet">
+            <i data-lucide="clipboard" style="width:15px;height:15px;"></i>
           </button>
         </div>
-
-        <div class="docs-api-exec-row">
-          <span class="docs-api-method-pill ${(data.method || 'post').toLowerCase()}">${escapeHtml(data.method || 'POST')}</span>
-          <span class="docs-api-endpoint-path">${escapeHtml(data.path)}</span>
-          <button type="button" class="docs-api-send-btn" onclick="sendInteractiveApiRequest('${pageKey}')">
-            <i data-lucide="send" style="width:13px;height:13px;"></i>
-            <span>Send</span>
-          </button>
-        </div>
-
-        <details class="docs-api-subcollapse" open>
-          <summary class="docs-api-subcollapse-head">
-            <div class="docs-api-subcollapse-title">
-              <i data-lucide="lock" style="width:14px;height:14px;"></i>
-              <span>Authorization</span>
-            </div>
-            <i data-lucide="chevron-down" class="docs-api-subcollapse-chev"></i>
-          </summary>
-          <div class="docs-api-subcollapse-body">
-            <div class="docs-api-input-wrap">
-              <input type="text" class="docs-api-text-input" id="auth-token-input-${pageKey}" value="${escapeHtml(data.defaultAuthToken || 'YOUR-API-KEY')}" placeholder="API Key or Bearer Token" />
-            </div>
-          </div>
-        </details>
-
-        ${bodyDrawerHtml}
-
-        <!-- Live Response Console -->
-        <div class="docs-api-response-live hidden" id="response-box-${pageKey}">
-          <div class="docs-api-response-live-head">
-            <div class="docs-api-res-status">
-              <span class="badge-200" id="response-status-${pageKey}">200 OK</span>
-              <span class="res-time" id="response-time-${pageKey}">38ms</span>
-            </div>
-            <button type="button" class="docs-code-copy-btn" onclick="copyResponseOutput('${pageKey}')">
-              <i data-lucide="copy" style="width:12px;height:12px;"></i><span>Copy Response</span>
-            </button>
-          </div>
-          <pre class="docs-api-response-code"><code id="response-code-${pageKey}"></code></pre>
+        <div class="docs-code-body">
+          <pre class="docs-code-text" style="color:#2563eb;margin:0;"><code>${escapeHtml(data.codeSnippet || '')}</code></pre>
         </div>
       </div>
 
-      <!-- Minimalist Authorization Specification -->
-      <div class="docs-api-section-header">
-        <h3>Authorization</h3>
-        <span class="docs-api-type-tag">${escapeHtml(data.authType || 'x-api-key')}</span>
-      </div>
-      <p class="docs-api-section-desc">${escapeHtml(data.authDesc || 'API key authentication.')}</p>
+      <h3 class="docs-api-res-title">response body /</h3>
+      <pre class="docs-api-res-box"><code>${escapeHtml(data.responseJson || '{}')}</code></pre>
 
-      <div class="docs-api-sample-box">
-        <div class="docs-api-sample-code">
-          <span class="docs-api-sample-key">${escapeHtml(data.authType || 'x-api-key')}</span>
-          <span class="docs-api-sample-val">&lt;token&gt;</span>
-        </div>
-        <button type="button" class="docs-icon-btn" onclick="copySnippet(this, '${escapeHtml(data.authType || 'x-api-key')}: <token>')" title="Copy header syntax">
-          <i data-lucide="copy" style="width:14px;height:14px;"></i>
-        </button>
-      </div>
-      <div class="docs-api-in-header-badge">In: <code>${escapeHtml(data.authLocation || 'header')}</code></div>
-
-      <!-- Minimalist Request Body Specification -->
-      ${data.bodyType !== 'none' ? `
-        <div class="docs-api-section-header">
-          <h3>Request Body</h3>
-          <span class="docs-api-type-tag">${escapeHtml(data.bodyType || 'application/json')}</span>
-        </div>
-        <div class="docs-api-param-cards-list">
-          ${paramsHtml}
-        </div>
-      ` : ''}
-
-      <!-- Minimalist Responses Section -->
-      <div class="docs-api-section-header" style="margin-top:28px;">
-        <h3>Responses</h3>
-        <span class="docs-api-type-tag">${escapeHtml(data.responseStatus || '200 OK')}</span>
-      </div>
-      <div class="docs-api-param-card">
-        <div class="docs-api-param-card-head">
-          <span class="param-status-badge status-200" style="background:rgba(16,185,129,0.15);color:#10b981;font-weight:700;padding:2px 7px;border-radius:5px;">${escapeHtml(data.responseStatus || '200 OK')}</span>
-          <span class="param-type">${escapeHtml(data.bodyType || 'application/json')}</span>
-        </div>
-        <p class="param-desc">Success response returned by Syte instance.</p>
-        <div class="docs-code-block" style="margin-top:10px;">
-          <div class="docs-code-header">
-            <span class="docs-code-title">Response Schema</span>
-            <button type="button" class="docs-code-copy-btn" onclick="copySnippet(this, \`${escapeHtml(data.responseBody || '').replace(/`/g, '\\`')}\`)"><i data-lucide="copy"></i><span>Copy</span></button>
-          </div>
-          <pre class="docs-code-pre"><code>${escapeHtml(data.responseBody || '')}</code></pre>
-        </div>
-      </div>
-
-      <div class="docs-feedback-row" style="margin-top:32px;">
+      <div class="docs-feedback-row" style="margin-top:40px;">
         <span class="docs-feedback-title">How is this guide?</span>
         <div class="docs-feedback-btns">
           <button type="button" class="docs-feedback-btn ${docsFeedbackState === 'good' ? 'active' : ''}" id="docs-feedback-good">
@@ -16782,8 +16960,7 @@ function showDocsPage(pageKey) {
       ${navCardsHtml}
     `;
   } else {
-    // Render standard documentation prose page
-    let heroHtml = '';
+    // Render standard documentation prose page let heroHtml = '';
     if (data.hasHero) {
       heroHtml = `
         <div class="docs-hero-panel">

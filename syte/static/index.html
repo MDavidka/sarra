@@ -2186,29 +2186,133 @@
                     </div>
                   </div>
 
-                  <div class="docs-nav-group">
+                                    <div class="docs-nav-group">
                     <div class="docs-nav-group-title">API Reference</div>
                     <div class="docs-nav-links">
-                      <div class="docs-nav-parent" data-parent="api-core">
+                      <!-- 1. Applications & Projects -->
+                      <div class="docs-nav-parent" data-parent="api-projects">
                         <span>Applications</span>
                         <i data-lucide="chevron-right" class="docs-parent-chevron"></i>
                       </div>
-                      <div class="docs-nav-subitems" data-subitems-for="api-core">
-                        <a class="docs-nav-item" data-docs-page="api-all"><span>Overview</span></a>
-                        <a class="docs-nav-item" data-docs-page="api-app-create"><span>Application create</span></a>
-                        <a class="docs-nav-item" data-docs-page="api-app-deploy"><span>Application deploy</span></a>
-                        <a class="docs-nav-item" data-docs-page="api-app-list"><span>Application list</span></a>
-                        <a class="docs-nav-item" data-docs-page="api-app-env"><span>Application env</span></a>
-                        <a class="docs-nav-item" data-docs-page="api-app-domain"><span>Application domain</span></a>
+                      <div class="docs-nav-subitems" data-subitems-for="api-projects">
+                        <a class="docs-nav-item" data-docs-page="api-projects-get"><span>Get Project</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-list"><span>List Projects</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-create"><span>Create Project</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-update"><span>Update Project</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-delete"><span>Delete Project</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-start"><span>Start Container</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-stop"><span>Stop Container</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-health"><span>Project Health</span></a>
                       </div>
-                      <div class="docs-nav-parent" data-parent="api-advanced">
-                        <span>Streaming &amp; Auth</span>
+
+                      <!-- 2. Deployments & Logs -->
+                      <div class="docs-nav-parent" data-parent="api-deployments">
+                        <span>Deployments &amp; Logs</span>
                         <i data-lucide="chevron-right" class="docs-parent-chevron"></i>
                       </div>
-                      <div class="docs-nav-subitems" data-subitems-for="api-advanced">
-                        <a class="docs-nav-item" data-docs-page="api-logs-stream"><span>Live SSE Logs</span></a>
-                        <a class="docs-nav-item" data-docs-page="api-agent-stream"><span>AI Deployer Stream</span></a>
-                        <a class="docs-nav-item" data-docs-page="api-auth-tokens"><span>API Tokens</span></a>
+                      <div class="docs-nav-subitems" data-subitems-for="api-deployments">
+                        <a class="docs-nav-item" data-docs-page="api-deploy-trigger"><span>Deploy Application</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-builds-list"><span>List Builds</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-builds-logs"><span>Build Logs</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-logs-container"><span>Container Logs</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-logs-stream"><span>Live SSE Stream</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-deploy-rollback"><span>Rollback Release</span></a>
+                      </div>
+
+                      <!-- 3. Environment & Secrets -->
+                      <div class="docs-nav-parent" data-parent="api-env">
+                        <span>Environment &amp; Config</span>
+                        <i data-lucide="chevron-right" class="docs-parent-chevron"></i>
+                      </div>
+                      <div class="docs-nav-subitems" data-subitems-for="api-env">
+                        <a class="docs-nav-item" data-docs-page="api-env-set"><span>Set Variables</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-env-delete"><span>Delete Variable</span></a>
+                      </div>
+
+                      <!-- 4. Domains & SSL -->
+                      <div class="docs-nav-parent" data-parent="api-domains">
+                        <span>Domains &amp; SSL</span>
+                        <i data-lucide="chevron-right" class="docs-parent-chevron"></i>
+                      </div>
+                      <div class="docs-nav-subitems" data-subitems-for="api-domains">
+                        <a class="docs-nav-item" data-docs-page="api-domain-add"><span>Bind Domain</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-domain-remove"><span>Remove Domain</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-ssl-status"><span>SSL Status</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-cert-issue"><span>Issue Certificate</span></a>
+                      </div>
+
+                      <!-- 5. Git Integration -->
+                      <div class="docs-nav-parent" data-parent="api-git">
+                        <span>Git Integration</span>
+                        <i data-lucide="chevron-right" class="docs-parent-chevron"></i>
+                      </div>
+                      <div class="docs-nav-subitems" data-subitems-for="api-git">
+                        <a class="docs-nav-item" data-docs-page="api-git-status"><span>GitHub Status</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-git-import-gh"><span>Import GitHub Repo</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-git-import-zip"><span>Import ZIP Archive</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-git-repos"><span>List Repositories</span></a>
+                      </div>
+
+                      <!-- 6. Workspace Files -->
+                      <div class="docs-nav-parent" data-parent="api-workspace">
+                        <span>Workspace Files</span>
+                        <i data-lucide="chevron-right" class="docs-parent-chevron"></i>
+                      </div>
+                      <div class="docs-nav-subitems" data-subitems-for="api-workspace">
+                        <a class="docs-nav-item" data-docs-page="api-fs-files"><span>List Files</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-fs-read"><span>Read File</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-fs-write"><span>Write File</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-fs-mkdir"><span>Create Directory</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-fs-delete"><span>Delete File</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-fs-upload"><span>Upload File</span></a>
+                      </div>
+
+                      <!-- 7. Routing & Redirects -->
+                      <div class="docs-nav-parent" data-parent="api-routing">
+                        <span>Traffic &amp; Redirects</span>
+                        <i data-lucide="chevron-right" class="docs-parent-chevron"></i>
+                      </div>
+                      <div class="docs-nav-subitems" data-subitems-for="api-routing">
+                        <a class="docs-nav-item" data-docs-page="api-redirects-list"><span>List Redirects</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-redirects-create"><span>Create Redirect</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-redirects-delete"><span>Delete Redirect</span></a>
+                      </div>
+
+                      <!-- 8. Analytics & Stats -->
+                      <div class="docs-nav-parent" data-parent="api-analytics">
+                        <span>Stats &amp; Analytics</span>
+                        <i data-lucide="chevron-right" class="docs-parent-chevron"></i>
+                      </div>
+                      <div class="docs-nav-subitems" data-subitems-for="api-analytics">
+                        <a class="docs-nav-item" data-docs-page="api-stats-resources"><span>Resource Stats</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-stats-perf"><span>Performance Metrics</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-stats-visitors"><span>Visitor Traffic</span></a>
+                      </div>
+
+                      <!-- 9. Auth & API Tokens -->
+                      <div class="docs-nav-parent" data-parent="api-auth">
+                        <span>Auth &amp; API Tokens</span>
+                        <i data-lucide="chevron-right" class="docs-parent-chevron"></i>
+                      </div>
+                      <div class="docs-nav-subitems" data-subitems-for="api-auth">
+                        <a class="docs-nav-item" data-docs-page="api-auth-login"><span>User Login</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-auth-session"><span>Check Session</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-tokens-list"><span>List Tokens</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-tokens-create"><span>Create Token</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-tokens-delete"><span>Revoke Token</span></a>
+                      </div>
+
+                      <!-- 10. System & AI Agent -->
+                      <div class="docs-nav-parent" data-parent="api-system">
+                        <span>System &amp; AI Agent</span>
+                        <i data-lucide="chevron-right" class="docs-parent-chevron"></i>
+                      </div>
+                      <div class="docs-nav-subitems" data-subitems-for="api-system">
+                        <a class="docs-nav-item" data-docs-page="api-system-health"><span>Health Check</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-system-info"><span>System Stats</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-system-update"><span>System Update</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-agent-stream"><span>AI Agent Stream</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-agent-analyze"><span>AI Code Diagnostics</span></a>
                       </div>
                     </div>
                   </div>
