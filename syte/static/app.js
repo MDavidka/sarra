@@ -23952,355 +23952,460 @@ window.runInteractiveApiTest = function(pageKey) {
   }, 280);
 };
 
-// Global unified renderer for any API endpoint
+// Global unified renderer matching media_1789314620588.png
+// TypeScript SVG icon derived from uploaded media_1789314827179.webp
+const TS_ICON_SVG = `<svg class="docs-photo-ts-icon" viewBox="0 0 512 512" width="16" height="16" aria-hidden="true"><rect width="512" height="512" fill="#3178c6" rx="40"/><path fill="#ffffff" d="M115 178h138v34h-52v184h-34V212h-52v-34zm177 186c16 9 33 14 52 14 28 0 45-14 45-35 0-21-15-31-42-42-36-14-60-30-60-67 0-36 29-63 74-63 22 0 41 5 54 12l-13 33c-13-7-27-11-41-11-26 0-40 14-40 31 0 19 15 29 41 40 39 15 61 31 61 69 0 38-29 66-78 66-27 0-51-7-66-16l13-31z"/></svg>`;
+
+// Generates a complete, tailored React/TypeScript TSX file for any endpoint
+function generateTsxSnippet(ep) {
+  const pathParts = ep.path.split('/').filter(p => p && p !== 'api');
+  const baseName = pathParts.map(p => p.replace(/[{}:-]/g, '')).map(p => p.charAt(0).toUpperCase() + p.slice(1)).join('') || 'Service';
+  const methodName = ep.method.charAt(0).toUpperCase() + ep.method.slice(1).toLowerCase();
+  const componentName = `${baseName}${methodName}`;
+  const lastPart = (pathParts[pathParts.length - 1] || 'api').replace(/[{}:-]/g, '');
+  const fileName = `${lastPart || 'api'}.tsx`;
+
+  const allParams = [...(ep.pathParams || []), ...(ep.queryParams || []), ...(ep.bodyParams || [])];
+  const isPostOrPut = ['POST', 'PUT', 'PATCH'].includes(ep.method);
+
+  let bodyProps = [];
+  if (ep.bodyParams && ep.bodyParams.length > 0) {
+    ep.bodyParams.forEach(b => {
+      bodyProps.push(`    ${b.name}: ${b.type === 'integer' ? '3000' : (b.type === 'boolean' ? 'true' : `'example_${b.name}'`)},`);
+    });
+  }
+
+  let code = `import React, { useState, useEffect } from 'react';\n\n`;
+
+  if (allParams.length > 0) {
+    code += `interface ${baseName}Params {\n`;
+    allParams.forEach(p => {
+      const tsType = p.type === 'integer' ? 'number' : (p.type === 'boolean' ? 'boolean' : (p.type === 'array' ? 'string[]' : 'string'));
+      code += `  ${p.name}${p.required ? '' : '?'}: ${tsType};\n`;
+    });
+    code += `}\n\n`;
+  }
+
+  code += `interface ${baseName}Response {\n`;
+  if (ep.responseSchema && ep.responseSchema.length > 0) {
+    ep.responseSchema.forEach(s => {
+      const tsType = s.type === 'integer' ? 'number' : (s.type === 'boolean' ? 'boolean' : (s.type === 'array' ? 'string[]' : 'string'));
+      code += `  ${s.name}?: ${tsType};\n`;
+    });
+  } else {
+    code += `  status: string;\n  data?: any;\n`;
+  }
+  code += `}\n\n`;
+
+  code += `export function ${componentName}(): JSX.Element {\n`;
+  code += `  const [data, setData] = useState<${baseName}Response | null>(null);\n`;
+  code += `  const [loading, setLoading] = useState<boolean>(false);\n`;
+  code += `  const [error, setError] = useState<string | null>(null);\n\n`;
+  code += `  async function executeCall() {\n`;
+  code += `    setLoading(true);\n`;
+  code += `    setError(null);\n`;
+  code += `    try {\n`;
+
+  if (isPostOrPut && bodyProps.length > 0) {
+    code += `      const payload = {\n`;
+    code += bodyProps.join('\n') + '\n';
+    code += `      };\n`;
+    code += `+     const res = await fetch('${ep.path}', {\n`;
+    code += `+       method: '${ep.method}',\n`;
+    code += `+       headers: {\n`;
+    code += `+         'Authorization': \`Bearer \${process.env.NEXT_PUBLIC_SYTE_KEY}\`,\n`;
+    code += `+         'Content-Type': 'application/json'\n`;
+    code += `+       },\n`;
+    code += `+       body: JSON.stringify(payload)\n`;
+    code += `+     });\n`;
+  } else {
+    code += `+     const res = await fetch('${ep.path}', {\n`;
+    code += `+       method: '${ep.method}',\n`;
+    code += `+       headers: {\n`;
+    code += `+         'Authorization': \`Bearer \${process.env.NEXT_PUBLIC_SYTE_KEY}\`,\n`;
+    code += `+         'Content-Type': 'application/json'\n`;
+    code += `+       }\n`;
+    code += `+     });\n`;
+  }
+
+  code += `      if (!res.ok) throw new Error(\`HTTP \${res.status}: \${res.statusText}\`);\n`;
+  code += `      const json: ${baseName}Response = await res.json();\n`;
+  code += `      setData(json);\n`;
+  code += `    } catch (err: any) {\n`;
+  code += `      setError(err.message || 'Call failed');\n`;
+  code += `    } finally {\n`;
+  code += `      setLoading(false);\n`;
+  code += `    }\n`;
+  code += `  }\n\n`;
+  code += `  return (\n`;
+  code += `    <div className="p-4 rounded-xl border bg-white shadow-sm">\n`;
+  code += `      <div className="flex items-center justify-between mb-3">\n`;
+  code += `        <span className="font-mono text-sm font-semibold">${ep.method} ${ep.path}</span>\n`;
+  code += `        <button onClick={executeCall} disabled={loading} className="btn-primary">\n`;
+  code += `          {loading ? 'Running...' : 'Execute'}\n`;
+  code += `        </button>\n`;
+  code += `      </div>\n`;
+  code += `      {error && <p className="text-red-500 text-xs mt-2">{error}</p>}\n`;
+  code += `      {data && <pre className="text-xs bg-gray-50 p-2 rounded mt-2">{JSON.stringify(data, null, 2)}</pre>}\n`;
+  code += `    </div>\n`;
+  code += `  );\n`;
+  code += `}\n`;
+
+  return { code, fileName };
+}
+
+// Syntax highlighter matching the colors in media_1789314620588.png
+function highlightTsx(code) {
+  const tokenSpec = [
+    { type: 'COMMENT', regex: /^\/\/[^\n]*/ },
+    { type: 'STRING',  regex: /^('[^'\\]*(?:\\.[^'\\]*)*'|"[^"\\]*(?:\\.[^"\\]*)*"|`[^`\\]*(?:\\.[^`\\]*)*`)/ },
+    { type: 'KEYWORD', regex: /^(?:import|export|from|const|let|var|function|return|async|await|try|catch|finally|if|else|type|interface|as|new|typeof|default)\b/ },
+    { type: 'BOOLEAN', regex: /^(?:true|false|null|undefined)\b/ },
+    { type: 'NUMBER',  regex: /^\d+(?:\.\d+)?\b/ },
+    { type: 'JSX_TAG', regex: /^<\/?[a-zA-Z0-9_]+/ },
+    { type: 'IDENT',   regex: /^[a-zA-Z_$][a-zA-Z0-9_$]*/ },
+    { type: 'PUNCT',   regex: /^[{}()[\];,.:<>=+\-*/?&|!~]/ },
+    { type: 'SPACE',   regex: /^[ \t]+/ }
+  ];
+
+  const lines = code.split('\n');
+  return lines.map(rawLine => {
+    let isAdd = false;
+    let lineContent = rawLine;
+    if (lineContent.startsWith('+ ')) {
+      isAdd = true;
+      lineContent = lineContent.substring(2);
+    } else if (lineContent.startsWith('+')) {
+      isAdd = true;
+      lineContent = lineContent.substring(1);
+    }
+
+    let outHtml = '';
+    let remaining = lineContent;
+
+    while (remaining.length > 0) {
+      let matched = false;
+      for (const spec of tokenSpec) {
+        const m = remaining.match(spec.regex);
+        if (m) {
+          const val = m[0];
+          remaining = remaining.substring(val.length);
+          matched = true;
+          const esc = escapeHtml(val);
+
+          if (spec.type === 'COMMENT') {
+            outHtml += '<span class="ts-comm">' + esc + '</span>';
+          } else if (spec.type === 'STRING') {
+            outHtml += '<span class="ts-str">' + esc + '</span>';
+          } else if (spec.type === 'KEYWORD') {
+            outHtml += '<span class="ts-kw">' + esc + '</span>';
+          } else if (spec.type === 'BOOLEAN') {
+            outHtml += '<span class="ts-bool">' + esc + '</span>';
+          } else if (spec.type === 'NUMBER') {
+            outHtml += '<span class="ts-num">' + esc + '</span>';
+          } else if (spec.type === 'JSX_TAG') {
+            outHtml += '<span class="ts-tag">' + esc + '</span>';
+          } else if (spec.type === 'IDENT') {
+            const nextTrimmed = remaining.trimStart();
+            if (nextTrimmed.startsWith('(')) {
+              outHtml += '<span class="ts-fn">' + esc + '</span>';
+            } else if (val[0] === val[0].toUpperCase() && val[0] !== val[0].toLowerCase()) {
+              outHtml += '<span class="ts-type">' + esc + '</span>';
+            } else {
+              outHtml += '<span class="ts-var">' + esc + '</span>';
+            }
+          } else {
+            outHtml += esc;
+          }
+          break;
+        }
+      }
+      if (!matched) {
+        outHtml += escapeHtml(remaining[0]);
+        remaining = remaining.substring(1);
+      }
+    }
+
+    if (isAdd) {
+      return '<div class="ts-line ts-add"><span class="ts-sign">+</span> ' + outHtml + '</div>';
+    }
+    return '<div class="ts-line">' + outHtml + '</div>';
+  }).join('\n');
+}
+
+window.generateTsxSnippet = generateTsxSnippet;
+window.highlightTsx = highlightTsx;
+
+// Interactive handlers for photo layout
+window.togglePhotoStatus = function(btn) {
+  const item = btn.closest('.docs-photo-status-item');
+  if (!item) return;
+  item.classList.toggle('is-open');
+  const body = item.querySelector('.docs-photo-status-body');
+  if (body) {
+    body.style.display = item.classList.contains('is-open') ? 'block' : 'none';
+  }
+};
+
+window.copyPhotoTsx = function(btn, pageKey) {
+  const ep = API_CATALOG[pageKey];
+  if (!ep) return;
+  const tsxData = generateTsxSnippet(ep);
+  navigator.clipboard?.writeText(tsxData.code).then(() => {
+    toast('Copied ' + tsxData.fileName + ' to clipboard');
+  }).catch(() => {
+    toast('Failed to copy');
+  });
+};
+
+window.handleDocsReport = function(pageKey) {
+  const ep = API_CATALOG[pageKey];
+  toast('Feedback report submitted for ' + (ep ? ep.path : pageKey));
+};
+
+window.toggleDocsMoreMenu = function(btn, pageKey) {
+  const ep = API_CATALOG[pageKey];
+  if (!ep) return;
+  const existing = document.getElementById('docs-more-dropdown-menu');
+  if (existing) {
+    existing.remove();
+    return;
+  }
+  const rect = btn.getBoundingClientRect();
+  const menu = document.createElement('div');
+  menu.id = 'docs-more-dropdown-menu';
+  menu.className = 'docs-photo-more-dropdown';
+  menu.style.top = (rect.bottom + window.scrollY + 6) + 'px';
+  menu.style.left = (rect.left + window.scrollX) + 'px';
+  menu.innerHTML = `
+    <button type="button" onclick="copySnippet(this, '${escapeHtml(ep.path)}'); document.getElementById('docs-more-dropdown-menu')?.remove();">
+      <i data-lucide="copy" style="width:13px;height:13px;"></i> Copy Path
+    </button>
+    <button type="button" onclick="copySnippet(this, window.location.origin + '${escapeHtml(ep.path)}'); document.getElementById('docs-more-dropdown-menu')?.remove();">
+      <i data-lucide="link" style="width:13px;height:13px;"></i> Copy Full URL
+    </button>
+    <button type="button" onclick="runInteractiveApiTest('${ep.key}'); document.getElementById('docs-more-dropdown-menu')?.remove();">
+      <i data-lucide="play" style="width:13px;height:13px;"></i> Test in Console
+    </button>
+  `;
+  document.body.appendChild(menu);
+  refreshIcons();
+
+  const closeMenu = (e) => {
+    if (!menu.contains(e.target) && e.target !== btn) {
+      menu.remove();
+      document.removeEventListener('click', closeMenu);
+    }
+  };
+  setTimeout(() => document.addEventListener('click', closeMenu), 50);
+};
+
+window.openDocsSearchModal = function() {
+  const searchInput = document.getElementById('docs-search-input');
+  if (searchInput) {
+    searchInput.focus();
+    searchInput.select();
+  }
+};
+
+window.switchPhotoCodeTab = function(btn, lang, pageKey) {
+  const block = btn.closest('.docs-photo-codeblock');
+  if (!block) return;
+  block.querySelectorAll('.docs-photo-code-tab').forEach(t => t.classList.toggle('active', t === btn));
+  block.querySelectorAll('.docs-photo-code-body-pane').forEach(p => p.classList.toggle('hidden', p.dataset.lang !== lang));
+};
+
+// Exact implementation of the API documentation page matching media_1789314620588.png
 window.renderApiDocPage = function(ep) {
   const container = document.getElementById('docs-main-content');
   if (!container || !ep) return;
 
-  // 1. Build Headers Table
-  let headersHtml = '';
-  if (ep.headers && ep.headers.length > 0) {
-    headersHtml = `
-      <div class="docs-api-section-subhead"><i data-lucide="shield-check"></i> HEADERS &amp; AUTHENTICATION</div>
-      <div class="docs-api-params-table">
-        ${ep.headers.map(h => `
-          <div class="docs-api-param-row">
-            <div class="docs-api-param-meta">
-              <span class="docs-api-param-name">${escapeHtml(h.name)}</span>
-              <span class="docs-api-param-type">${escapeHtml(h.type)}</span>
-              <span class="docs-api-param-badge ${h.required ? 'required' : 'optional'}">${h.required ? 'REQUIRED' : 'OPTIONAL'}</span>
-            </div>
-            <div class="docs-api-param-desc">${escapeHtml(h.desc)}</div>
+  // 1. Determine Previous & Next endpoints in API_CATALOG
+  const allKeys = Object.keys(API_CATALOG);
+  const curIndex = allKeys.indexOf(ep.key);
+  const prevKey = allKeys[(curIndex - 1 + allKeys.length) % allKeys.length];
+  const nextKey = allKeys[(curIndex + 1) % allKeys.length];
+
+  // 2. Build parameters row (aild* string)
+  const allParams = [];
+  if (ep.pathParams) ep.pathParams.forEach(p => allParams.push({ ...p, kind: 'path' }));
+  if (ep.queryParams) ep.queryParams.forEach(p => allParams.push({ ...p, kind: 'query' }));
+  if (ep.bodyParams) ep.bodyParams.forEach(p => allParams.push({ ...p, kind: 'body' }));
+
+  let paramsHtml = '';
+  if (allParams.length > 0) {
+    paramsHtml = `
+      <div class="docs-photo-params-row">
+        ${allParams.map(p => `
+          <div class="docs-photo-param">
+            <span class="docs-photo-param-name">${escapeHtml(p.name)}</span><span class="docs-photo-param-star">${p.required !== false ? '*' : ''}</span>
+            <span class="docs-photo-param-type">${escapeHtml(p.type || 'string')}</span>
           </div>
         `).join('')}
       </div>
     `;
-  }
-
-  // 2. Build Path Params Table
-  let pathParamsHtml = '';
-  if (ep.pathParams && ep.pathParams.length > 0) {
-    pathParamsHtml = `
-      <div class="docs-api-section-subhead"><i data-lucide="split"></i> PATH PARAMETERS</div>
-      <div class="docs-api-params-table">
-        ${ep.pathParams.map(p => `
-          <div class="docs-api-param-row">
-            <div class="docs-api-param-meta">
-              <span class="docs-api-param-name">${escapeHtml(p.name)}</span>
-              <span class="docs-api-param-type">${escapeHtml(p.type)}</span>
-              <span class="docs-api-param-badge ${p.required ? 'required' : 'optional'}">${p.required ? 'REQUIRED' : 'OPTIONAL'}</span>
-            </div>
-            <div class="docs-api-param-desc">${escapeHtml(p.desc)}</div>
-          </div>
-        `).join('')}
-      </div>
-    `;
-  }
-
-  // 3. Build Query Params Table
-  let queryParamsHtml = '';
-  if (ep.queryParams && ep.queryParams.length > 0) {
-    queryParamsHtml = `
-      <div class="docs-api-section-subhead"><i data-lucide="filter"></i> QUERY PARAMETERS</div>
-      <div class="docs-api-params-table">
-        ${ep.queryParams.map(p => `
-          <div class="docs-api-param-row">
-            <div class="docs-api-param-meta">
-              <span class="docs-api-param-name">${escapeHtml(p.name)}</span>
-              <span class="docs-api-param-type">${escapeHtml(p.type)}</span>
-              <span class="docs-api-param-badge ${p.required ? 'required' : 'optional'}">${p.required ? 'REQUIRED' : 'OPTIONAL'}</span>
-            </div>
-            <div class="docs-api-param-desc">${escapeHtml(p.desc)}</div>
-          </div>
-        `).join('')}
-      </div>
-    `;
-  }
-
-  // 4. Build Request Body Table
-  let bodyParamsHtml = '';
-  if (ep.bodyParams && ep.bodyParams.length > 0) {
-    bodyParamsHtml = `
-      <div class="docs-api-section-subhead"><i data-lucide="file-code-2"></i> REQUEST BODY</div>
-      <div class="docs-api-params-table">
-        ${ep.bodyParams.map(p => `
-          <div class="docs-api-param-row">
-            <div class="docs-api-param-meta">
-              <span class="docs-api-param-name">${escapeHtml(p.name)}</span>
-              <span class="docs-api-param-type">${escapeHtml(p.type)}</span>
-              <span class="docs-api-param-badge ${p.required ? 'required' : 'optional'}">${p.required ? 'REQUIRED' : 'OPTIONAL'}</span>
-            </div>
-            <div class="docs-api-param-desc">${escapeHtml(p.desc)}</div>
-          </div>
-        `).join('')}
-      </div>
-    `;
-  }
-
-  let noParamsNotice = '';
-  if (!headersHtml && !pathParamsHtml && !queryParamsHtml && !bodyParamsHtml) {
-    noParamsNotice = '<div class="docs-api-no-params">No headers, parameters, or request body payload required.</div>';
-  }
-
-  // 5. Build Status Codes List
-  let statusCodesHtml = '';
-  if (ep.statusCodes && ep.statusCodes.length > 0) {
-    statusCodesHtml = `
-      <div class="docs-api-section-subhead res-subhead"><i data-lucide="list-checks"></i> HTTP STATUS CODES</div>
-      <div class="docs-api-status-codes-list">
-        ${ep.statusCodes.map(s => {
-          const cls = s.code >= 200 && s.code < 300 ? 's200' : (s.code === 400 ? 's400' : (s.code === 401 ? 's401' : (s.code === 404 ? 's404' : 's500')));
-          return `
-            <div class="docs-api-status-item">
-              <span class="docs-api-status-code-tag ${cls}">${s.code} ${escapeHtml(s.status)}</span>
-              <span class="docs-api-status-desc">${escapeHtml(s.desc)}</span>
-            </div>
-          `;
-        }).join('')}
-      </div>
-    `;
-  }
-
-  // 6. Build Response Schema Table
-  let responseSchemaHtml = '';
-  if (ep.responseSchema && ep.responseSchema.length > 0) {
-    responseSchemaHtml = `
-      <div class="docs-api-section-subhead res-subhead"><i data-lucide="binary"></i> RESPONSE SCHEMA</div>
-      <div class="docs-api-params-table">
-        ${ep.responseSchema.map(p => `
-          <div class="docs-api-param-row">
-            <div class="docs-api-param-meta">
-              <span class="docs-api-param-name">${escapeHtml(p.name)}</span>
-              <span class="docs-api-param-type">${escapeHtml(p.type)}</span>
-            </div>
-            <div class="docs-api-param-desc">${escapeHtml(p.desc)}</div>
-          </div>
-        `).join('')}
-      </div>
-    `;
-  }
-
-  // 7. Multi-language snippets generation
-  const host = window.location.origin || 'https://sycord.site:8787';
-  const fullUrl = `${host}${ep.path}`;
-  const isPostOrPut = ['POST', 'PUT', 'PATCH'].includes(ep.method);
-  
-  // Sample body payload
-  let sampleBodyObj = {};
-  if (ep.bodyParams && ep.bodyParams.length > 0) {
-    ep.bodyParams.forEach(b => {
-      sampleBodyObj[b.name] = b.type === 'integer' ? 3000 : (b.type === 'boolean' ? true : (b.type === 'array' ? [] : (b.name === 'domain' ? 'docs.sycord.site' : 'example_value')));
-    });
-  }
-  const bodyJsonStr = isPostOrPut && Object.keys(sampleBodyObj).length > 0 ? JSON.stringify(sampleBodyObj, null, 2) : '';
-
-  // cURL command
-  let curlCmd = `curl -X ${ep.method} "${fullUrl}"`;
-  if (!ep.auth.includes('Public')) {
-    curlCmd += ` \
-  -H "Authorization: Bearer <your_token>"`;
-  }
-  if (bodyJsonStr) {
-    curlCmd += ` \
-  -H "Content-Type: application/json"`;
-    curlCmd += ` \
-  -d '${JSON.stringify(sampleBodyObj)}'`;
-  }
-
-  // Fetch JS snippet
-  let fetchSnippet = `const response = await fetch('${fullUrl}', {
-  method: '${ep.method}',
-  headers: {
-`;
-  if (!ep.auth.includes('Public')) fetchSnippet += `    'Authorization': 'Bearer <your_token>',
-`;
-  if (bodyJsonStr) fetchSnippet += `    'Content-Type': 'application/json',
-`;
-  fetchSnippet += `  }`;
-  if (bodyJsonStr) {
-    fetchSnippet += `,
-  body: JSON.stringify(${JSON.stringify(sampleBodyObj, null, 4)})`;
-  }
-  fetchSnippet += `
-});
-const result = await response.json();
-console.log(result);`;
-
-  // Python requests snippet
-  let pySnippet = `import requests
-
-url = "${fullUrl}"
-headers = {
-`;
-  if (!ep.auth.includes('Public')) pySnippet += `    "Authorization": "Bearer <your_token>",
-`;
-  if (bodyJsonStr) pySnippet += `    "Content-Type": "application/json",
-`;
-  pySnippet += `}
-`;
-  if (bodyJsonStr) {
-    pySnippet += `payload = ${JSON.stringify(sampleBodyObj, null, 4).replace(/true/g, 'True').replace(/false/g, 'False')}
-
-`;
-    pySnippet += `response = requests.${ep.method.toLowerCase()}(url, json=payload, headers=headers)
-`;
   } else {
-    pySnippet += `
-response = requests.${ep.method.toLowerCase()}(url, headers=headers)
-`;
+    paramsHtml = `
+      <div class="docs-photo-params-row">
+        <div class="docs-photo-param">
+          <span class="docs-photo-param-name">none</span>
+          <span class="docs-photo-param-type">no required parameters</span>
+        </div>
+      </div>
+    `;
   }
-  pySnippet += `print(response.json())`;
 
-  const responseJsonFormatted = typeof ep.responseJson === 'object' ? JSON.stringify(ep.responseJson, null, 2) : (ep.responseJson || '{}');
+  // 3. Build Status codes disclosure list (> 200  application/json)
+  let statusCodesList = ep.statusCodes && ep.statusCodes.length > 0 ? ep.statusCodes : [
+    { code: 200, status: '200 OK', desc: 'Successful response returning data payload.' },
+    { code: 400, status: '400 Bad Request', desc: 'Invalid parameter shape or request body validation error.' },
+    { code: 401, status: '401 Unauthorized', desc: 'Missing or expired Bearer authentication token.' }
+  ];
 
+  let statusCodesHtml = `
+    <div class="docs-photo-status-list">
+      ${statusCodesList.map((s, idx) => `
+        <div class="docs-photo-status-item ${idx === 0 ? 'is-open' : ''}">
+          <button type="button" class="docs-photo-status-head" onclick="togglePhotoStatus(this)">
+            <div class="docs-photo-status-left">
+              <i data-lucide="chevron-right" class="docs-photo-status-chev"></i>
+              <span class="docs-photo-status-code">${s.code}</span>
+            </div>
+            <span class="docs-photo-status-mime">application/json</span>
+          </button>
+          <div class="docs-photo-status-body" style="${idx === 0 ? 'display:block;' : 'display:none;'}">
+            <div class="docs-photo-status-desc">${escapeHtml(s.desc || s.status || '')}</div>
+            ${s.code === 200 && ep.responseSchema && ep.responseSchema.length > 0 ? `
+              <div class="docs-photo-schema-mini">
+                ${ep.responseSchema.map(rs => `
+                  <div class="docs-photo-schema-field">
+                    <code>${escapeHtml(rs.name)}</code>: <span class="ts-type">${escapeHtml(rs.type)}</span> &mdash; <span class="desc">${escapeHtml(rs.desc || '')}</span>
+                  </div>
+                `).join('')}
+              </div>
+            ` : ''}
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+
+  // 4. Generate Prebuilt TSX Codeblock
+  const tsxData = generateTsxSnippet(ep);
+  const highlightedTsxHtml = highlightTsx(tsxData.code);
+
+  // cURL & Fetch alternative snippets for secondary toggle
+  const host = (typeof window !== 'undefined' && window.location && window.location.origin) ? window.location.origin : 'https://sycord.site:8787';
+  const fullUrl = `${host}${ep.path}`;
+  let curlCmd = `curl -X ${ep.method} "${fullUrl}"`;
+  if (!ep.auth.includes('Public')) curlCmd += ` \\\n  -H "Authorization: Bearer <your_token>"`;
+  curlCmd += ` \\\n  -H "Content-Type: application/json"`;
+
+  const methodClass = ep.method.toLowerCase();
+
+  // 5. Render Full Exact Photo Layout
   container.innerHTML = `
-    <!-- Top Pill Header matching media_1789305750389.png -->
-    <div class="docs-api-top-pill-row">
-      <div class="docs-api-top-pill-left">
-        <span class="docs-api-method-badge ${ep.method.toLowerCase()}">${escapeHtml(ep.method)}</span>
-        <span class="docs-api-top-path">${escapeHtml(ep.path)}</span>
-      </div>
-      <button type="button" class="docs-api-top-copy-btn" onclick="copySnippet(this, '${escapeHtml(ep.path)}')" title="Copy endpoint path">
-        <i data-lucide="copy" style="width:13px;height:13px;"></i>
-        <span>Copy</span>
-      </button>
-    </div>
-
-    <h1 class="docs-api-page-title">${escapeHtml(ep.title)}</h1>
-    <p class="docs-api-page-lead">${escapeHtml(ep.summary)}</p>
-
-    <!-- Developer Quick Specs Bar -->
-    <div class="docs-api-dev-specs-bar">
-      <div class="docs-api-spec-chip">
-        <i data-lucide="shield"></i>
-        <span>Auth: <code>${escapeHtml(ep.auth)}</code></span>
-      </div>
-      <div class="docs-api-spec-chip">
-        <i data-lucide="file-text"></i>
-        <span>Format: <code>${escapeHtml(ep.contentType)}</code></span>
-      </div>
-      <div class="docs-api-spec-chip">
-        <i data-lucide="gauge"></i>
-        <span>Rate Limit: <code>${escapeHtml(ep.rateLimit)}</code></span>
-      </div>
-    </div>
-
-    <!-- CARD 1: REQUEST SPECIFICATION (White-Gray Color Palette) -->
-    <div class="docs-api-spec-card">
-      <div class="docs-api-card-header">
-        <div class="docs-api-card-title-group">
-          <i data-lucide="arrow-up-right" class="req"></i>
-          <span class="docs-api-card-heading">REQUEST SPECIFICATION</span>
+    <div class="docs-photo-page-wrap">
+      <!-- 1. Top GET / API searchbar (optimized) -->
+      <div class="docs-photo-top-bar">
+        <div class="docs-photo-top-left">
+          <span class="docs-photo-method-badge ${methodClass}">${escapeHtml(ep.method)}</span>
+          <span class="docs-photo-path">${escapeHtml(ep.path)}</span>
         </div>
-        <span class="docs-api-content-tag">${escapeHtml(ep.contentType || 'none')}</span>
-      </div>
-      <div class="docs-api-card-body">
-        ${headersHtml}
-        ${pathParamsHtml}
-        ${queryParamsHtml}
-        ${bodyParamsHtml}
-        ${noParamsNotice}
-
-        <!-- Multi-Language Code Snippet Box -->
-        <div class="docs-api-section-subhead"><i data-lucide="terminal"></i> CODE EXAMPLES</div>
-        <div class="docs-api-code-terminal">
-          <div class="docs-api-code-terminal-header">
-            <div class="docs-api-terminal-tabs">
-              <button type="button" class="docs-api-tab-btn active" onclick="switchApiSnippetTab(this, 'curl')">
-                <i data-lucide="terminal"></i>
-                <span>cURL</span>
-              </button>
-              <button type="button" class="docs-api-tab-btn" onclick="switchApiSnippetTab(this, 'fetch')">
-                <i data-lucide="code-2"></i>
-                <span>Fetch</span>
-              </button>
-              <button type="button" class="docs-api-tab-btn" onclick="switchApiSnippetTab(this, 'python')">
-                <i data-lucide="file-text"></i>
-                <span>Python</span>
-              </button>
-            </div>
-            <button type="button" class="docs-api-terminal-copy-btn" onclick="copyActiveSnippet(this)" title="Copy active snippet">
-              <i data-lucide="copy" style="width:12px;height:12px;"></i>
-              <span>Copy</span>
-            </button>
-          </div>
-          <div class="docs-api-code-terminal-content">
-            <div class="docs-api-snippet-block" data-lang="curl">
-              <pre><code>${escapeHtml(curlCmd)}</code></pre>
-            </div>
-            <div class="docs-api-snippet-block hidden" data-lang="fetch">
-              <pre><code>${escapeHtml(fetchSnippet)}</code></pre>
-            </div>
-            <div class="docs-api-snippet-block hidden" data-lang="python">
-              <pre><code>${escapeHtml(pySnippet)}</code></pre>
-            </div>
-          </div>
-        </div>
-
-        <div class="docs-api-action-bar">
-          <button type="button" class="docs-api-test-req-btn" onclick="runInteractiveApiTest('${ep.key}')">
-            <i data-lucide="play" style="width:13px;height:13px;"></i>
-            <span>Send Test Request</span>
+        <div class="docs-photo-top-actions">
+          <button type="button" class="docs-photo-search-btn" onclick="openDocsSearchModal()" title="Search endpoints (Ctrl+K)">
+            <i data-lucide="search"></i>
+            <span class="search-label">Search API...</span>
+            <kbd>⌘K</kbd>
+          </button>
+          <button type="button" class="docs-photo-copy-path-btn" onclick="copySnippet(this, '${escapeHtml(ep.path)}')" title="Copy path">
+            <i data-lucide="copy"></i>
           </button>
         </div>
-
-        <div class="docs-api-live-test-output hidden" id="docs-api-live-test-box"></div>
       </div>
-    </div>
 
-    <!-- CARD 2: RESPONSE SPECIFICATION (White-Gray Color Palette) -->
-    <div class="docs-api-spec-card">
-      <div class="docs-api-card-header">
-        <div class="docs-api-card-title-group">
-          <i data-lucide="arrow-down-left" class="res"></i>
-          <span class="docs-api-card-heading">RESPONSE SPECIFICATION</span>
+      <!-- 2. Dual button (Previous / Next) + Report + More -->
+      <div class="docs-photo-btn-bar">
+        <div class="docs-photo-dual-btn">
+          <button type="button" class="docs-photo-btn-prev" onclick="showDocsPage('${prevKey}')" title="Previous endpoint: ${prevKey}">
+            Previous
+          </button>
+          <button type="button" class="docs-photo-btn-next" onclick="showDocsPage('${nextKey}')" title="Next endpoint: ${nextKey}">
+            Next
+          </button>
         </div>
-        <span class="docs-api-status-badge">
-          <span class="docs-api-status-dot"></span>
-          ${escapeHtml(ep.responseStatus || '200 OK')}
-        </span>
+        <button type="button" class="docs-photo-btn-single" onclick="handleDocsReport('${ep.key}')">
+          Report
+        </button>
+        <button type="button" class="docs-photo-btn-more" onclick="toggleDocsMoreMenu(this, '${ep.key}')" title="More actions">
+          &bull;&bull;&bull;
+        </button>
       </div>
-      <div class="docs-api-card-body">
-        ${statusCodesHtml}
-        ${responseSchemaHtml}
 
-        <!-- Example Payload Box -->
-        <div class="docs-api-section-subhead res-subhead"><i data-lucide="check-circle-2"></i> EXAMPLE PAYLOAD</div>
-        <div class="docs-api-code-terminal">
-          <div class="docs-api-code-terminal-header">
-            <div class="docs-api-terminal-tabs">
-              <span class="docs-api-tab-btn active">
-                <i data-lucide="file-json"></i>
-                <span>application/json</span>
-              </span>
-            </div>
-            <button type="button" class="docs-api-terminal-copy-btn" onclick="copyResponseJson('${ep.key}')" title="Copy JSON payload">
-              <i data-lucide="copy" style="width:12px;height:12px;"></i>
-              <span>Copy</span>
+      <!-- 3. Exact Description Paragraph -->
+      <p class="docs-photo-description">
+        ${escapeHtml(ep.summary || '')} ${escapeHtml(ep.desc || 'Returns detailed information and manages configuration, metadata, and runtime state associated with this resource.')}
+      </p>
+
+      <!-- 4. Thin Divider Line -->
+      <hr class="docs-photo-divider" />
+
+      <!-- 5. Parameters Row (aild* string) -->
+      ${paramsHtml}
+
+      <!-- 6. Status Codes List (> 200 application/json) -->
+      ${statusCodesHtml}
+
+      <!-- 7. Prebuilt TSX Codeblock with TS SVG icon and colored syntax -->
+      <div class="docs-photo-codeblock">
+        <div class="docs-photo-code-header">
+          <div class="docs-photo-code-header-left">
+            <span class="docs-photo-ts-icon-wrap">${TS_ICON_SVG}</span>
+            <span class="docs-photo-filename">${escapeHtml(tsxData.fileName)}</span>
+          </div>
+          <div class="docs-photo-code-header-right">
+            <button type="button" class="docs-photo-code-tab active" onclick="switchPhotoCodeTab(this, 'tsx', '${ep.key}')">TSX</button>
+            <button type="button" class="docs-photo-code-tab" onclick="switchPhotoCodeTab(this, 'curl', '${ep.key}')">cURL</button>
+            <button type="button" class="docs-photo-code-copy" onclick="copyPhotoTsx(this, '${ep.key}')" title="Copy code">
+              <i data-lucide="copy"></i>
             </button>
           </div>
-          <div class="docs-api-code-terminal-content">
-            <pre><code>${escapeHtml(responseJsonFormatted)}</code></pre>
-          </div>
+        </div>
+
+        <div class="docs-photo-code-body-pane" data-lang="tsx">
+          <div class="docs-photo-code-body">${highlightTsx(tsxData.code)}</div>
+        </div>
+        <div class="docs-photo-code-body-pane hidden" data-lang="curl">
+          <div class="docs-photo-code-body"><pre><code>${escapeHtml(curlCmd)}</code></pre></div>
         </div>
       </div>
-    </div>
 
-    <div class="docs-feedback-row" style="margin-top:36px;">
-      <span class="docs-feedback-title">How is this API documentation?</span>
-      <div class="docs-feedback-btns">
-        <button type="button" class="docs-feedback-btn ${docsFeedbackState === 'good' ? 'active' : ''}" id="docs-feedback-good">
-          <i data-lucide="thumbs-up" style="width:13px;height:13px;"></i>
-          <span>Good</span>
+      <!-- Secondary interactive request tester -->
+      <div class="docs-photo-test-runner-wrap">
+        <button type="button" class="docs-photo-run-test-btn" onclick="runInteractiveApiTest('${ep.key}')">
+          <i data-lucide="play" style="width:13px;height:13px;"></i>
+          <span>Send Test Request</span>
         </button>
-        <button type="button" class="docs-feedback-btn ${docsFeedbackState === 'bad' ? 'active' : ''}" id="docs-feedback-bad">
-          <i data-lucide="thumbs-down" style="width:13px;height:13px;"></i>
-          <span>Bad</span>
-        </button>
+        <div class="docs-api-live-test-output hidden" id="docs-api-live-test-box"></div>
       </div>
-    </div>
 
-    <p class="docs-last-updated">Last updated on 03/09/2026</p>
+      <!-- Feedback & Updated date -->
+      <div class="docs-feedback-row" style="margin-top:36px;">
+        <span class="docs-feedback-title">How is this API documentation?</span>
+        <div class="docs-feedback-btns">
+          <button type="button" class="docs-feedback-btn ${docsFeedbackState === 'good' ? 'active' : ''}" id="docs-feedback-good">
+            <i data-lucide="thumbs-up" style="width:13px;height:13px;"></i>
+            <span>Good</span>
+          </button>
+          <button type="button" class="docs-feedback-btn ${docsFeedbackState === 'bad' ? 'active' : ''}" id="docs-feedback-bad">
+            <i data-lucide="thumbs-down" style="width:13px;height:13px;"></i>
+            <span>Bad</span>
+          </button>
+        </div>
+      </div>
+
+      <p class="docs-last-updated">Last updated on 03/09/2026</p>
+    </div>
   `;
 
   document.getElementById('docs-feedback-good')?.addEventListener('click', () => {
@@ -24312,13 +24417,16 @@ response = requests.${ep.method.toLowerCase()}(url, headers=headers)
   document.getElementById('docs-feedback-bad')?.addEventListener('click', () => {
     docsFeedbackState = 'bad';
     showDocsPage(ep.key);
-    toast('Feedback recorded. We will improve this API reference.');
+    toast('Feedback recorded.');
   });
 
   container.scrollTop = 0;
   refreshIcons();
 };
 
+window.renderGuideDocPage
+window.renderGuideDocPage
+window.renderGuideDocPage
 window.renderGuideDocPage = function(pageKey, data) {
   const container = document.getElementById('docs-main-content');
   if (!container || !data) return;
