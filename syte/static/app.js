@@ -15500,812 +15500,4311 @@ let activeDocsPage = 'qs-install';
 let docsFeedbackState = null;
 
 const DOCS_DATA = {
-  // ---------------- QuickStart ----------------
-  'qs-install': {
-    title: "QuickStart Installation",
-    lead: "Deploy Syte on any fresh Linux VPS or cloud instance with a single command. Automated configuration sets up Docker, Node.js, and reverse-proxy routing out of the box.",
-    hasHero: true,
-    content: `
-      <p>Syte turns any raw Linux server into a complete autonomous PaaS with zero-downtime deployment pipelines, automatic SSL issuance, and live log streaming.</p>
-
-      <h2>Automated Installation</h2>
-      <p>Run the official installation script on your server as root or a user with sudo privileges:</p>
-
-      <div class="docs-cmd-tabs-card">
-        <div class="docs-cmd-tabs-header">
-          <div class="docs-cmd-tabs-list">
-            <button type="button" class="docs-cmd-tab active" onclick="switchCmdTab(this, 'curl')">curl</button>
-            <button type="button" class="docs-cmd-tab" onclick="switchCmdTab(this, 'wget')">wget</button>
-            <button type="button" class="docs-cmd-tab" onclick="switchCmdTab(this, 'docker')">docker</button>
-            <button type="button" class="docs-cmd-tab" onclick="switchCmdTab(this, 'npm')">npm</button>
-          </div>
-        </div>
-        <div class="docs-cmd-tabs-body">
-          <div class="docs-cmd-snippet active" data-content="curl">
-            <code><span class="cmd-cli">curl</span> <span class="cmd-flag">-fsSL</span> <span class="cmd-arg">https://sycord.site/install.sh</span> | bash</code>
-            <button type="button" class="docs-cmd-copy-btn" onclick="copySnippet(this, 'curl -fsSL https://sycord.site/install.sh | bash')" title="Copy command">
-              <i data-lucide="clipboard" style="width:16px;height:16px;"></i>
-            </button>
-          </div>
-          <div class="docs-cmd-snippet" data-content="wget">
-            <code><span class="cmd-cli">wget</span> <span class="cmd-flag">-qO-</span> <span class="cmd-arg">https://sycord.site/install.sh</span> | bash</code>
-            <button type="button" class="docs-cmd-copy-btn" onclick="copySnippet(this, 'wget -qO- https://sycord.site/install.sh | bash')" title="Copy command">
-              <i data-lucide="clipboard" style="width:16px;height:16px;"></i>
-            </button>
-          </div>
-          <div class="docs-cmd-snippet" data-content="docker">
-            <code><span class="cmd-cli">docker</span> <span class="cmd-action">run</span> <span class="cmd-flag">-d -p 8787:8787 -v /var/run/docker.sock:/var/run/docker.sock</span> <span class="cmd-arg">ghcr.io/mdavidka/syte:latest</span></code>
-            <button type="button" class="docs-cmd-copy-btn" onclick="copySnippet(this, 'docker run -d -p 8787:8787 -v /var/run/docker.sock:/var/run/docker.sock ghcr.io/mdavidka/syte:latest')" title="Copy command">
-              <i data-lucide="clipboard" style="width:16px;height:16px;"></i>
-            </button>
-          </div>
-          <div class="docs-cmd-snippet" data-content="npm">
-            <code><span class="cmd-cli">npm</span> <span class="cmd-action">create</span> <span class="cmd-target">fumadocs-app</span></code>
-            <button type="button" class="docs-cmd-copy-btn" onclick="copySnippet(this, 'npm create fumadocs-app')" title="Copy command">
-              <i data-lucide="clipboard" style="width:16px;height:16px;"></i>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <h2>Minimum System Requirements</h2>
-      <p>Before launching Syte, ensure your hosting environment meets the baseline resource allocation:</p>
-      <ul>
-        <li><strong>Architecture:</strong> x86_64 (Intel / AMD) or arm64 (AWS Graviton, Apple Silicon, Raspberry Pi 4/5).</li>
-        <li><strong>Memory:</strong> 1 GB RAM minimum (2 GB+ recommended for large Next.js and Docker builds).</li>
-        <li><strong>Disk Space:</strong> 10 GB available storage.</li>
-        <li><strong>Operating System:</strong> Ubuntu 22.04 / 24.04 LTS, Debian 12, AlmaLinux 9, or Rocky Linux.</li>
-      </ul>
-
-      <h2>Post-Installation Verification</h2>
-      <p>Once installation finishes, the service runs continuously under systemd. Open your browser and navigate to port 8787 on your server's IP address or domain to complete initial setup.</p>
-    `,
-    prev: {"title": "API Reference", "page": "api-all", "desc": "Explore endpoints."},
-    next: {"title": "Update Guide", "page": "qs-update", "desc": "Keep Syte updated."},
-    updated: '03/09/2026',
+  "qs-install": {
+    "title": "Quickstart & Installation",
+    "lead": "Deploy, configure, and manage high-performance web applications and reverse proxy endpoints with Syte.",
+    "updated": "03/09/2026",
+    "content": "\n      <p>Syte is a modern self-hosted deployment engine built for high-performance Node.js, Python, Static, and Docker applications with native SSL provisioning and edge routing.</p>\n      \n      <div class=\"docs-cmd-card\">\n        <div class=\"docs-cmd-header\">\n          <div class=\"docs-cmd-tabs\">\n            <button class=\"docs-cmd-tab active\" onclick=\"switchCmdTab(this, 'npm')\">npm</button>\n            <button class=\"docs-cmd-tab\" onclick=\"switchCmdTab(this, 'pnpm')\">pnpm</button>\n            <button class=\"docs-cmd-tab\" onclick=\"switchCmdTab(this, 'yarn')\">yarn</button>\n            <button class=\"docs-cmd-tab\" onclick=\"switchCmdTab(this, 'bun')\">bun</button>\n          </div>\n          <button class=\"docs-cmd-copy-btn\" onclick=\"copySnippet(this, 'npm install -g @syte/cli')\" title=\"Copy command\">\n            <i data-lucide=\"clipboard\" style=\"width:14px;height:14px;\"></i>\n          </button>\n        </div>\n        <div class=\"docs-cmd-body\">\n          <pre class=\"docs-cmd-snippet active\" data-content=\"npm\"><code>npm install -g @syte/cli</code></pre>\n          <pre class=\"docs-cmd-snippet\" data-content=\"pnpm\"><code>pnpm add -g @syte/cli</code></pre>\n          <pre class=\"docs-cmd-snippet\" data-content=\"yarn\"><code>yarn global add @syte/cli</code></pre>\n          <pre class=\"docs-cmd-snippet\" data-content=\"bun\"><code>bun add -g @syte/cli</code></pre>\n        </div>\n      </div>\n\n      <h2 class=\"docs-section-h2\">Production Host Installation</h2>\n      <p>Run the automated setup script on your Ubuntu/Debian Linux virtual machine:</p>\n      <div class=\"docs-cmd-card\">\n        <div class=\"docs-cmd-header\">\n          <div class=\"docs-cmd-tabs\"><button class=\"docs-cmd-tab active\">bash</button></div>\n          <button class=\"docs-cmd-copy-btn\" onclick=\"copySnippet(this, 'curl -sSL https://get.syte.dev | bash')\" title=\"Copy command\">\n            <i data-lucide=\"clipboard\" style=\"width:14px;height:14px;\"></i>\n          </button>\n        </div>\n        <div class=\"docs-cmd-body\">\n          <pre class=\"docs-cmd-snippet active\"><code>curl -sSL https://get.syte.dev | bash</code></pre>\n        </div>\n      </div>\n            ",
+    "hasHero": true,
+    "isApi": false
   },
-  'qs-update': {
-    title: "Updating Syte",
-    lead: "Seamlessly update your Syte instance to the latest release with zero downtime for running applications.",
-    hasHero: false,
-    content: `
-      <p>Syte provides built-in automated update channels as well as direct terminal upgrade commands. Containerized user applications continue running uninterrupted during host updates.</p>
-
-      <h2>One-Click Web Upgrade</h2>
-      <p>Navigate to <strong>Settings → System Update</strong> in the dashboard. When a new version is detected, click <em>Update Now</em>. Syte will download the latest assets and reload the control plane in under 3 seconds.</p>
-
-      <h2>Terminal Upgrade Command</h2>
-      <p>You can also pull the latest release directly through the CLI:</p>
-
-      <div class="docs-cmd-tabs-card">
-        <div class="docs-cmd-tabs-header">
-          <div class="docs-cmd-tabs-list">
-            <button type="button" class="docs-cmd-tab active" onclick="switchCmdTab(this, 'curl')">curl</button>
-            <button type="button" class="docs-cmd-tab" onclick="switchCmdTab(this, 'systemctl')">systemctl</button>
-          </div>
-        </div>
-        <div class="docs-cmd-tabs-body">
-          <div class="docs-cmd-snippet active" data-content="curl">
-            <code><span class="cmd-cli">curl</span> <span class="cmd-flag">-fsSL</span> <span class="cmd-arg">https://sycord.site/update.sh</span> | bash</code>
-            <button type="button" class="docs-cmd-copy-btn" onclick="copySnippet(this, 'curl -fsSL https://sycord.site/update.sh | bash')" title="Copy command">
-              <i data-lucide="clipboard" style="width:16px;height:16px;"></i>
-            </button>
-          </div>
-          <div class="docs-cmd-snippet" data-content="systemctl">
-            <code><span class="cmd-cli">systemctl</span> <span class="cmd-action">restart</span> <span class="cmd-target">syte</span></code>
-            <button type="button" class="docs-cmd-copy-btn" onclick="copySnippet(this, 'systemctl restart syte')" title="Copy command">
-              <i data-lucide="clipboard" style="width:16px;height:16px;"></i>
-            </button>
-          </div>
-        </div>
-      </div>
-    `,
-    prev: {"title": "Install", "page": "qs-install", "desc": "Quickstart installation."},
-    next: {"title": "Restart", "page": "qs-restart", "desc": "Manage daemons."},
-    updated: '03/09/2026',
+  "qs-deploy": {
+    "title": "Deploying Your First App",
+    "lead": "Step-by-step instructions to import, build, and deploy your web app.",
+    "updated": "03/09/2026",
+    "content": "\n      <p>Follow these steps to connect your Git repository and deploy in seconds:</p>\n      <div class=\"docs-step-item\">\n        <div class=\"docs-step-num\">1</div>\n        <div class=\"docs-step-content\">\n          <h4>Connect Git or Upload ZIP</h4>\n          <p>Navigate to the Projects dashboard and click <strong>Create Project</strong> or import directly from GitHub.</p>\n        </div>\n      </div>\n      <div class=\"docs-step-item\">\n        <div class=\"docs-step-num\">2</div>\n        <div class=\"docs-step-content\">\n          <h4>Auto Framework Detection</h4>\n          <p>Syte detects Next.js, Vite, Remix, Astro, FastAPI, Django, Express, and Dockerfile projects automatically.</p>\n        </div>\n      </div>\n      <div class=\"docs-step-item\">\n        <div class=\"docs-step-num\">3</div>\n        <div class=\"docs-step-content\">\n          <h4>Live Production Deployment</h4>\n          <p>Click <strong>Deploy</strong> to trigger automated container building and edge proxy configuration.</p>\n        </div>\n      </div>\n            ",
+    "hasHero": false,
+    "isApi": false
   },
-  'qs-restart': {
-    title: "Restarting Services",
-    lead: "Manage and cycle the Syte runtime engine, background supervisors, and Caddy reverse proxy.",
-    hasHero: false,
-    content: `
-      <p>When changing host-level networking rules or installing system updates, you can safely restart the management daemon without restarting existing app containers.</p>
-
-      <h2>Service Management Commands</h2>
-      <p>Use standard systemd commands to manage the host service:</p>
-
-      <div class="docs-cmd-tabs-card">
-        <div class="docs-cmd-tabs-header">
-          <div class="docs-cmd-tabs-list">
-            <button type="button" class="docs-cmd-tab active" onclick="switchCmdTab(this, 'restart')">restart</button>
-            <button type="button" class="docs-cmd-tab" onclick="switchCmdTab(this, 'status')">status</button>
-            <button type="button" class="docs-cmd-tab" onclick="switchCmdTab(this, 'stop')">stop</button>
-          </div>
-        </div>
-        <div class="docs-cmd-tabs-body">
-          <div class="docs-cmd-snippet active" data-content="restart">
-            <code><span class="cmd-cli">systemctl</span> <span class="cmd-action">restart</span> <span class="cmd-target">syte</span></code>
-            <button type="button" class="docs-cmd-copy-btn" onclick="copySnippet(this, 'systemctl restart syte')" title="Copy command">
-              <i data-lucide="clipboard" style="width:16px;height:16px;"></i>
-            </button>
-          </div>
-          <div class="docs-cmd-snippet" data-content="status">
-            <code><span class="cmd-cli">systemctl</span> <span class="cmd-action">status</span> <span class="cmd-target">syte</span></code>
-            <button type="button" class="docs-cmd-copy-btn" onclick="copySnippet(this, 'systemctl status syte')" title="Copy command">
-              <i data-lucide="clipboard" style="width:16px;height:16px;"></i>
-            </button>
-          </div>
-          <div class="docs-cmd-snippet" data-content="stop">
-            <code><span class="cmd-cli">systemctl</span> <span class="cmd-action">stop</span> <span class="cmd-target">syte</span></code>
-            <button type="button" class="docs-cmd-copy-btn" onclick="copySnippet(this, 'systemctl stop syte')" title="Copy command">
-              <i data-lucide="clipboard" style="width:16px;height:16px;"></i>
-            </button>
-          </div>
-        </div>
-      </div>
-    `,
-    prev: {"title": "Update", "page": "qs-update", "desc": "Update guide."},
-    next: {"title": "Debug", "page": "qs-debug", "desc": "Troubleshooting logs."},
-    updated: '03/09/2026',
+  "qs-custom-domain": {
+    "title": "Custom Domains & DNS",
+    "lead": "Configure custom apex or subdomains with automated Let's Encrypt TLS certificates.",
+    "updated": "03/09/2026",
+    "content": "\n      <p>Syte manages automated SSL provisioning through ACME HTTP-01 challenges.</p>\n      <h2 class=\"docs-section-h2\">1. Add DNS Record</h2>\n      <p>In your DNS provider (Cloudflare, Namecheap, Route53), add a <code>CNAME</code> or <code>A</code> record:</p>\n      <div class=\"docs-code-gray-card\">\n        <div class=\"docs-code-gray-header\">\n          <div class=\"docs-code-file-label\"><span>DNS Settings</span></div>\n        </div>\n        <div class=\"docs-code-gray-body\">\n          <pre><code>Type: CNAME\nName: app\nTarget: cname.sycord.site\nTTL: Auto / 300</code></pre>\n        </div>\n      </div>\n      <h2 class=\"docs-section-h2\">2. Bind Domain in Syte</h2>\n      <p>Use the Project Settings &gt; Domain interface or the <code>/api/projects/{id}/domain</code> endpoint.</p>\n            ",
+    "hasHero": false,
+    "isApi": false
   },
-  'qs-debug': {
-    title: "Debugging & Diagnostic Logs",
-    lead: "Inspect real-time system logs, diagnose network issues, and troubleshoot failed application builds.",
-    hasHero: false,
-    content: `
-      <p>Diagnosing issues in Syte is straightforward thanks to unified logging across the API, Docker daemon, and Caddy proxy.</p>
-
-      <h2>Inspecting Real-time Logs</h2>
-      <p>Stream real-time server output using <code>journalctl</code>:</p>
-
-      <div class="docs-cmd-tabs-card">
-        <div class="docs-cmd-tabs-header">
-          <div class="docs-cmd-tabs-list">
-            <button type="button" class="docs-cmd-tab active" onclick="switchCmdTab(this, 'journalctl')">journalctl</button>
-            <button type="button" class="docs-cmd-tab" onclick="switchCmdTab(this, 'docker')">docker logs</button>
-          </div>
-        </div>
-        <div class="docs-cmd-tabs-body">
-          <div class="docs-cmd-snippet active" data-content="journalctl">
-            <code><span class="cmd-cli">journalctl</span> <span class="cmd-flag">-u syte -f -n 100</span></code>
-            <button type="button" class="docs-cmd-copy-btn" onclick="copySnippet(this, 'journalctl -u syte -f -n 100')" title="Copy command">
-              <i data-lucide="clipboard" style="width:16px;height:16px;"></i>
-            </button>
-          </div>
-          <div class="docs-cmd-snippet" data-content="docker">
-            <code><span class="cmd-cli">docker</span> <span class="cmd-action">logs</span> <span class="cmd-flag">-f --tail 100</span> <span class="cmd-target">&lt;container-name&gt;</span></code>
-            <button type="button" class="docs-cmd-copy-btn" onclick="copySnippet(this, 'docker logs -f --tail 100 <container-name>')" title="Copy command">
-              <i data-lucide="clipboard" style="width:16px;height:16px;"></i>
-            </button>
-          </div>
-        </div>
-      </div>
-    `,
-    prev: {"title": "Restart", "page": "qs-restart", "desc": "Manage daemons."},
-    next: {"title": "Git Connect", "page": "git-connect", "desc": "Source control."},
-    updated: '03/09/2026',
+  "core-architecture": {
+    "title": "Platform Architecture",
+    "lead": "Under the hood: Reverse proxying, isolated container runtimes, and distributed state.",
+    "updated": "03/09/2026",
+    "content": "\n      <p>Syte combines a low-latency Caddy/Nginx reverse proxy layer with lightweight systemd-isolated container environments.</p>\n      <ul>\n        <li><strong>Proxy Layer:</strong> Handles SSL termination, gzip/brotli compression, and path redirects.</li>\n        <li><strong>Runtime Daemon:</strong> FastAPI controller on port 8787 orchestrating build pipelines and system telemetry.</li>\n        <li><strong>Process Isolation:</strong> Zero-overhead execution with per-project resource throttling and memory limits.</li>\n      </ul>\n            ",
+    "hasHero": false,
+    "isApi": false
   },
-  'git-connect': {
-    title: 'Connect Git Repositories',
-    subbarTitle: 'Git · Connect',
-    lead: 'Link your GitHub, GitLab, or self-hosted Git repositories to Syte for continuous deployments.',
-    hasHero: false,
-    content: `
-      <div class="docs-alerts-grid">
-        <div class="docs-alert-card note">
-          <div class="docs-alert-card-header">
-            <div class="docs-alert-card-icon"><i data-lucide="git-branch" style="width:14px;height:14px;"></i></div>
-            <span>GitHub OAuth</span>
-          </div>
-          <div class="docs-alert-card-desc">Connect your GitHub account in 1 click or use personal access tokens.</div>
-        </div>
-      </div>
-
-      <h2>Connecting via SSH or HTTPS</h2>
-      <p>When creating a project, paste any public or private repository URL (e.g., <code>https://github.com/user/repo.git</code> or <code>git@github.com:user/repo.git</code>).</p>
-    `,
-    prev: { title: 'Debug', page: 'qs-debug', desc: 'Diagnostics.' },
-    next: { title: 'Auto Update', page: 'git-auto-update', desc: 'Webhook deployments.' },
-    updated: '03/09/2026',
+  "core-config": {
+    "title": "Configuration Reference",
+    "lead": "Complete specification for syte.config.json and environment options.",
+    "updated": "03/09/2026",
+    "content": "\n      <p>You can commit a <code>syte.config.json</code> file in your repository root to configure build steps:</p>\n      <div class=\"docs-code-gray-card\">\n        <div class=\"docs-code-gray-header\">\n          <div class=\"docs-code-file-label\"><span>syte.config.json</span></div>\n        </div>\n        <div class=\"docs-code-gray-body\">\n          <pre><code>{\n  \"framework\": \"nextjs\",\n  \"buildCommand\": \"npm run build\",\n  \"startCommand\": \"npm run start\",\n  \"port\": 3000,\n  \"environment\": {\n    \"NODE_ENV\": \"production\"\n  }\n}</code></pre>\n        </div>\n      </div>\n            ",
+    "hasHero": false,
+    "isApi": false
   },
-
-  'git-auto-update': {
-    title: 'Git Auto Update & Webhooks',
-    subbarTitle: 'Git · Auto Update',
-    lead: 'Trigger automated zero-downtime redeployments whenever you push new commits to your branch.',
-    hasHero: false,
-    content: `
-      <h2>Setting Up Webhooks</h2>
-      <p>Syte provides an instant webhook endpoint for every project. In your GitHub repository settings, add a webhook with:</p>
-      <div class="docs-code-block">
-        <div class="docs-code-block-header">
-          <div class="docs-code-title"><span>webhook url pattern</span></div>
-        </div>
-        <div class="docs-code-body">
-          <pre class="docs-code-text"><code>Payload URL: https://sycord.site/api/projects/{id}/webhook
-Content type: application/json
-Events: Just the push event</code></pre>
-        </div>
-      </div>
-    `,
-    prev: { title: 'Connect Git', page: 'git-connect', desc: 'Git connection.' },
-    next: { title: 'Domain Setup', page: 'domain-setup', desc: 'Configuring domains.' },
-    updated: '03/09/2026',
+  "core-ssl-security": {
+    "title": "SSL & Security Hardening",
+    "lead": "Automatic TLS renewal, HSTS headers, and rate limiting protections.",
+    "updated": "03/09/2026",
+    "content": "\n      <p>Syte provides automated security policies out of the box:</p>\n      <ul>\n        <li>Automatic Let's Encrypt certificate renewal every 60 days.</li>\n        <li>Native TLS 1.3 encryption with strict cipher suites.</li>\n        <li>Built-in rate limiting and DDoS protection at edge proxy.</li>\n      </ul>\n            ",
+    "hasHero": false,
+    "isApi": false
   },
-
-  // ---------------- Domain ----------------
-  'domain-setup': {
-    title: 'Domain Setup',
-    subbarTitle: 'Domain · Setup',
-    lead: 'Map custom apex domains or subdomains to your deployed applications in seconds.',
-    hasHero: false,
-    content: `
-      <h2>DNS A-Record Configuration</h2>
-      <p>Point your domain's DNS <strong>A Record</strong> to your server's public IP address:</p>
-      <div class="docs-table-wrapper">
-        <table class="docs-table">
-          <thead>
-            <tr><th>Type</th><th>Name</th><th>Value</th><th>TTL</th></tr>
-          </thead>
-          <tbody>
-            <tr><td><code>A</code></td><td><code>@</code> (or subdomain)</td><td><code>YOUR_SERVER_IP</code></td><td>Auto / 300s</td></tr>
-          </tbody>
-        </table>
-      </div>
-    `,
-    prev: { title: 'Auto Update', page: 'git-auto-update', desc: 'Webhooks.' },
-    next: { title: 'Cloudflare', page: 'domain-cloudflare', desc: 'Proxy setup.' },
-    updated: '03/09/2026',
+  "core-git-sync": {
+    "title": "Continuous Git Sync & Webhooks",
+    "lead": "Automate deployments on git push and pull request preview environments.",
+    "updated": "03/09/2026",
+    "content": "\n      <p>Syte listens for GitHub webhook events. When you push to your default branch, Syte pulls the latest commits, triggers a build, and performs a zero-downtime traffic swap.</p>\n            ",
+    "hasHero": false,
+    "isApi": false
   },
-
-  'domain-cloudflare': {
-    title: 'Cloudflare Integration',
-    subbarTitle: 'Domain · Cloudflare',
-    lead: 'Best practices for running Syte applications behind Cloudflare CDN and DNS.',
-    hasHero: false,
-    content: `
-      <div class="docs-alerts-grid">
-        <div class="docs-alert-card warning">
-          <div class="docs-alert-card-header">
-            <div class="docs-alert-card-icon"><i data-lucide="alert-triangle" style="width:14px;height:14px;"></i></div>
-            <span>SSL Mode</span>
-          </div>
-          <div class="docs-alert-card-desc">Set Cloudflare SSL/TLS encryption mode to <strong>Full (Strict)</strong>.</div>
-        </div>
-      </div>
-      <p>Ensure WebSockets and gRPC are enabled under Cloudflare Network settings for streaming AI events.</p>
-    `,
-    prev: { title: 'Domain Setup', page: 'domain-setup', desc: 'DNS setup.' },
-    next: { title: 'SSL Certificates', page: 'domain-ssl', desc: 'Auto SSL.' },
-    updated: '03/09/2026',
+  "core-monitoring": {
+    "title": "Monitoring & Telemetry",
+    "lead": "Real-time metrics, HTTP status codes, p95 latency, and SSE log streaming.",
+    "updated": "03/09/2026",
+    "content": "\n      <p>Every project provides real-time CPU, RAM, disk, and visitor analytics. You can also stream live container stdout logs using the SSE streaming endpoint.</p>\n            ",
+    "hasHero": false,
+    "isApi": false
   },
-
-  'domain-ssl': {
-    title: 'Automatic SSL Certificates',
-    subbarTitle: 'Domain · SSL',
-    lead: 'Free, automated Let’s Encrypt and ZeroSSL certificates with automatic renewal.',
-    hasHero: false,
-    content: `
-      <p>Every domain attached to a project is automatically provisioned with a trusted TLS certificate via Caddy. No certbot commands or manual maintenance required.</p>
-    `,
-    prev: { title: 'Cloudflare', page: 'domain-cloudflare', desc: 'Cloudflare.' },
-    next: { title: 'How Caddy Works', page: 'domain-caddy', desc: 'Caddy architecture.' },
-    updated: '03/09/2026',
+  "api-health-get": {
+    "isApi": true,
+    "groupName": "System & Health",
+    "title": "Health check",
+    "lead": "Check API availability and core system uptime status.",
+    "summary": "Check API availability and core system uptime status.",
+    "method": "GET",
+    "path": "/api/health",
+    "contentType": "none",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET https://sycord.site:8787/api/health",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "Current service status (\"ok\")."
+      },
+      {
+        "name": "version",
+        "type": "string",
+        "desc": "Running Syte release version tag."
+      },
+      {
+        "name": "timestamp",
+        "type": "string",
+        "desc": "ISO-8601 server timestamp."
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"ok\",\n  \"version\": \"2.4.0\",\n  \"timestamp\": \"2026-09-13T12:00:00Z\"\n}",
+    "updated": "03/09/2026"
   },
-
-  'domain-caddy': {
-    title: 'How Caddy Works in Syte',
-    subbarTitle: 'Domain · Caddy',
-    lead: 'Understanding internal reverse proxy rules, blue/green routing, and zero-downtime cutovers.',
-    hasHero: false,
-    content: `
-      <p>Syte maintains dynamic Caddy configuration JSON files. When a project updates, Caddy changes upstream target ports in memory without dropping in-flight TCP connections.</p>
-    `,
-    prev: { title: 'SSL', page: 'domain-ssl', desc: 'Auto SSL.' },
-    next: { title: 'What is an ENV?', page: 'env-what-is', desc: 'Environment variables.' },
-    updated: '03/09/2026',
+  "api-system-get": {
+    "isApi": true,
+    "groupName": "System & Health",
+    "title": "System hardware metrics",
+    "lead": "Retrieve real-time host VM CPU, memory, disk usage, and OS kernel information.",
+    "summary": "Retrieve real-time host VM CPU, memory, disk usage, and OS kernel information.",
+    "method": "GET",
+    "path": "/api/system",
+    "contentType": "none",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET https://sycord.site:8787/api/system \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "cpu_percent",
+        "type": "number",
+        "desc": "Current CPU utilization percentage across all cores."
+      },
+      {
+        "name": "memory",
+        "type": "object",
+        "desc": "RAM usage metrics in bytes (total, used, free, percent)."
+      },
+      {
+        "name": "disk",
+        "type": "object",
+        "desc": "Root filesystem storage usage stats (total, used, free)."
+      },
+      {
+        "name": "platform",
+        "type": "string",
+        "desc": "Host operating system and kernel version string."
+      }
+    ],
+    "responseJson": "{\n  \"cpu_percent\": 14.2,\n  \"memory\": {\n    \"total\": 8589934592,\n    \"used\": 2810183680,\n    \"free\": 5779750912,\n    \"percent\": 32.7\n  },\n  \"disk\": {\n    \"total\": 53687091200,\n    \"used\": 12884901888,\n    \"free\": 40802189312,\n    \"percent\": 24.0\n  },\n  \"platform\": \"Linux 6.8.0-amd64\"\n}",
+    "updated": "03/09/2026"
   },
-
-  // ---------------- Environment Variables & Secrets ----------------
-  'env-what-is': {
-    title: 'What is an ENV Variable?',
-    subbarTitle: 'ENV · Overview',
-    lead: 'Environment variables allow you to store sensitive credentials and settings outside of your code repository.',
-    hasHero: false,
-    content: `
-      <div class="docs-alerts-grid">
-        <div class="docs-alert-card note">
-          <div class="docs-alert-card-header">
-            <div class="docs-alert-card-icon"><i data-lucide="lock" style="width:14px;height:14px;"></i></div>
-            <span>Security Rule</span>
-          </div>
-          <div class="docs-alert-card-desc">Never commit database passwords or API keys to Git. Use Syte Environment variables.</div>
-        </div>
-      </div>
-    `,
-    prev: { title: 'How Caddy Works', page: 'domain-caddy', desc: 'Caddy.' },
-    next: { title: 'Setup ENV', page: 'env-setup', desc: 'Adding variables.' },
-    updated: '03/09/2026',
+  "api-system-update-info-get": {
+    "isApi": true,
+    "groupName": "System & Health",
+    "title": "Check release updates",
+    "lead": "Query upstream GitHub repository for new release versions and changelog notes.",
+    "summary": "Query upstream GitHub repository for new release versions and changelog notes.",
+    "method": "GET",
+    "path": "/api/system/update-info",
+    "contentType": "none",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET https://sycord.site:8787/api/system/update-info \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "current_version",
+        "type": "string",
+        "desc": "Currently deployed Syte platform version."
+      },
+      {
+        "name": "latest_version",
+        "type": "string",
+        "desc": "Latest available version tag on GitHub."
+      },
+      {
+        "name": "update_available",
+        "type": "boolean",
+        "desc": "Whether an upgrade can be triggered."
+      },
+      {
+        "name": "release_notes",
+        "type": "string",
+        "desc": "Changelog and release notes markdown."
+      }
+    ],
+    "responseJson": "{\n  \"current_version\": \"2.4.0\",\n  \"latest_version\": \"2.4.1\",\n  \"update_available\": true,\n  \"release_notes\": \"Added real-time SSE streaming logs and automated certificate renewal.\"\n}",
+    "updated": "03/09/2026"
   },
-
-  'env-setup': {
-    title: 'Setting Up Project Variables',
-    subbarTitle: 'ENV · Setup',
-    lead: 'Add, update, and manage project-scoped environment variables in the UI or CLI.',
-    hasHero: false,
-    content: `
-      <h2>Key-Value Format</h2>
-      <div class="docs-code-block">
-        <div class="docs-code-block-header"><span>.env configuration</span></div>
-        <div class="docs-code-body">
-          <pre class="docs-code-text"><code>DATABASE_URL=postgresql://user:pass@localhost:5432/mydb
-JWT_SECRET=super_secret_key_12345
-NEXT_PUBLIC_APP_URL=https://my-app.sycord.site</code></pre>
-        </div>
-      </div>
-    `,
-    prev: { title: 'What is an ENV?', page: 'env-what-is', desc: 'Overview.' },
-    next: { title: 'Global Variables', page: 'env-global', desc: 'Global variables.' },
-    updated: '03/09/2026',
+  "api-system-update-post": {
+    "isApi": true,
+    "groupName": "System & Health",
+    "title": "Trigger platform self-update",
+    "lead": "Initiate background git pull, dependency install, and systemd service reload.",
+    "summary": "Initiate background git pull, dependency install, and systemd service reload.",
+    "method": "POST",
+    "path": "/api/system/update",
+    "contentType": "none",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/system/update \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "Update operation status (\"in_progress\")."
+      },
+      {
+        "name": "target_version",
+        "type": "string",
+        "desc": "Target version being installed."
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"in_progress\",\n  \"target_version\": \"2.4.1\",\n  \"message\": \"Self-update process spawned in background.\"\n}",
+    "updated": "03/09/2026"
   },
-
-  'env-global': {
-    title: 'Global Variables & Secrets',
-    subbarTitle: 'ENV · Global',
-    lead: 'Shared platform secrets inherited by all projects across your server.',
-    hasHero: false,
-    content: `
-      <p>Configure platform-wide variables under <strong>Settings → Secrets</strong> to share API keys (e.g., OpenAI, Anthropic, Turso) across all workspaces.</p>
-    `,
-    prev: { title: 'Setup ENV', page: 'env-setup', desc: 'Project setup.' },
-    next: { title: 'AI: How It Works', page: 'ai-how-it-works', desc: 'Autonomous AI engine.' },
-    updated: '03/09/2026',
+  "api-notifications-settings-get": {
+    "isApi": true,
+    "groupName": "Notifications",
+    "title": "Get notification settings",
+    "lead": "Fetch alert configuration including webhook endpoints, Discord/Slack hooks, and email alerts.",
+    "summary": "Fetch alert configuration including webhook endpoints, Discord/Slack hooks, and email alerts.",
+    "method": "GET",
+    "path": "/api/notifications/settings",
+    "contentType": "none",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET https://sycord.site:8787/api/notifications/settings \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "webhook_url",
+        "type": "string",
+        "desc": "HTTP webhook URL for dispatching JSON alerts."
+      },
+      {
+        "name": "discord_webhook",
+        "type": "string",
+        "desc": "Discord channel incoming webhook URL."
+      },
+      {
+        "name": "slack_webhook",
+        "type": "string",
+        "desc": "Slack incoming webhook URL."
+      },
+      {
+        "name": "notify_on_deploy",
+        "type": "boolean",
+        "desc": "Send alert on successful deployment."
+      },
+      {
+        "name": "notify_on_fail",
+        "type": "boolean",
+        "desc": "Send high-priority alert on build failure."
+      }
+    ],
+    "responseJson": "{\n  \"webhook_url\": \"https://hooks.example.com/alerts\",\n  \"discord_webhook\": \"\",\n  \"slack_webhook\": \"\",\n  \"notify_on_deploy\": true,\n  \"notify_on_fail\": true\n}",
+    "updated": "03/09/2026"
   },
-
-  // ---------------- AI ----------------
-  'ai-how-it-works': {
-    title: 'How the Syra AI Engine Works',
-    subbarTitle: 'AI · How It Works',
-    lead: 'An embedded Autonomous AI Engineer with tool-calling abilities, persistent memory, and live preview rendering.',
-    hasHero: false,
-    content: `
-      <h2>Autonomous Pipeline</h2>
-      <ol style="padding-left: 20px; line-height: 1.8;">
-        <li><strong>Prompt Parsing:</strong> Understands requirements, framework conventions, and existing file tree.</li>
-        <li><strong>Tool Execution:</strong> Calls <code>grep_search</code>, <code>view_file</code>, and <code>replace_file_content</code> inside the VM sandbox.</li>
-        <li><strong>Live Feedback:</strong> Builds and tests components in real-time, streaming token deltas over SSE.</li>
-      </ol>
-    `,
-    prev: { title: 'Global Variables', page: 'env-global', desc: 'Secrets.' },
-    next: { title: 'AI Providers', page: 'ai-providers', desc: 'Supported models.' },
-    updated: '03/09/2026',
+  "api-notifications-settings-put": {
+    "isApi": true,
+    "groupName": "Notifications",
+    "title": "Update notification settings",
+    "lead": "Save webhook destinations and notification trigger policies.",
+    "summary": "Save webhook destinations and notification trigger policies.",
+    "method": "PUT",
+    "path": "/api/notifications/settings",
+    "contentType": "application/json",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "webhook_url",
+        "type": "string",
+        "required": false,
+        "desc": "HTTP webhook endpoint."
+      },
+      {
+        "name": "discord_webhook",
+        "type": "string",
+        "required": false,
+        "desc": "Discord incoming webhook URL."
+      },
+      {
+        "name": "slack_webhook",
+        "type": "string",
+        "required": false,
+        "desc": "Slack incoming webhook URL."
+      },
+      {
+        "name": "notify_on_deploy",
+        "type": "boolean",
+        "required": false,
+        "desc": "Enable deployment success alerts."
+      },
+      {
+        "name": "notify_on_fail",
+        "type": "boolean",
+        "required": false,
+        "desc": "Enable build failure alerts."
+      }
+    ],
+    "curlCommand": "curl -X PUT https://sycord.site:8787/api/notifications/settings \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"notify_on_deploy\": true, \"notify_on_fail\": true}'",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "Operation confirmation (\"saved\")."
+      },
+      {
+        "name": "settings",
+        "type": "object",
+        "desc": "Updated notification settings object."
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"saved\",\n  \"settings\": {\n    \"notify_on_deploy\": true,\n    \"notify_on_fail\": true\n  }\n}",
+    "updated": "03/09/2026"
   },
-
-  'ai-providers': {
-    title: 'AI Providers & Models',
-    subbarTitle: 'AI · Providers',
-    lead: 'Configure Gemini, OpenAI, Claude, DeepSeek, GLM, or self-hosted Ollama models.',
-    hasHero: false,
-    content: `
-      <div class="docs-table-wrapper">
-        <table class="docs-table">
-          <thead>
-            <tr><th>Provider</th><th>Model Profile</th><th>Features</th></tr>
-          </thead>
-          <tbody>
-            <tr><td><strong>Google Gemini</strong></td><td>Gemini 2.5 Flash / Pro</td><td>Large 1M context, high speed</td></tr>
-            <tr><td><strong>Anthropic</strong></td><td>Claude Sonnet 4.6 (Thinking)</td><td>Deep architectural reasoning</td></tr>
-            <tr><td><strong>DeepSeek</strong></td><td>DeepSeek V4 Flash / Coder</td><td>Cost-efficient code generation</td></tr>
-            <tr><td><strong>OpenAI</strong></td><td>GPT-4o / o1</td><td>Structured tool execution</td></tr>
-          </tbody>
-        </table>
-      </div>
-    `,
-    prev: { title: 'How It Works', page: 'ai-how-it-works', desc: 'AI engine.' },
-    next: { title: 'Setup a Server', page: 'swarm-setup', desc: 'Server swarm.' },
-    updated: '03/09/2026',
+  "api-notifications-get": {
+    "isApi": true,
+    "groupName": "Notifications",
+    "title": "List notifications",
+    "lead": "Retrieve in-app notifications and alert history with read/unread flags.",
+    "summary": "Retrieve in-app notifications and alert history with read/unread flags.",
+    "method": "GET",
+    "path": "/api/notifications",
+    "contentType": "none",
+    "pathParams": [],
+    "queryParams": [
+      {
+        "name": "limit",
+        "type": "integer",
+        "required": false,
+        "desc": "Maximum notifications to return (default: 50)."
+      },
+      {
+        "name": "unread_only",
+        "type": "boolean",
+        "required": false,
+        "desc": "Filter by unread notifications only."
+      }
+    ],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET \"https://sycord.site:8787/api/notifications?unread_only=false\" \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "items",
+        "type": "array",
+        "desc": "Array of notification objects."
+      },
+      {
+        "name": "unread_count",
+        "type": "integer",
+        "desc": "Total count of unread notifications."
+      }
+    ],
+    "responseJson": "{\n  \"items\": [\n    {\n      \"id\": \"ntf_01\",\n      \"title\": \"Build Completed\",\n      \"message\": \"Project syte-docs deployed successfully to production.\",\n      \"level\": \"info\",\n      \"read\": false,\n      \"created_at\": \"2026-09-13T11:45:00Z\"\n    }\n  ],\n  \"unread_count\": 1\n}",
+    "updated": "03/09/2026"
   },
-
-  // ---------------- Server Swarm ----------------
-  'swarm-setup': {
-    title: 'Setup a Server',
-    subbarTitle: 'Swarm · Setup',
-    lead: 'Turn any remote VPS or bare-metal machine into a connected Syte deployment node.',
-    hasHero: false,
-    content: `
-      <h2>Connecting a Remote Server</h2>
-      <p>Navigate to <strong>Servers → Add Server</strong> and paste your SSH connection string or run the worker join token.</p>
-    `,
-    prev: { title: 'AI Providers', page: 'ai-providers', desc: 'Models.' },
-    next: { title: 'Create a Node', page: 'swarm-node', desc: 'Node worker.' },
-    updated: '03/09/2026',
+  "api-notifications-read-post": {
+    "isApi": true,
+    "groupName": "Notifications",
+    "title": "Mark notifications read",
+    "lead": "Mark one or all notifications as read to clear badge counts.",
+    "summary": "Mark one or all notifications as read to clear badge counts.",
+    "method": "POST",
+    "path": "/api/notifications/read",
+    "contentType": "application/json",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "notification_ids",
+        "type": "array",
+        "required": false,
+        "desc": "List of IDs to mark as read, or empty to mark all."
+      }
+    ],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/notifications/read \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"notification_ids\": [\"ntf_01\"]}'",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"success\""
+      },
+      {
+        "name": "marked_count",
+        "type": "integer",
+        "desc": "Number of notifications updated."
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"success\",\n  \"marked_count\": 1\n}",
+    "updated": "03/09/2026"
   },
-
-  'swarm-node': {
-    title: 'Create & Manage Nodes',
-    subbarTitle: 'Swarm · Nodes',
-    lead: 'Distribute workload across multi-region server clusters with health heartbeats.',
-    hasHero: false,
-    content: `
-      <p>Nodes communicate telemetry, CPU/RAM usage, and active container metrics back to the primary Syte control plane.</p>
-    `,
-    prev: { title: 'Setup a Server', page: 'swarm-setup', desc: 'Server setup.' },
-    next: { title: 'Application Builds', page: 'app-builds', desc: 'Build packs.' },
-    updated: '03/09/2026',
+  "api-notifications-push-vapid-public-key-get": {
+    "isApi": true,
+    "groupName": "Notifications",
+    "title": "Get VAPID public key",
+    "lead": "Retrieve public VAPID key used for client Web Push subscription registration.",
+    "summary": "Retrieve public VAPID key used for client Web Push subscription registration.",
+    "method": "GET",
+    "path": "/api/notifications/push/vapid-public-key",
+    "contentType": "none",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET https://sycord.site:8787/api/notifications/push/vapid-public-key \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "public_key",
+        "type": "string",
+        "desc": "Base64-encoded VAPID public key string."
+      }
+    ],
+    "responseJson": "{\n  \"public_key\": \"BEl62iUYgUivxIkv69yViEuiBIa...\"\n}",
+    "updated": "03/09/2026"
   },
-
-  // ---------------- Application ----------------
-  'app-builds': {
-    title: 'Application Builds & Buildpacks',
-    subbarTitle: 'Application · Builds',
-    lead: 'Automated Nixpacks and Dockerfile detection for instant zero-config builds.',
-    hasHero: false,
-    content: `
-      <p>Syte inspects your repository to detect <code>package.json</code>, <code>requirements.txt</code>, <code>Dockerfile</code>, or <code>Cargo.toml</code> and generates the optimal build pipeline.</p>
-    `,
-    prev: { title: 'Create a Node', page: 'swarm-node', desc: 'Nodes.' },
-    next: { title: 'Prev / Prod', page: 'app-prev-prod', desc: 'Preview environments.' },
-    updated: '03/09/2026',
+  "api-notifications-push-subscriptions-post": {
+    "isApi": true,
+    "groupName": "Notifications",
+    "title": "Register push subscription",
+    "lead": "Save a browser ServiceWorker Web Push subscription payload for native push notifications.",
+    "summary": "Save a browser ServiceWorker Web Push subscription payload for native push notifications.",
+    "method": "POST",
+    "path": "/api/notifications/push-subscriptions",
+    "contentType": "application/json",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "endpoint",
+        "type": "string",
+        "required": true,
+        "desc": "Browser push service endpoint URL."
+      },
+      {
+        "name": "keys",
+        "type": "object",
+        "required": true,
+        "desc": "Encryption keys object containing `p256dh` and `auth` strings."
+      }
+    ],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/notifications/push-subscriptions \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"endpoint\": \"https://fcm.googleapis.com/fcm/send/...\", \"keys\": {\"p256dh\": \"...\", \"auth\": \"...\"}}'",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"subscribed\""
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"subscribed\"\n}",
+    "updated": "03/09/2026"
   },
-
-  'app-prev-prod': {
-    title: 'Preview vs Production Environments',
-    subbarTitle: 'Application · Prev/Prod',
-    lead: 'Test branch changes in isolated preview deployments before promoting to production.',
-    hasHero: false,
-    content: `
-      <p>Every pull request or branch can spawn an isolated preview URL (e.g., <code>feat-branch.app.sycord.site</code>) with isolated databases and ports.</p>
-    `,
-    prev: { title: 'Builds', page: 'app-builds', desc: 'Build packs.' },
-    next: { title: 'API Overview', page: 'api-tokens-list', desc: 'API Reference' },
-    updated: '03/09/2026',
+  "api-notifications-test-post": {
+    "isApi": true,
+    "groupName": "Notifications",
+    "title": "Send test notification",
+    "lead": "Trigger immediate test notification across all enabled channels (Web Push, Webhook, Discord).",
+    "summary": "Trigger immediate test notification across all enabled channels (Web Push, Webhook, Discord).",
+    "method": "POST",
+    "path": "/api/notifications/test",
+    "contentType": "none",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/notifications/test \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"dispatched\""
+      },
+      {
+        "name": "channels",
+        "type": "array",
+        "desc": "List of notification channels reached."
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"dispatched\",\n  \"channels\": [\n    \"in_app\",\n    \"web_push\"\n  ]\n}",
+    "updated": "03/09/2026"
   },
-
-  'api-tokens-list': {
-    isApiDetail: true,
-    method: "GET",
-    path: "get/tokens",
-    realPath: "/api/tokens",
-    summary: "list all active programmatic API tokens and keys ,",
-    pills: ["auth", "session", "limit?"],
-    desc: "using this api , syte will return all active authentication tokens configured for programmatic access, automated deployment webhooks, and CI/CD pipelines",
-    sendItems: [{"key": "Header: Authorization", "val": "Bearer <session-or-api-key>"}, {"key": "Header: Accept", "val": "application/json"}, {"key": "Query: limit", "val": "integer (optional, default: 50)"}],
-    receiveItems: [{"key": "Status: 200 OK", "val": "Returns array of token descriptors"}, {"key": "Field: tokens[].id", "val": "Unique identifier string"}, {"key": "Field: tokens[].name", "val": "Descriptive label assigned to token"}, {"key": "Field: tokens[].createdAt", "val": "ISO 8601 timestamp string"}],
-    codeFilename: "tokens.ts",
-    codeSnippet: `const tokens = await fetch('/api/tokens', {
-  headers: { 'Authorization': 'Bearer ' + API_KEY }
-}).then(r => r.json());`,
-    responseJson: `{
-  "tokens": [
-    {
-      "id": "tok_99a8c17b",
-      "name": "GitHub Actions CI",
-      "createdAt": "2026-09-13T00:00:00Z"
-    }
-  ]
-}`,
-    prev: {"title": "Check Session", "page": "api-auth-session"},
-    next: {"title": "Create Token", "page": "api-tokens-create"},
-    updated: '03/09/2026',
+  "api-auth-setup-get": {
+    "isApi": true,
+    "groupName": "Auth & Operator",
+    "title": "Check setup status",
+    "lead": "Check whether root administrator account has already been initialized.",
+    "summary": "Check whether root administrator account has already been initialized.",
+    "method": "GET",
+    "path": "/api/auth/setup",
+    "contentType": "none",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET https://sycord.site:8787/api/auth/setup",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "setup_required",
+        "type": "boolean",
+        "desc": "True if no admin account exists yet."
+      }
+    ],
+    "responseJson": "{\n  \"setup_required\": false\n}",
+    "updated": "03/09/2026"
   },
-  'api-tokens-create': {
-    isApiDetail: true,
-    method: "POST",
-    path: "post/tokens",
-    realPath: "/api/tokens",
-    summary: "generate a new bearer API token for automated CI/CD pipelines ,",
-    pills: ["name!", "expiresInDays?", "auth"],
-    desc: "using this api , syte will generate an encrypted API token with custom expiration and return the secret key once",
-    sendItems: [{"key": "Header: Content-Type", "val": "application/json"}, {"key": "Body: name", "val": "string (required, 1-64 characters)"}, {"key": "Body: expiresInDays", "val": "integer (optional, default: 90, 0 for never)"}],
-    receiveItems: [{"key": "Status: 200 OK", "val": "Returns generated secret token"}, {"key": "Field: token", "val": "Secret token string (e.g. syte_live_sec_...)"}, {"key": "Field: name", "val": "Confirmed token name"}],
-    codeFilename: "create-token.ts",
-    codeSnippet: `const token = await fetch('/api/tokens', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ name: 'Deploy Bot', expiresInDays: 90 }),
-}).then(r => r.json());`,
-    responseJson: `{
-  "token": "syte_live_sec_99a8c17b5e4312da98f01b",
-  "name": "Deploy Bot",
-  "createdAt": "2026-09-13T00:00:00Z"
-}`,
-    prev: {"title": "List Tokens", "page": "api-tokens-list"},
-    next: {"title": "Revoke Token", "page": "api-tokens-delete"},
-    updated: '03/09/2026',
+  "api-auth-setup-post": {
+    "isApi": true,
+    "groupName": "Auth & Operator",
+    "title": "Initialize administrator",
+    "lead": "Create primary administrator username and master password during initial deployment.",
+    "summary": "Create primary administrator username and master password during initial deployment.",
+    "method": "POST",
+    "path": "/api/auth/setup",
+    "contentType": "application/json",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "username",
+        "type": "string",
+        "required": true,
+        "desc": "Admin username (minimum 3 characters)."
+      },
+      {
+        "name": "password",
+        "type": "string",
+        "required": true,
+        "desc": "Secure password (minimum 8 characters)."
+      }
+    ],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/auth/setup \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"username\": \"admin\", \"password\": \"SuperSecretPassword123\"}'",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"initialized\""
+      },
+      {
+        "name": "user",
+        "type": "object",
+        "desc": "Created user account details."
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"initialized\",\n  \"user\": {\n    \"id\": \"usr_01\",\n    \"username\": \"admin\",\n    \"role\": \"owner\"\n  }\n}",
+    "updated": "03/09/2026"
   },
-  'api-tokens-delete': {
-    isApiDetail: true,
-    method: "DELETE",
-    path: "delete/tokens/<token_id>",
-    realPath: "/api/tokens/{token_id}",
-    summary: "revoke and invalidate an existing API token ,",
-    pills: ["tokenID!", "auth"],
-    desc: "using this api , syte will permanently revoke the specified token credentials and reject any future requests using it",
-    sendItems: [{"key": "Path: token_id", "val": "string (required token ID)"}, {"key": "Header: Authorization", "val": "Bearer <admin-token>"}],
-    receiveItems: [{"key": "Status: 200 OK", "val": "Returns confirmation boolean"}, {"key": "Field: success", "val": "true"}],
-    codeFilename: "del-token.ts",
-    codeSnippet: `await fetch('/api/tokens/tok_99a8c17b', { method: 'DELETE' });`,
-    responseJson: `{ "success": true }`,
-    prev: {"title": "Create Token", "page": "api-tokens-create"},
-    next: {"title": "Get Project", "page": "api-projects-get"},
-    updated: '03/09/2026',
+  "api-auth-login-post": {
+    "isApi": true,
+    "groupName": "Auth & Operator",
+    "title": "User login",
+    "lead": "Authenticate user credentials and issue session cookie or bearer token.",
+    "summary": "Authenticate user credentials and issue session cookie or bearer token.",
+    "method": "POST",
+    "path": "/api/auth/login",
+    "contentType": "application/json",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "username",
+        "type": "string",
+        "required": true,
+        "desc": "Registered username."
+      },
+      {
+        "name": "password",
+        "type": "string",
+        "required": true,
+        "desc": "Account password."
+      }
+    ],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/auth/login \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"username\": \"admin\", \"password\": \"SuperSecretPassword123\"}'",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"authenticated\""
+      },
+      {
+        "name": "token",
+        "type": "string",
+        "desc": "JWT session token."
+      },
+      {
+        "name": "user",
+        "type": "object",
+        "desc": "User profile object."
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"authenticated\",\n  \"token\": \"eyJhbGciOiJIUzI1NiIsIn...\",\n  \"user\": {\n    \"username\": \"admin\",\n    \"role\": \"owner\"\n  }\n}",
+    "updated": "03/09/2026"
   },
-  'api-projects-get': {
-    isApiDetail: true,
-    method: "GET",
-    path: "get/<uuid>/project",
-    realPath: "/api/projects/{project_id}",
-    summary: "retrieve complete metadata, domain configuration, and runtime health for a project ,",
-    pills: ["projectID!", "auth", "stats?"],
-    desc: "using this api , syte will return the project details on the specified <a href=\"#params\" class=\"docs-api-link\">UUID</a>",
-    sendItems: [{"key": "Path: project_id", "val": "string (required application UUID)"}, {"key": "Query: stats", "val": "boolean (optional, attach real-time CPU/RAM stats)"}],
-    receiveItems: [{"key": "Status: 200 OK", "val": "Returns project descriptor object"}, {"key": "Field: id", "val": "Application UUID string"}, {"key": "Field: name", "val": "Human-readable project name"}, {"key": "Field: status", "val": "running | stopped | building | error"}, {"key": "Field: port", "val": "Exposed container port (integer)"}],
-    codeFilename: "source.config.ts",
-    codeSnippet: `import { getProject } from '@syte/sdk'
-
-export const project = await getProject({
-  projectId: '<uuid>',
-  includeStats: true,
-});`,
-    responseJson: `{
-  "id": "uuid-8f92-4a11-b0e2",
-  "name": "production-service",
-  "appName": "prod-app",
-  "status": "running",
-  "port": 3000,
-  "domain": "app.sycord.site",
-  "createdAt": "2026-09-13T00:00:00Z"
-}`,
-    prev: {"title": "Revoke Token", "page": "api-tokens-delete"},
-    next: {"title": "List Projects", "page": "api-projects-list"},
-    updated: '03/09/2026',
+  "api-auth-session-get": {
+    "isApi": true,
+    "groupName": "Auth & Operator",
+    "title": "Inspect active session",
+    "lead": "Validate session token or cookie and return authenticated user identity.",
+    "summary": "Validate session token or cookie and return authenticated user identity.",
+    "method": "GET",
+    "path": "/api/auth/session",
+    "contentType": "none",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET https://sycord.site:8787/api/auth/session \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "authenticated",
+        "type": "boolean",
+        "desc": "True if session is active and valid."
+      },
+      {
+        "name": "user",
+        "type": "object",
+        "desc": "Current authenticated user details."
+      }
+    ],
+    "responseJson": "{\n  \"authenticated\": true,\n  \"user\": {\n    \"id\": \"usr_01\",\n    \"username\": \"admin\",\n    \"role\": \"owner\"\n  }\n}",
+    "updated": "03/09/2026"
   },
-  'api-projects-list': {
-    isApiDetail: true,
-    method: "GET",
-    path: "get/projects",
-    realPath: "/api/projects",
-    summary: "list all active projects, health statuses, and listening ports across your server ,",
-    pills: ["limit?", "status?", "auth"],
-    desc: "using this api , syte will return an array of all configured applications and their current <a href=\"#status\" class=\"docs-api-link\">runtime health</a>",
-    sendItems: [{"key": "Query: limit", "val": "integer (1-100, default: 50)"}, {"key": "Query: status", "val": "string filter: running | stopped | building"}],
-    receiveItems: [{"key": "Status: 200 OK", "val": "Returns array of project objects in projects field"}, {"key": "Field: projects", "val": "Array of application descriptors"}],
-    codeFilename: "list-apps.ts",
-    codeSnippet: `import { listProjects } from '@syte/sdk'
-
-const apps = await listProjects({
-  status: 'running',
-  limit: 50,
-});`,
-    responseJson: `{
-  "projects": [
-    {
-      "id": "uuid-8f92-4a11-b0e2",
-      "name": "web-frontend",
-      "status": "running",
-      "port": 3000
-    }
-  ]
-}`,
-    prev: {"title": "Get Project", "page": "api-projects-get"},
-    next: {"title": "Create Project", "page": "api-projects-create"},
-    updated: '03/09/2026',
+  "api-auth-session-delete": {
+    "isApi": true,
+    "groupName": "Auth & Operator",
+    "title": "Logout session",
+    "lead": "Invalidate current session token and clear authentication cookie.",
+    "summary": "Invalidate current session token and clear authentication cookie.",
+    "method": "DELETE",
+    "path": "/api/auth/session",
+    "contentType": "none",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X DELETE https://sycord.site:8787/api/auth/session \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"logged_out\""
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"logged_out\"\n}",
+    "updated": "03/09/2026"
   },
-  'api-projects-create': {
-    isApiDetail: true,
-    method: "POST",
-    path: "post/projects",
-    realPath: "/api/projects",
-    summary: "create and provision a new application from Git or Dockerfile ,",
-    pills: ["name!", "repository", "branch?", "port?"],
-    desc: "using this api , syte will clone the specified repository, generate build configurations, and register container routing for the specified <a href=\"#repo\" class=\"docs-api-link\">Git URL</a>",
-    sendItems: [{"key": "Body: name", "val": "string (required, application name)"}, {"key": "Body: repository", "val": "string (optional Git clone URL)"}, {"key": "Body: branch", "val": "string (optional, default: \"main\")"}, {"key": "Body: port", "val": "integer (optional, default: 3000)"}],
-    receiveItems: [{"key": "Status: 200 OK", "val": "Returns newly created project record"}, {"key": "Field: id", "val": "Generated project UUID"}, {"key": "Field: status", "val": "\"ready\""}],
-    codeFilename: "create-app.ts",
-    codeSnippet: `import { createProject } from '@syte/sdk'
-
-const newApp = await createProject({
-  name: 'my-new-app',
-  repository: 'https://github.com/organization/repo.git',
-  branch: 'main',
-  port: 3000,
-});`,
-    responseJson: `{
-  "id": "uuid-3c19-91aa-e501",
-  "name": "my-new-app",
-  "status": "ready",
-  "port": 3000
-}`,
-    prev: {"title": "List Projects", "page": "api-projects-list"},
-    next: {"title": "Deploy Application", "page": "api-deploy-trigger"},
-    updated: '03/09/2026',
+  "api-auth-profile-get": {
+    "isApi": true,
+    "groupName": "Auth & Operator",
+    "title": "Get user profile",
+    "lead": "Retrieve user profile, contact info, and preferences.",
+    "summary": "Retrieve user profile, contact info, and preferences.",
+    "method": "GET",
+    "path": "/api/auth/profile",
+    "contentType": "none",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET https://sycord.site:8787/api/auth/profile \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "username",
+        "type": "string",
+        "desc": "Current username."
+      },
+      {
+        "name": "email",
+        "type": "string",
+        "desc": "Registered email address."
+      },
+      {
+        "name": "theme",
+        "type": "string",
+        "desc": "UI theme preference (\"dark\" / \"light\")."
+      }
+    ],
+    "responseJson": "{\n  \"username\": \"admin\",\n  \"email\": \"admin@example.com\",\n  \"theme\": \"dark\"\n}",
+    "updated": "03/09/2026"
   },
-  'api-deploy-trigger': {
-    isApiDetail: true,
-    method: "POST",
-    path: "post/<uuid>/deploy",
-    realPath: "/api/projects/{project_id}/deploy",
-    summary: "trigger an immediate zero-downtime build and deployment cycle ,",
-    pills: ["projectID!", "commit?", "clearCache?"],
-    desc: "using this api , syte will pull latest commits, build new Docker images, and switch traffic seamlessly for the specified <a href=\"#params\" class=\"docs-api-link\">UUID</a>",
-    sendItems: [{"key": "Path: project_id", "val": "string (application UUID)"}, {"key": "Body: commit", "val": "string (optional commit hash or \"latest\")"}, {"key": "Body: clearCache", "val": "boolean (optional clean rebuild flag)"}],
-    receiveItems: [{"key": "Status: 200 OK", "val": "Returns deployment job information"}, {"key": "Field: deploymentId", "val": "Unique build tracking ID"}, {"key": "Field: streamUrl", "val": "SSE URL to stream real-time build logs"}],
-    codeFilename: "deploy.ts",
-    codeSnippet: `import { deployProject } from '@syte/sdk'
-
-const build = await deployProject('<uuid>', {
-  commit: 'latest',
-  clearCache: false,
-});`,
-    responseJson: `{
-  "deploymentId": "dep_728f3a91",
-  "status": "building",
-  "streamUrl": "/api/projects/<uuid>/logs/stream"
-}`,
-    prev: {"title": "Create Project", "page": "api-projects-create"},
-    next: {"title": "Live SSE Stream", "page": "api-logs-stream"},
-    updated: '03/09/2026',
+  "api-auth-profile-put": {
+    "isApi": true,
+    "groupName": "Auth & Operator",
+    "title": "Update user profile",
+    "lead": "Update user password, email, and display preferences.",
+    "summary": "Update user password, email, and display preferences.",
+    "method": "PUT",
+    "path": "/api/auth/profile",
+    "contentType": "application/json",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "email",
+        "type": "string",
+        "required": false,
+        "desc": "New email address."
+      },
+      {
+        "name": "current_password",
+        "type": "string",
+        "required": false,
+        "desc": "Current password for verification."
+      },
+      {
+        "name": "new_password",
+        "type": "string",
+        "required": false,
+        "desc": "New password to set."
+      }
+    ],
+    "curlCommand": "curl -X PUT https://sycord.site:8787/api/auth/profile \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"email\": \"ops@example.com\"}'",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"updated\""
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"updated\"\n}",
+    "updated": "03/09/2026"
   },
-  'api-logs-stream': {
-    isApiDetail: true,
-    method: "GET",
-    path: "get/<uuid>/logs/stream",
-    realPath: "/api/projects/{project_id}/logs/stream",
-    summary: "subscribe to live Server-Sent Events (SSE) log stream in real time ,",
-    pills: ["projectID!", "token?"],
-    desc: "using this api , syte will stream real-time logs via SSE for the specified <a href=\"#params\" class=\"docs-api-link\">UUID</a>",
-    sendItems: [{"key": "Path: project_id", "val": "string (application UUID)"}, {"key": "Header: Accept", "val": "text/event-stream"}],
-    receiveItems: [{"key": "Status: 200 OK", "val": "Continuous event stream"}, {"key": "Event: data", "val": "JSON string containing timestamp and log message"}],
-    codeFilename: "stream-logs.ts",
-    codeSnippet: `const evtSource = new EventSource('/api/projects/<uuid>/logs/stream');
-evtSource.onmessage = (event) => {
-  console.log('Log:', event.data);
-};`,
-    responseJson: `data: {"timestamp":"2026-09-13T18:00:00Z","message":"Ready to accept traffic"}`,
-    prev: {"title": "Deploy Application", "page": "api-deploy-trigger"},
-    next: {"title": "Set Variables", "page": "api-env-set"},
-    updated: '03/09/2026',
+  "api-operator-session-get": {
+    "isApi": true,
+    "groupName": "Auth & Operator",
+    "title": "Get operator session",
+    "lead": "Check if an elevated maintenance operator session is currently active.",
+    "summary": "Check if an elevated maintenance operator session is currently active.",
+    "method": "GET",
+    "path": "/api/operator/session",
+    "contentType": "none",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET https://sycord.site:8787/api/operator/session \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "operator_active",
+        "type": "boolean",
+        "desc": "True if maintenance mode operator is enabled."
+      },
+      {
+        "name": "expires_at",
+        "type": "string",
+        "desc": "ISO-8601 expiration timestamp."
+      }
+    ],
+    "responseJson": "{\n  \"operator_active\": false,\n  \"expires_at\": null\n}",
+    "updated": "03/09/2026"
   },
-  'api-env-set': {
-    isApiDetail: true,
-    method: "PUT",
-    path: "put/<uuid>/environment",
-    realPath: "/api/projects/{project_id}/environment",
-    summary: "set and encrypt environment variables for a given application ,",
-    pills: ["projectID!", "variables!", "auth"],
-    desc: "using this api , syte will store encrypted secret keys for the specified <a href=\"#params\" class=\"docs-api-link\">UUID</a> and inject them into containers",
-    sendItems: [{"key": "Path: project_id", "val": "string (application UUID)"}, {"key": "Body: variables", "val": "object (key-value dictionary of environment variables)"}],
-    receiveItems: [{"key": "Status: 200 OK", "val": "Returns update confirmation"}, {"key": "Field: keysUpdated", "val": "Array of updated variable keys"}],
-    codeFilename: "env.ts",
-    codeSnippet: `await fetch('/api/projects/<uuid>/environment', {
-  method: 'PUT',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ variables: { NODE_ENV: 'production', PORT: '3000' } }),
-});`,
-    responseJson: `{ "success": true, "keysUpdated": ["NODE_ENV", "PORT"] }`,
-    prev: {"title": "Live SSE Stream", "page": "api-logs-stream"},
-    next: {"title": "Bind Domain", "page": "api-domain-add"},
-    updated: '03/09/2026',
+  "api-operator-session-post": {
+    "isApi": true,
+    "groupName": "Auth & Operator",
+    "title": "Start operator session",
+    "lead": "Elevate current session with operator secret to bypass project quotas and access root controls.",
+    "summary": "Elevate current session with operator secret to bypass project quotas and access root controls.",
+    "method": "POST",
+    "path": "/api/operator/session",
+    "contentType": "application/json",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "operator_key",
+        "type": "string",
+        "required": true,
+        "desc": "Host operator access secret."
+      }
+    ],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/operator/session \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"operator_key\": \"op_sec_999\"}'",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"operator_granted\""
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"operator_granted\"\n}",
+    "updated": "03/09/2026"
   },
-  'api-domain-add': {
-    isApiDetail: true,
-    method: "POST",
-    path: "post/<uuid>/domain",
-    realPath: "/api/projects/{project_id}/domain",
-    summary: "bind a custom domain name and trigger automatic SSL certificate provisioning ,",
-    pills: ["projectID!", "domain!", "httpsRedirect?"],
-    desc: "using this api , syte will configure Caddy reverse proxy and issue Let's Encrypt certificates for the specified <a href=\"#params\" class=\"docs-api-link\">UUID</a>",
-    sendItems: [{"key": "Path: project_id", "val": "string (application UUID)"}, {"key": "Body: domain", "val": "string (FQDN, e.g. \"app.example.com\")"}, {"key": "Body: httpsRedirect", "val": "boolean (default: true)"}],
-    receiveItems: [{"key": "Status: 200 OK", "val": "Returns SSL provisioning status"}, {"key": "Field: domain", "val": "Confirmed domain name"}, {"key": "Field: ssl", "val": "\"active\" | \"pending\""}],
-    codeFilename: "domain.ts",
-    codeSnippet: `await fetch('/api/projects/<uuid>/domain', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ domain: 'app.example.com', httpsRedirect: true }),
-});`,
-    responseJson: `{ "domain": "app.example.com", "ssl": "active", "caddyReloaded": true }`,
-    prev: {"title": "Set Variables", "page": "api-env-set"},
-    next: {"title": "AI Agent Stream", "page": "api-agent-stream"},
-    updated: '03/09/2026',
+  "api-operator-session-delete": {
+    "isApi": true,
+    "groupName": "Auth & Operator",
+    "title": "End operator session",
+    "lead": "Revoke elevated operator privileges and return to normal permission scope.",
+    "summary": "Revoke elevated operator privileges and return to normal permission scope.",
+    "method": "DELETE",
+    "path": "/api/operator/session",
+    "contentType": "none",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X DELETE https://sycord.site:8787/api/operator/session \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"operator_revoked\""
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"operator_revoked\"\n}",
+    "updated": "03/09/2026"
   },
-  'api-agent-stream': {
-    isApiDetail: true,
-    method: "POST",
-    path: "post/agent/stream",
-    realPath: "/api/agent/stream",
-    summary: "run autonomous AI deployment agent with live step streaming ,",
-    pills: ["prompt!", "projectId!", "autoApply?"],
-    desc: "using this api , syte AI agent will analyze repository structure, fix missing configurations, and deploy applications",
-    sendItems: [{"key": "Body: prompt", "val": "string (natural language deployment instruction)"}, {"key": "Body: projectId", "val": "string (target project ID)"}, {"key": "Body: autoApply", "val": "boolean (permission to auto-fix and rebuild)"}],
-    receiveItems: [{"key": "Status: 200 OK", "val": "SSE event stream with plan and execution steps"}, {"key": "Event: plan", "val": "List of steps agent intends to run"}, {"key": "Event: step", "val": "Live progress and output per step"}],
-    codeFilename: "agent-stream.ts",
-    codeSnippet: `const res = await fetch('/api/agent/stream', {
-  method: 'POST',
-  body: JSON.stringify({ projectId: '<uuid>', prompt: 'Fix build errors and deploy' }),
-});`,
-    responseJson: `event: plan\ndata: {"steps":["Inspect files","Fix Dockerfile","Deploy"]}\n\nevent: step\ndata: {"step":1,"status":"done"}`,
-    prev: {"title": "Bind Domain", "page": "api-domain-add"},
-    next: {"title": "QuickStart", "page": "qs-install"},
-    updated: '03/09/2026',
+  "api-tokens-get": {
+    "isApi": true,
+    "groupName": "Auth & Operator",
+    "title": "List API tokens",
+    "lead": "List all active programmatic API tokens with permissions and last used timestamps.",
+    "summary": "List all active programmatic API tokens with permissions and last used timestamps.",
+    "method": "GET",
+    "path": "/api/tokens",
+    "contentType": "none",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET https://sycord.site:8787/api/tokens \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "tokens",
+        "type": "array",
+        "desc": "Array of API token metadata objects."
+      }
+    ],
+    "responseJson": "{\n  \"tokens\": [\n    {\n      \"id\": \"tok_9918\",\n      \"name\": \"CI/CD Deployment Token\",\n      \"prefix\": \"syt_live_...\",\n      \"created_at\": \"2026-09-01T08:00:00Z\",\n      \"last_used\": \"2026-09-13T10:15:20Z\"\n    }\n  ]\n}",
+    "updated": "03/09/2026"
   },
-};
-
-function renderDocsView() {
-  setupDocsEventsOnce();
-  showDocsPage(activeDocsPage || 'qs-install');
-}
-
-function copySnippet(btn, code) {
-  navigator.clipboard?.writeText(code);
-  const span = btn.querySelector('span') || btn;
-  const original = span.textContent;
-  span.textContent = 'Copied!';
-  setTimeout(() => { span.textContent = original; }, 2000);
-  toast('Copied to clipboard');
-}
-
-window.switchCmdTab = function(btn, tabKey) {
-  const card = btn.closest('.docs-cmd-tabs-card');
-  if (!card) return;
-  card.querySelectorAll('.docs-cmd-tab').forEach(t => t.classList.toggle('active', t === btn));
-  card.querySelectorAll('.docs-cmd-snippet').forEach(s => s.classList.toggle('active', s.dataset.content === tabKey));
-};
-
-window.copyApiEndpointMarkdown = function(pageKey) {
-  const data = DOCS_DATA[pageKey];
-  if (!data) return;
-  let md = `# ${data.groupName || 'API'} > ${data.endpointTitle || data.title}\n\n`;
-  md += `${data.lead || ''}\n\n`;
-  md += `### Endpoint\n\`${data.method} ${data.path}\`\n\n`;
-  md += `### Authorization\n- Type: \`${data.authType || 'x-api-key'}\`\n- Location: \`${data.authLocation || 'header'}\`\n\n`;
-  if (data.params && data.params.length > 0) {
-    md += `### Parameters\n| Name | Type | Required | Description | Constraint |\n`;
-    md += `| --- | --- | --- | --- | --- |\n`;
-    data.params.forEach(p => {
-      md += `| \`${p.name}\` | \`${p.type}\` | ${p.required ? '**required**' : 'optional'} | ${p.desc} | \`${p.constraint}\` |\n`;
-    });
-    md += `\n`;
-  }
-  if (data.defaultBody) {
-    md += `### Request Body\n\`\`\`json\n${data.defaultBody}\n\`\`\`\n\n`;
-  }
-  if (data.responseBody) {
-    md += `### Response (${data.responseStatus || '200 OK'})\n\`\`\`json\n${data.responseBody}\n\`\`\`\n`;
-  }
-  navigator.clipboard?.writeText(md);
-  toast('Copied full API specification as Markdown');
-};
-
-window.sendInteractiveApiRequest = function(pageKey) {
-  const data = DOCS_DATA[pageKey];
-  if (!data) return;
-  const resBox = document.getElementById(`response-box-${pageKey}`);
-  const resCode = document.getElementById(`response-code-${pageKey}`);
-  const statusEl = document.getElementById(`response-status-${pageKey}`);
-  const timeEl = document.getElementById(`response-time-${pageKey}`);
-  if (!resBox || !resCode) return;
-
-  resBox.classList.remove('hidden');
-  resCode.textContent = '// Sending request to ' + data.path + '...';
-
-  const startTime = performance.now();
-  setTimeout(() => {
-    const elapsed = Math.round(performance.now() - startTime + 35);
-    if (timeEl) timeEl.textContent = `${elapsed}ms`;
-    if (statusEl) {
-      statusEl.className = 'badge-200';
-      statusEl.textContent = data.responseStatus || '200 OK';
-    }
-    resCode.textContent = data.responseBody || '{\n  "status": "success"\n}';
-    toast('Received response ' + (data.responseStatus || '200 OK'));
-  }, 320);
-};
-
-window.copyResponseOutput = function(pageKey) {
-  const resCode = document.getElementById(`response-code-${pageKey}`);
-  if (resCode && resCode.textContent) {
-    navigator.clipboard?.writeText(resCode.textContent);
-    toast('Copied response JSON');
+  "api-tokens-post": {
+    "isApi": true,
+    "groupName": "Auth & Operator",
+    "title": "Create API token",
+    "lead": "Generate a new persistent API token for CI/CD pipelines and external integrations.",
+    "summary": "Generate a new persistent API token for CI/CD pipelines and external integrations.",
+    "method": "POST",
+    "path": "/api/tokens",
+    "contentType": "application/json",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "name",
+        "type": "string",
+        "required": true,
+        "desc": "Descriptive token identifier (e.g. GitHub Actions)."
+      },
+      {
+        "name": "expires_in_days",
+        "type": "integer",
+        "required": false,
+        "desc": "Days until expiration (0 for never)."
+      }
+    ],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/tokens \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"name\": \"GitHub Actions CI\", \"expires_in_days\": 90}'",
+    "responseStatus": "201 Created",
+    "responseSchema": [
+      {
+        "name": "token",
+        "type": "string",
+        "desc": "Full plaintext secret token (only displayed once)."
+      },
+      {
+        "name": "token_id",
+        "type": "string",
+        "desc": "Token ID for future revocation."
+      }
+    ],
+    "responseJson": "{\n  \"token_id\": \"tok_9919\",\n  \"token\": \"syt_live_a89f923b7c84192d1948\",\n  \"name\": \"GitHub Actions CI\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-tokens-token-id-delete": {
+    "isApi": true,
+    "groupName": "Auth & Operator",
+    "title": "Revoke API token",
+    "lead": "Immediately revoke and permanently delete an API token.",
+    "summary": "Immediately revoke and permanently delete an API token.",
+    "method": "DELETE",
+    "path": "/api/tokens/{token_id}",
+    "contentType": "none",
+    "pathParams": [
+      {
+        "name": "token_id",
+        "type": "string",
+        "required": true,
+        "desc": "Unique identifier of the token to revoke."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X DELETE https://sycord.site:8787/api/tokens/tok_9918 \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"revoked\""
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"revoked\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-settings-get": {
+    "isApi": true,
+    "groupName": "Settings & GitHub",
+    "title": "Get platform settings",
+    "lead": "Retrieve global system settings, networking defaults, and domain configuration.",
+    "summary": "Retrieve global system settings, networking defaults, and domain configuration.",
+    "method": "GET",
+    "path": "/api/settings",
+    "contentType": "none",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET https://sycord.site:8787/api/settings \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "default_domain",
+        "type": "string",
+        "desc": "Root domain for automatic subdomain routing."
+      },
+      {
+        "name": "telemetry_enabled",
+        "type": "boolean",
+        "desc": "Whether telemetry data collection is enabled."
+      },
+      {
+        "name": "max_concurrent_builds",
+        "type": "integer",
+        "desc": "Max concurrent container builds."
+      }
+    ],
+    "responseJson": "{\n  \"default_domain\": \"sycord.site\",\n  \"telemetry_enabled\": true,\n  \"max_concurrent_builds\": 4\n}",
+    "updated": "03/09/2026"
+  },
+  "api-settings-put": {
+    "isApi": true,
+    "groupName": "Settings & GitHub",
+    "title": "Save platform settings",
+    "lead": "Update global system settings and networking defaults.",
+    "summary": "Update global system settings and networking defaults.",
+    "method": "PUT",
+    "path": "/api/settings",
+    "contentType": "application/json",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "default_domain",
+        "type": "string",
+        "required": false,
+        "desc": "Apex domain for routing."
+      },
+      {
+        "name": "max_concurrent_builds",
+        "type": "integer",
+        "required": false,
+        "desc": "Build concurrency limit."
+      }
+    ],
+    "curlCommand": "curl -X PUT https://sycord.site:8787/api/settings \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"max_concurrent_builds\": 4}'",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"saved\""
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"saved\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-settings-cache-get": {
+    "isApi": true,
+    "groupName": "Settings & GitHub",
+    "title": "Get cache metrics",
+    "lead": "Inspect disk usage by build caches, docker layers, and temporary file artifacts.",
+    "summary": "Inspect disk usage by build caches, docker layers, and temporary file artifacts.",
+    "method": "GET",
+    "path": "/api/settings/cache",
+    "contentType": "none",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET https://sycord.site:8787/api/settings/cache \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "build_cache_size",
+        "type": "integer",
+        "desc": "Size of npm/pip/cargo build caches in bytes."
+      },
+      {
+        "name": "docker_cache_size",
+        "type": "integer",
+        "desc": "Size of dangling container image layers."
+      },
+      {
+        "name": "temp_files_size",
+        "type": "integer",
+        "desc": "Size of temp staging directories."
+      }
+    ],
+    "responseJson": "{\n  \"build_cache_size\": 2147483648,\n  \"docker_cache_size\": 5368709120,\n  \"temp_files_size\": 268435456\n}",
+    "updated": "03/09/2026"
+  },
+  "api-settings-cache-clear-post": {
+    "isApi": true,
+    "groupName": "Settings & GitHub",
+    "title": "Clear system cache",
+    "lead": "Purge build caches, temporary zip extractions, and unused Docker layers to free disk space.",
+    "summary": "Purge build caches, temporary zip extractions, and unused Docker layers to free disk space.",
+    "method": "POST",
+    "path": "/api/settings/cache/clear",
+    "contentType": "none",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/settings/cache/clear \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "freed_bytes",
+        "type": "integer",
+        "desc": "Total disk space recovered in bytes."
+      },
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"cleared\""
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"cleared\",\n  \"freed_bytes\": 7784628224\n}",
+    "updated": "03/09/2026"
+  },
+  "api-settings-github-get": {
+    "isApi": true,
+    "groupName": "Settings & GitHub",
+    "title": "Get GitHub App config",
+    "lead": "Retrieve configured GitHub OAuth Client ID, App ID, and installation status.",
+    "summary": "Retrieve configured GitHub OAuth Client ID, App ID, and installation status.",
+    "method": "GET",
+    "path": "/api/settings/github",
+    "contentType": "none",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET https://sycord.site:8787/api/settings/github \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "client_id",
+        "type": "string",
+        "desc": "GitHub OAuth Client ID."
+      },
+      {
+        "name": "is_configured",
+        "type": "boolean",
+        "desc": "True if Client Secret is securely stored."
+      }
+    ],
+    "responseJson": "{\n  \"client_id\": \"Iv1.8941829abc\",\n  \"is_configured\": true\n}",
+    "updated": "03/09/2026"
+  },
+  "api-settings-github-put": {
+    "isApi": true,
+    "groupName": "Settings & GitHub",
+    "title": "Update GitHub App config",
+    "lead": "Save GitHub OAuth application credentials for repository imports and webhook triggers.",
+    "summary": "Save GitHub OAuth application credentials for repository imports and webhook triggers.",
+    "method": "PUT",
+    "path": "/api/settings/github",
+    "contentType": "application/json",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "client_id",
+        "type": "string",
+        "required": true,
+        "desc": "GitHub OAuth Client ID."
+      },
+      {
+        "name": "client_secret",
+        "type": "string",
+        "required": true,
+        "desc": "GitHub OAuth Client Secret."
+      }
+    ],
+    "curlCommand": "curl -X PUT https://sycord.site:8787/api/settings/github \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"client_id\": \"Iv1.8941829abc\", \"client_secret\": \"sec_gh_8921\"}'",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"saved\""
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"saved\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-settings-github-test-post": {
+    "isApi": true,
+    "groupName": "Settings & GitHub",
+    "title": "Test GitHub credentials",
+    "lead": "Validate GitHub OAuth credentials against GitHub REST API.",
+    "summary": "Validate GitHub OAuth credentials against GitHub REST API.",
+    "method": "POST",
+    "path": "/api/settings/github/test",
+    "contentType": "none",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/settings/github/test \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "valid",
+        "type": "boolean",
+        "desc": "True if credentials successfully authenticated with GitHub."
+      }
+    ],
+    "responseJson": "{\n  \"valid\": true,\n  \"message\": \"Successfully authenticated with GitHub API.\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-github-status-get": {
+    "isApi": true,
+    "groupName": "Settings & GitHub",
+    "title": "Check GitHub link status",
+    "lead": "Check if active user session is linked with a GitHub account.",
+    "summary": "Check if active user session is linked with a GitHub account.",
+    "method": "GET",
+    "path": "/api/github/status",
+    "contentType": "none",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET https://sycord.site:8787/api/github/status \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "connected",
+        "type": "boolean",
+        "desc": "True if GitHub OAuth token is valid."
+      },
+      {
+        "name": "github_username",
+        "type": "string",
+        "desc": "Linked GitHub account handle."
+      }
+    ],
+    "responseJson": "{\n  \"connected\": true,\n  \"github_username\": \"octocat\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-github-pulls-get": {
+    "isApi": true,
+    "groupName": "Settings & GitHub",
+    "title": "List project pull requests",
+    "lead": "Fetch open pull requests from linked GitHub repository for preview environment generation.",
+    "summary": "Fetch open pull requests from linked GitHub repository for preview environment generation.",
+    "method": "GET",
+    "path": "/api/github/pulls",
+    "contentType": "none",
+    "pathParams": [],
+    "queryParams": [
+      {
+        "name": "repo",
+        "type": "string",
+        "required": true,
+        "desc": "Full repository name (e.g. \"owner/repo\")."
+      }
+    ],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET \"https://sycord.site:8787/api/github/pulls?repo=MDavidka/sarra\" \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "pulls",
+        "type": "array",
+        "desc": "List of open PR objects with branch info."
+      }
+    ],
+    "responseJson": "{\n  \"pulls\": [\n    {\n      \"number\": 515,\n      \"title\": \"feat: mobile header and sidebar accuracy\",\n      \"author\": \"MDavidka\",\n      \"head_ref\": \"feat/mobile-header-and-sidebar-accuracy\",\n      \"state\": \"open\"\n    }\n  ]\n}",
+    "updated": "03/09/2026"
+  },
+  "api-github-pulls-number-merge-post": {
+    "isApi": true,
+    "groupName": "Settings & GitHub",
+    "title": "Merge GitHub pull request",
+    "lead": "Trigger automated merge of approved pull request into target production branch.",
+    "summary": "Trigger automated merge of approved pull request into target production branch.",
+    "method": "POST",
+    "path": "/api/github/pulls/{number}/merge",
+    "contentType": "application/json",
+    "pathParams": [
+      {
+        "name": "number",
+        "type": "integer",
+        "required": true,
+        "desc": "Pull request number."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "merge_method",
+        "type": "string",
+        "required": false,
+        "desc": "\"merge\", \"squash\", or \"rebase\" (default: squash)."
+      }
+    ],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/github/pulls/515/merge \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"merge_method\": \"squash\"}'",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "merged",
+        "type": "boolean",
+        "desc": "True if merge succeeded."
+      },
+      {
+        "name": "sha",
+        "type": "string",
+        "desc": "Commit SHA of the merge commit."
+      }
+    ],
+    "responseJson": "{\n  \"merged\": true,\n  \"sha\": \"4a8c901e892b491a\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-ssl-get": {
+    "isApi": true,
+    "groupName": "SSL & Certificates",
+    "title": "Global SSL status",
+    "lead": "Check status of ACME Let's Encrypt certificates and TLS expiration dates.",
+    "summary": "Check status of ACME Let's Encrypt certificates and TLS expiration dates.",
+    "method": "GET",
+    "path": "/api/ssl",
+    "contentType": "none",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET https://sycord.site:8787/api/ssl \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "certificates",
+        "type": "array",
+        "desc": "List of active TLS certificates and domains."
+      }
+    ],
+    "responseJson": "{\n  \"certificates\": [\n    {\n      \"domain\": \"sycord.site\",\n      \"issuer\": \"Let's Encrypt\",\n      \"valid_until\": \"2026-12-12T00:00:00Z\",\n      \"auto_renew\": true\n    }\n  ]\n}",
+    "updated": "03/09/2026"
+  },
+  "api-ssl-resolve-post": {
+    "isApi": true,
+    "groupName": "SSL & Certificates",
+    "title": "Resolve DNS records",
+    "lead": "Perform live DNS A and CNAME record resolution to test propagation before issuing SSL.",
+    "summary": "Perform live DNS A and CNAME record resolution to test propagation before issuing SSL.",
+    "method": "POST",
+    "path": "/api/ssl/resolve",
+    "contentType": "application/json",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "domain",
+        "type": "string",
+        "required": true,
+        "desc": "Domain name to resolve."
+      }
+    ],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/ssl/resolve \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"domain\": \"app.sycord.site\"}'",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "resolved",
+        "type": "boolean",
+        "desc": "True if domain points to this host IP."
+      },
+      {
+        "name": "ip_addresses",
+        "type": "array",
+        "desc": "Resolved A/AAAA IP addresses."
+      }
+    ],
+    "responseJson": "{\n  \"resolved\": true,\n  \"ip_addresses\": [\n    \"185.199.108.153\"\n  ]\n}",
+    "updated": "03/09/2026"
+  },
+  "api-ssl-projects-custom-tls-post": {
+    "isApi": true,
+    "groupName": "SSL & Certificates",
+    "title": "Upload custom TLS certificate",
+    "lead": "Upload custom SSL certificate and private key for enterprise domain hosting.",
+    "summary": "Upload custom SSL certificate and private key for enterprise domain hosting.",
+    "method": "POST",
+    "path": "/api/ssl/projects/{project_id}/custom-tls",
+    "contentType": "application/json",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "certificate_pem",
+        "type": "string",
+        "required": true,
+        "desc": "PEM-formatted certificate chain."
+      },
+      {
+        "name": "private_key_pem",
+        "type": "string",
+        "required": true,
+        "desc": "PEM-formatted private key."
+      }
+    ],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/ssl/projects/proj_94821a/custom-tls \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"certificate_pem\": \"-----BEGIN CERTIFICATE...\", \"private_key_pem\": \"-----BEGIN RSA PRIVATE KEY...\"}'",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"installed\""
+      },
+      {
+        "name": "valid_until",
+        "type": "string",
+        "desc": "Expiration date of uploaded cert."
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"installed\",\n  \"valid_until\": \"2027-01-01T00:00:00Z\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-certificates-guide-get": {
+    "isApi": true,
+    "groupName": "SSL & Certificates",
+    "title": "Get certificate guide",
+    "lead": "Get required DNS CNAME/A record targets and automated ACME issuance guidance.",
+    "summary": "Get required DNS CNAME/A record targets and automated ACME issuance guidance.",
+    "method": "GET",
+    "path": "/api/certificates/guide",
+    "contentType": "none",
+    "pathParams": [],
+    "queryParams": [
+      {
+        "name": "domain",
+        "type": "string",
+        "required": true,
+        "desc": "Target custom domain name."
+      }
+    ],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET \"https://sycord.site:8787/api/certificates/guide?domain=app.example.com\" \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "cname_target",
+        "type": "string",
+        "desc": "CNAME target record."
+      },
+      {
+        "name": "a_record",
+        "type": "string",
+        "desc": "Host public IPv4 address."
+      }
+    ],
+    "responseJson": "{\n  \"cname_target\": \"cname.sycord.site\",\n  \"a_record\": \"185.199.108.153\",\n  \"instructions\": \"Create a CNAME record pointing app.example.com to cname.sycord.site\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-certificates-issue-post": {
+    "isApi": true,
+    "groupName": "SSL & Certificates",
+    "title": "Issue Let's Encrypt SSL",
+    "lead": "Execute automated HTTP-01 or DNS-01 ACME challenge to issue Let's Encrypt SSL certificate.",
+    "summary": "Execute automated HTTP-01 or DNS-01 ACME challenge to issue Let's Encrypt SSL certificate.",
+    "method": "POST",
+    "path": "/api/certificates/issue",
+    "contentType": "application/json",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "domain",
+        "type": "string",
+        "required": true,
+        "desc": "Fully-qualified domain name."
+      }
+    ],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/certificates/issue \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"domain\": \"app.example.com\"}'",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"issued\""
+      },
+      {
+        "name": "domain",
+        "type": "string",
+        "desc": "Provisioned domain."
+      },
+      {
+        "name": "expires_at",
+        "type": "string",
+        "desc": "Expiration date (90 days)."
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"issued\",\n  \"domain\": \"app.example.com\",\n  \"expires_at\": \"2026-12-13T12:00:00Z\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-get": {
+    "isApi": true,
+    "groupName": "Projects & Lifecycle",
+    "title": "List all projects",
+    "lead": "Retrieve an array of all hosted web applications and backend services.",
+    "summary": "Retrieve an array of all hosted web applications and backend services.",
+    "method": "GET",
+    "path": "/api/projects",
+    "contentType": "none",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "projects",
+        "type": "array",
+        "desc": "List of project summary objects."
+      }
+    ],
+    "responseJson": "{\n  \"projects\": [\n    {\n      \"id\": \"proj_94821a\",\n      \"name\": \"sarra-docs\",\n      \"status\": \"running\",\n      \"port\": 3000,\n      \"domain\": \"docs.sycord.site\"\n    }\n  ]\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-post": {
+    "isApi": true,
+    "groupName": "Projects & Lifecycle",
+    "title": "Create new project",
+    "lead": "Create and initialize a new project workspace directory and configuration.",
+    "summary": "Create and initialize a new project workspace directory and configuration.",
+    "method": "POST",
+    "path": "/api/projects",
+    "contentType": "application/json",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "name",
+        "type": "string",
+        "required": true,
+        "desc": "Project slug name."
+      },
+      {
+        "name": "framework",
+        "type": "string",
+        "required": false,
+        "desc": "Framework type (e.g. \"nextjs\", \"fastapi\", \"static\")."
+      },
+      {
+        "name": "port",
+        "type": "integer",
+        "required": false,
+        "desc": "Container internal port (default: 3000)."
+      }
+    ],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"name\": \"my-api\", \"framework\": \"fastapi\", \"port\": 8000}'",
+    "responseStatus": "201 Created",
+    "responseSchema": [
+      {
+        "name": "id",
+        "type": "string",
+        "desc": "Assigned unique project identifier."
+      },
+      {
+        "name": "name",
+        "type": "string",
+        "desc": "Project name."
+      },
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"initialized\""
+      }
+    ],
+    "responseJson": "{\n  \"id\": \"proj_8819ab\",\n  \"name\": \"my-api\",\n  \"status\": \"initialized\",\n  \"port\": 8000\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-get": {
+    "isApi": true,
+    "groupName": "Projects & Lifecycle",
+    "title": "Get project details",
+    "lead": "Retrieve complete runtime metadata, environment keys, domains, and health status for a project.",
+    "summary": "Retrieve complete runtime metadata, environment keys, domains, and health status for a project.",
+    "method": "GET",
+    "path": "/api/projects/{project_id}",
+    "contentType": "none",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/proj_94821a \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "id",
+        "type": "string",
+        "desc": "Project ID."
+      },
+      {
+        "name": "name",
+        "type": "string",
+        "desc": "Project name."
+      },
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"running\", \"stopped\", or \"building\"."
+      },
+      {
+        "name": "port",
+        "type": "integer",
+        "desc": "Container listening port."
+      },
+      {
+        "name": "domain",
+        "type": "string",
+        "desc": "Bound custom domain."
+      },
+      {
+        "name": "framework",
+        "type": "string",
+        "desc": "Detected runtime framework."
+      }
+    ],
+    "responseJson": "{\n  \"id\": \"proj_94821a\",\n  \"name\": \"sarra-docs\",\n  \"status\": \"running\",\n  \"port\": 3000,\n  \"domain\": \"docs.sycord.site\",\n  \"framework\": \"nextjs\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-put": {
+    "isApi": true,
+    "groupName": "Projects & Lifecycle",
+    "title": "Update project settings",
+    "lead": "Modify project configuration including assigned port, framework, and build scripts.",
+    "summary": "Modify project configuration including assigned port, framework, and build scripts.",
+    "method": "PUT",
+    "path": "/api/projects/{project_id}",
+    "contentType": "application/json",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "name",
+        "type": "string",
+        "required": false,
+        "desc": "New project name."
+      },
+      {
+        "name": "port",
+        "type": "integer",
+        "required": false,
+        "desc": "Updated internal container port."
+      }
+    ],
+    "curlCommand": "curl -X PUT https://sycord.site:8787/api/projects/proj_94821a \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"port\": 8080}'",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"updated\""
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"updated\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-delete": {
+    "isApi": true,
+    "groupName": "Projects & Lifecycle",
+    "title": "Delete project",
+    "lead": "Permanently stop container, wipe workspace directory, remove domains, and delete project database record.",
+    "summary": "Permanently stop container, wipe workspace directory, remove domains, and delete project database record.",
+    "method": "DELETE",
+    "path": "/api/projects/{project_id}",
+    "contentType": "none",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X DELETE https://sycord.site:8787/api/projects/proj_94821a \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"deleted\""
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"deleted\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-start-post": {
+    "isApi": true,
+    "groupName": "Projects & Lifecycle",
+    "title": "Start project container",
+    "lead": "Start background systemd/docker container process for project.",
+    "summary": "Start background systemd/docker container process for project.",
+    "method": "POST",
+    "path": "/api/projects/{project_id}/start",
+    "contentType": "none",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/start \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"started\""
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"started\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-stop-post": {
+    "isApi": true,
+    "groupName": "Projects & Lifecycle",
+    "title": "Stop project container",
+    "lead": "Gracefully terminate project container and halt process execution.",
+    "summary": "Gracefully terminate project container and halt process execution.",
+    "method": "POST",
+    "path": "/api/projects/{project_id}/stop",
+    "contentType": "none",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/stop \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"stopped\""
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"stopped\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-domain-post": {
+    "isApi": true,
+    "groupName": "Projects & Lifecycle",
+    "title": "Bind custom domain",
+    "lead": "Bind custom apex or subdomain with automatic SSL certificate provisioning and reverse proxy routing.",
+    "summary": "Bind custom apex or subdomain with automatic SSL certificate provisioning and reverse proxy routing.",
+    "method": "POST",
+    "path": "/api/projects/{project_id}/domain",
+    "contentType": "application/json",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "domain",
+        "type": "string",
+        "required": true,
+        "desc": "Fully qualified domain name (e.g. app.example.com)."
+      }
+    ],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/domain \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"domain\": \"docs.sycord.site\"}'",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"bound\""
+      },
+      {
+        "name": "domain",
+        "type": "string",
+        "desc": "Configured domain name."
+      },
+      {
+        "name": "ssl_status",
+        "type": "string",
+        "desc": "\"active\" or \"pending_dns\"."
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"bound\",\n  \"domain\": \"docs.sycord.site\",\n  \"ssl_status\": \"active\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-domain-delete": {
+    "isApi": true,
+    "groupName": "Projects & Lifecycle",
+    "title": "Unbind custom domain",
+    "lead": "Remove custom domain binding and restore default platform subdomain routing.",
+    "summary": "Remove custom domain binding and restore default platform subdomain routing.",
+    "method": "DELETE",
+    "path": "/api/projects/{project_id}/domain",
+    "contentType": "none",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X DELETE https://sycord.site:8787/api/projects/proj_94821a/domain \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"unbound\""
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"unbound\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-environment-put": {
+    "isApi": true,
+    "groupName": "Projects & Lifecycle",
+    "title": "Upsert environment variables",
+    "lead": "Securely set or update environment variables and secrets injected into runtime container.",
+    "summary": "Securely set or update environment variables and secrets injected into runtime container.",
+    "method": "PUT",
+    "path": "/api/projects/{project_id}/environment",
+    "contentType": "application/json",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "variables",
+        "type": "object",
+        "required": true,
+        "desc": "Key-value dictionary of environment variables."
+      }
+    ],
+    "curlCommand": "curl -X PUT https://sycord.site:8787/api/projects/proj_94821a/environment \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"variables\": {\"DATABASE_URL\": \"postgres://...\", \"NODE_ENV\": \"production\"}}'",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"saved\""
+      },
+      {
+        "name": "keys",
+        "type": "array",
+        "desc": "List of configured variable names."
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"saved\",\n  \"keys\": [\n    \"DATABASE_URL\",\n    \"NODE_ENV\"\n  ]\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-environment-key-delete": {
+    "isApi": true,
+    "groupName": "Projects & Lifecycle",
+    "title": "Delete environment variable",
+    "lead": "Remove a specific environment variable from project configuration.",
+    "summary": "Remove a specific environment variable from project configuration.",
+    "method": "DELETE",
+    "path": "/api/projects/{project_id}/environment/{key}",
+    "contentType": "none",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      },
+      {
+        "name": "key",
+        "type": "string",
+        "required": true,
+        "desc": "Variable name to delete."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X DELETE https://sycord.site:8787/api/projects/proj_94821a/environment/DATABASE_URL \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"deleted\""
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"deleted\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-health-get": {
+    "isApi": true,
+    "groupName": "Projects & Lifecycle",
+    "title": "Check project health probe",
+    "lead": "Perform direct HTTP health probe on project listener port to check readiness.",
+    "summary": "Perform direct HTTP health probe on project listener port to check readiness.",
+    "method": "GET",
+    "path": "/api/projects/{project_id}/health",
+    "contentType": "none",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/proj_94821a/health \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "healthy",
+        "type": "boolean",
+        "desc": "True if HTTP 200/300 was received from local port."
+      },
+      {
+        "name": "response_time_ms",
+        "type": "number",
+        "desc": "Probe response latency in milliseconds."
+      }
+    ],
+    "responseJson": "{\n  \"healthy\": true,\n  \"response_time_ms\": 12.4\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-deployment-config-put": {
+    "isApi": true,
+    "groupName": "Projects & Lifecycle",
+    "title": "Update deployment config",
+    "lead": "Configure build command, start script, install command, and root output directory.",
+    "summary": "Configure build command, start script, install command, and root output directory.",
+    "method": "PUT",
+    "path": "/api/projects/{project_id}/deployment-config",
+    "contentType": "application/json",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "build_command",
+        "type": "string",
+        "required": false,
+        "desc": "Build command (e.g. \"npm run build\")."
+      },
+      {
+        "name": "start_command",
+        "type": "string",
+        "required": false,
+        "desc": "Start command (e.g. \"npm run start\")."
+      },
+      {
+        "name": "install_command",
+        "type": "string",
+        "required": false,
+        "desc": "Install command (e.g. \"npm install\")."
+      },
+      {
+        "name": "output_directory",
+        "type": "string",
+        "required": false,
+        "desc": "Static output directory (e.g. \"dist\")."
+      }
+    ],
+    "curlCommand": "curl -X PUT https://sycord.site:8787/api/projects/proj_94821a/deployment-config \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"build_command\": \"npm run build\", \"start_command\": \"npm run start\"}'",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"updated\""
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"updated\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-analyze-post": {
+    "isApi": true,
+    "groupName": "Projects & Lifecycle",
+    "title": "Analyze project source",
+    "lead": "Inspect workspace files to auto-detect framework, package manager, and required start commands.",
+    "summary": "Inspect workspace files to auto-detect framework, package manager, and required start commands.",
+    "method": "POST",
+    "path": "/api/projects/{project_id}/analyze",
+    "contentType": "none",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/analyze \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "framework",
+        "type": "string",
+        "desc": "Detected framework (e.g. \"nextjs\", \"fastapi\", \"astro\")."
+      },
+      {
+        "name": "package_manager",
+        "type": "string",
+        "desc": "Detected tool (\"npm\", \"yarn\", \"pnpm\", \"pip\")."
+      },
+      {
+        "name": "suggested_port",
+        "type": "integer",
+        "desc": "Recommended default listening port."
+      }
+    ],
+    "responseJson": "{\n  \"framework\": \"nextjs\",\n  \"package_manager\": \"pnpm\",\n  \"suggested_port\": 3000,\n  \"detected_scripts\": [\n    \"build\",\n    \"start\",\n    \"dev\"\n  ]\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-deploy-detected-post": {
+    "isApi": true,
+    "groupName": "Projects & Lifecycle",
+    "title": "Deploy detected framework",
+    "lead": "Automatically apply detected build configuration and trigger initial deployment pipeline.",
+    "summary": "Automatically apply detected build configuration and trigger initial deployment pipeline.",
+    "method": "POST",
+    "path": "/api/projects/{project_id}/deploy-detected",
+    "contentType": "none",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/deploy-detected \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "build_id",
+        "type": "string",
+        "desc": "Triggered build run ID."
+      },
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"queued\""
+      }
+    ],
+    "responseJson": "{\n  \"build_id\": \"bld_77491\",\n  \"status\": \"queued\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-builds-get": {
+    "isApi": true,
+    "groupName": "Builds & Deployments",
+    "title": "List project builds",
+    "lead": "Retrieve historical build records, git commit SHAs, build duration, and pass/fail statuses.",
+    "summary": "Retrieve historical build records, git commit SHAs, build duration, and pass/fail statuses.",
+    "method": "GET",
+    "path": "/api/projects/{project_id}/builds",
+    "contentType": "none",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [
+      {
+        "name": "limit",
+        "type": "integer",
+        "required": false,
+        "desc": "Number of records to return (default: 20)."
+      }
+    ],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/proj_94821a/builds \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "builds",
+        "type": "array",
+        "desc": "Array of build execution objects."
+      }
+    ],
+    "responseJson": "{\n  \"builds\": [\n    {\n      \"id\": \"bld_77491\",\n      \"status\": \"success\",\n      \"duration_seconds\": 38,\n      \"commit_sha\": \"a19f201\",\n      \"created_at\": \"2026-09-13T10:00:00Z\"\n    }\n  ]\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-builds-track-get": {
+    "isApi": true,
+    "groupName": "Builds & Deployments",
+    "title": "Track active build",
+    "lead": "Poll or track progress of currently executing build step and status.",
+    "summary": "Poll or track progress of currently executing build step and status.",
+    "method": "GET",
+    "path": "/api/projects/{project_id}/builds/track",
+    "contentType": "none",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/proj_94821a/builds/track \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "active",
+        "type": "boolean",
+        "desc": "True if build is currently running."
+      },
+      {
+        "name": "step",
+        "type": "string",
+        "desc": "Current build step (\"installing\", \"building\", \"starting\")."
+      },
+      {
+        "name": "elapsed_seconds",
+        "type": "integer",
+        "desc": "Seconds elapsed since build trigger."
+      }
+    ],
+    "responseJson": "{\n  \"active\": true,\n  \"step\": \"building\",\n  \"elapsed_seconds\": 18\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-builds-trigger-post": {
+    "isApi": true,
+    "groupName": "Builds & Deployments",
+    "title": "Trigger new build",
+    "lead": "Enqueue an immediate new build and deployment execution for the project.",
+    "summary": "Enqueue an immediate new build and deployment execution for the project.",
+    "method": "POST",
+    "path": "/api/projects/{project_id}/builds/trigger",
+    "contentType": "none",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/builds/trigger \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "201 Created",
+    "responseSchema": [
+      {
+        "name": "build_id",
+        "type": "string",
+        "desc": "Unique build run ID."
+      },
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"queued\""
+      }
+    ],
+    "responseJson": "{\n  \"build_id\": \"bld_77492\",\n  \"status\": \"queued\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-builds-build-id-logs-get": {
+    "isApi": true,
+    "groupName": "Builds & Deployments",
+    "title": "Get build run logs",
+    "lead": "Retrieve complete build execution log output for a specific build ID.",
+    "summary": "Retrieve complete build execution log output for a specific build ID.",
+    "method": "GET",
+    "path": "/api/projects/{project_id}/builds/{build_id}/logs",
+    "contentType": "none",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      },
+      {
+        "name": "build_id",
+        "type": "string",
+        "required": true,
+        "desc": "Build run ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/proj_94821a/builds/bld_77491/logs \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "logs",
+        "type": "string",
+        "desc": "Full stdout/stderr build text output."
+      }
+    ],
+    "responseJson": "{\n  \"logs\": \"[build] Installing dependencies...\\n[build] Completed in 8.2s\\n[build] Next.js 14 compiled successfully.\\n[build] Artifact ready.\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-deployments-build-id-logs-get": {
+    "isApi": true,
+    "groupName": "Builds & Deployments",
+    "title": "Get deployment container logs",
+    "lead": "Retrieve runtime stdout/stderr log output from container during specific deployment execution.",
+    "summary": "Retrieve runtime stdout/stderr log output from container during specific deployment execution.",
+    "method": "GET",
+    "path": "/api/projects/{project_id}/deployments/{build_id}/logs",
+    "contentType": "none",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      },
+      {
+        "name": "build_id",
+        "type": "string",
+        "required": true,
+        "desc": "Deployment run ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/proj_94821a/deployments/bld_77491/logs \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "logs",
+        "type": "string",
+        "desc": "Container runtime logs."
+      }
+    ],
+    "responseJson": "{\n  \"logs\": \"Ready in 420ms on port 3000.\\nGET / 200 12ms\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-deploy-post": {
+    "isApi": true,
+    "groupName": "Builds & Deployments",
+    "title": "Issue immediate deploy",
+    "lead": "Trigger immediate atomic production deployment without rebuild if artifact is fresh.",
+    "summary": "Trigger immediate atomic production deployment without rebuild if artifact is fresh.",
+    "method": "POST",
+    "path": "/api/projects/{project_id}/deploy",
+    "contentType": "none",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/deploy \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "deployment_id",
+        "type": "string",
+        "desc": "Deployment run ID."
+      },
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"deployed\""
+      }
+    ],
+    "responseJson": "{\n  \"deployment_id\": \"dep_19482\",\n  \"status\": \"deployed\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-deployments-get": {
+    "isApi": true,
+    "groupName": "Builds & Deployments",
+    "title": "List deployment revisions",
+    "lead": "Retrieve deployment history list with commit tags, active production pointers, and rollback targets.",
+    "summary": "Retrieve deployment history list with commit tags, active production pointers, and rollback targets.",
+    "method": "GET",
+    "path": "/api/projects/{project_id}/deployments",
+    "contentType": "none",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/proj_94821a/deployments \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "deployments",
+        "type": "array",
+        "desc": "Array of deployment snapshots."
+      }
+    ],
+    "responseJson": "{\n  \"deployments\": [\n    {\n      \"id\": \"dep_19482\",\n      \"is_current\": true,\n      \"commit_sha\": \"a19f201\",\n      \"created_at\": \"2026-09-13T10:05:00Z\"\n    },\n    {\n      \"id\": \"dep_19480\",\n      \"is_current\": false,\n      \"commit_sha\": \"98e411b\",\n      \"created_at\": \"2026-09-12T18:30:00Z\"\n    }\n  ]\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-deployments-run-id-rollback-post": {
+    "isApi": true,
+    "groupName": "Builds & Deployments",
+    "title": "Rollback deployment",
+    "lead": "Instantly switch active production traffic back to a previous healthy deployment snapshot.",
+    "summary": "Instantly switch active production traffic back to a previous healthy deployment snapshot.",
+    "method": "POST",
+    "path": "/api/projects/{project_id}/deployments/{run_id}/rollback",
+    "contentType": "none",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      },
+      {
+        "name": "run_id",
+        "type": "string",
+        "required": true,
+        "desc": "Target deployment revision ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/deployments/dep_19480/rollback \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"rolled_back\""
+      },
+      {
+        "name": "active_deployment_id",
+        "type": "string",
+        "desc": "ID of newly activated revision."
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"rolled_back\",\n  \"active_deployment_id\": \"dep_19480\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-logs-get": {
+    "isApi": true,
+    "groupName": "Builds & Deployments",
+    "title": "Get container logs",
+    "lead": "Fetch recent stdout and stderr lines from the running project container.",
+    "summary": "Fetch recent stdout and stderr lines from the running project container.",
+    "method": "GET",
+    "path": "/api/projects/{project_id}/logs",
+    "contentType": "none",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [
+      {
+        "name": "lines",
+        "type": "integer",
+        "required": false,
+        "desc": "Number of tail lines to retrieve (default: 200)."
+      }
+    ],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET \"https://sycord.site:8787/api/projects/proj_94821a/logs?lines=100\" \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "logs",
+        "type": "string",
+        "desc": "Captured application log buffer."
+      }
+    ],
+    "responseJson": "{\n  \"logs\": \"2026-09-13T12:00:01Z [INFO] Application listening on 0.0.0.0:3000\\n2026-09-13T12:01:23Z [INFO] GET /api/v1/users 200 OK\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-logs-stream-get": {
+    "isApi": true,
+    "groupName": "Builds & Deployments",
+    "title": "Stream container logs (SSE)",
+    "lead": "Open real-time Server-Sent Events (SSE) connection to stream live container logs.",
+    "summary": "Open real-time Server-Sent Events (SSE) connection to stream live container logs.",
+    "method": "GET",
+    "path": "/api/projects/{project_id}/logs/stream",
+    "contentType": "text/event-stream",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -N -X GET https://sycord.site:8787/api/projects/proj_94821a/logs/stream \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "data",
+        "type": "string",
+        "desc": "Streaming log line chunk formatted as SSE message."
+      }
+    ],
+    "responseJson": "data: {\"line\": \"[server] Request handled in 4ms\"}\n\ndata: {\"line\": \"[server] Cache hit for /static/bundle.js\"}\n\n",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-update-post": {
+    "isApi": true,
+    "groupName": "Builds & Deployments",
+    "title": "Pull Git update and rebuild",
+    "lead": "Fetch latest commits from linked Git branch, reinstall dependencies, and restart project.",
+    "summary": "Fetch latest commits from linked Git branch, reinstall dependencies, and restart project.",
+    "method": "POST",
+    "path": "/api/projects/{project_id}/update",
+    "contentType": "none",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/update \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"updated\""
+      },
+      {
+        "name": "commit_sha",
+        "type": "string",
+        "desc": "New head commit SHA."
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"updated\",\n  \"commit_sha\": \"d98174f\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-redirects-get": {
+    "isApi": true,
+    "groupName": "Redirects & Routing",
+    "title": "List redirect rules",
+    "lead": "Retrieve all configured HTTP redirection and reverse proxy URL rewrite rules.",
+    "summary": "Retrieve all configured HTTP redirection and reverse proxy URL rewrite rules.",
+    "method": "GET",
+    "path": "/api/projects/{project_id}/redirects",
+    "contentType": "none",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/proj_94821a/redirects \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "redirects",
+        "type": "array",
+        "desc": "Array of redirect rule objects."
+      }
+    ],
+    "responseJson": "{\n  \"redirects\": [\n    {\n      \"id\": \"red_01\",\n      \"source_path\": \"/old-docs/:path*\",\n      \"target_url\": \"/docs/:path*\",\n      \"status_code\": 301,\n      \"enabled\": true\n    }\n  ]\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-redirects-post": {
+    "isApi": true,
+    "groupName": "Redirects & Routing",
+    "title": "Create redirect rule",
+    "lead": "Add a new URL redirect or proxy rewrite rule with regex pattern matching.",
+    "summary": "Add a new URL redirect or proxy rewrite rule with regex pattern matching.",
+    "method": "POST",
+    "path": "/api/projects/{project_id}/redirects",
+    "contentType": "application/json",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "source_path",
+        "type": "string",
+        "required": true,
+        "desc": "Source URL pattern (e.g. \"/blog/:slug\")."
+      },
+      {
+        "name": "target_url",
+        "type": "string",
+        "required": true,
+        "desc": "Target destination URL or path."
+      },
+      {
+        "name": "status_code",
+        "type": "integer",
+        "required": false,
+        "desc": "HTTP status code (301, 302, 307, 308; default: 301)."
+      }
+    ],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/redirects \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"source_path\": \"/legacy\", \"target_url\": \"/new-v2\", \"status_code\": 301}'",
+    "responseStatus": "201 Created",
+    "responseSchema": [
+      {
+        "name": "id",
+        "type": "string",
+        "desc": "Assigned redirect rule ID."
+      },
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"created\""
+      }
+    ],
+    "responseJson": "{\n  \"id\": \"red_02\",\n  \"status\": \"created\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-redirects-redirect-id-put": {
+    "isApi": true,
+    "groupName": "Redirects & Routing",
+    "title": "Update redirect rule",
+    "lead": "Update source path, destination target, or status code of an existing redirect rule.",
+    "summary": "Update source path, destination target, or status code of an existing redirect rule.",
+    "method": "PUT",
+    "path": "/api/projects/{project_id}/redirects/{redirect_id}",
+    "contentType": "application/json",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      },
+      {
+        "name": "redirect_id",
+        "type": "string",
+        "required": true,
+        "desc": "Redirect rule ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "source_path",
+        "type": "string",
+        "required": true,
+        "desc": "Updated source pattern."
+      },
+      {
+        "name": "target_url",
+        "type": "string",
+        "required": true,
+        "desc": "Updated target URL."
+      },
+      {
+        "name": "status_code",
+        "type": "integer",
+        "required": false,
+        "desc": "HTTP status code."
+      }
+    ],
+    "curlCommand": "curl -X PUT https://sycord.site:8787/api/projects/proj_94821a/redirects/red_01 \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"source_path\": \"/old-docs\", \"target_url\": \"/docs\", \"status_code\": 308}'",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"updated\""
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"updated\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-redirects-redirect-id-patch": {
+    "isApi": true,
+    "groupName": "Redirects & Routing",
+    "title": "Toggle redirect rule status",
+    "lead": "Enable or disable a redirect rule without modifying its configuration.",
+    "summary": "Enable or disable a redirect rule without modifying its configuration.",
+    "method": "PATCH",
+    "path": "/api/projects/{project_id}/redirects/{redirect_id}",
+    "contentType": "application/json",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      },
+      {
+        "name": "redirect_id",
+        "type": "string",
+        "required": true,
+        "desc": "Redirect rule ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "enabled",
+        "type": "boolean",
+        "required": true,
+        "desc": "True to activate, false to pause rule."
+      }
+    ],
+    "curlCommand": "curl -X PATCH https://sycord.site:8787/api/projects/proj_94821a/redirects/red_01 \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"enabled\": true}'",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"updated\""
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"updated\",\n  \"enabled\": true\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-redirects-redirect-id-delete": {
+    "isApi": true,
+    "groupName": "Redirects & Routing",
+    "title": "Delete redirect rule",
+    "lead": "Remove a redirect rule from the edge proxy router.",
+    "summary": "Remove a redirect rule from the edge proxy router.",
+    "method": "DELETE",
+    "path": "/api/projects/{project_id}/redirects/{redirect_id}",
+    "contentType": "none",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      },
+      {
+        "name": "redirect_id",
+        "type": "string",
+        "required": true,
+        "desc": "Redirect rule ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X DELETE https://sycord.site:8787/api/projects/proj_94821a/redirects/red_01 \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"deleted\""
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"deleted\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-redirects-reorder-post": {
+    "isApi": true,
+    "groupName": "Redirects & Routing",
+    "title": "Reorder redirect rules",
+    "lead": "Set the sequential evaluation priority order for routing rules.",
+    "summary": "Set the sequential evaluation priority order for routing rules.",
+    "method": "POST",
+    "path": "/api/projects/{project_id}/redirects/reorder",
+    "contentType": "application/json",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "ordered_ids",
+        "type": "array",
+        "required": true,
+        "desc": "Array of redirect rule IDs in desired priority order."
+      }
+    ],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/redirects/reorder \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"ordered_ids\": [\"red_02\", \"red_01\"]}'",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"reordered\""
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"reordered\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-redirects-bulk-post": {
+    "isApi": true,
+    "groupName": "Redirects & Routing",
+    "title": "Bulk update redirect rules",
+    "lead": "Add or replace multiple redirect rules in a single atomic transaction.",
+    "summary": "Add or replace multiple redirect rules in a single atomic transaction.",
+    "method": "POST",
+    "path": "/api/projects/{project_id}/redirects/bulk",
+    "contentType": "application/json",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "rules",
+        "type": "array",
+        "required": true,
+        "desc": "Array of redirect rule objects."
+      }
+    ],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/redirects/bulk \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"rules\": [{\"source_path\": \"/a\", \"target_url\": \"/b\", \"status_code\": 301}]}'",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"saved\""
+      },
+      {
+        "name": "count",
+        "type": "integer",
+        "desc": "Number of rules saved."
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"saved\",\n  \"count\": 1\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-redirects-test-post": {
+    "isApi": true,
+    "groupName": "Redirects & Routing",
+    "title": "Test redirect URL matching",
+    "lead": "Simulate and test how a specific request URL resolves against current redirect rules.",
+    "summary": "Simulate and test how a specific request URL resolves against current redirect rules.",
+    "method": "POST",
+    "path": "/api/projects/{project_id}/redirects/test",
+    "contentType": "application/json",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "test_url",
+        "type": "string",
+        "required": true,
+        "desc": "Incoming test URL path (e.g. \"/old-docs/guide\")."
+      }
+    ],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/redirects/test \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"test_url\": \"/old-docs/intro\"}'",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "matched",
+        "type": "boolean",
+        "desc": "True if a rule matched."
+      },
+      {
+        "name": "target_url",
+        "type": "string",
+        "desc": "Computed destination redirect URL."
+      },
+      {
+        "name": "status_code",
+        "type": "integer",
+        "desc": "Resulting HTTP redirect status."
+      }
+    ],
+    "responseJson": "{\n  \"matched\": true,\n  \"target_url\": \"/docs/intro\",\n  \"status_code\": 301,\n  \"rule_id\": \"red_01\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-redirects-import-post": {
+    "isApi": true,
+    "groupName": "Redirects & Routing",
+    "title": "Import redirects file",
+    "lead": "Import redirect rules from a `_redirects` file, Netlify format, or JSON array.",
+    "summary": "Import redirect rules from a `_redirects` file, Netlify format, or JSON array.",
+    "method": "POST",
+    "path": "/api/projects/{project_id}/redirects/import",
+    "contentType": "application/json",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "raw_content",
+        "type": "string",
+        "required": true,
+        "desc": "Raw text content of `_redirects` file or JSON."
+      }
+    ],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/redirects/import \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"raw_content\": \"/old /new 301\\n/home / 302\"}'",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "imported_count",
+        "type": "integer",
+        "desc": "Number of successfully imported rules."
+      }
+    ],
+    "responseJson": "{\n  \"imported_count\": 2,\n  \"status\": \"success\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-stats-get": {
+    "isApi": true,
+    "groupName": "Analytics & Telemetry",
+    "title": "Real-time project stats",
+    "lead": "Fetch real-time CPU percentage, memory consumption in MB, and active network connections.",
+    "summary": "Fetch real-time CPU percentage, memory consumption in MB, and active network connections.",
+    "method": "GET",
+    "path": "/api/projects/{project_id}/stats",
+    "contentType": "none",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/proj_94821a/stats \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "cpu_usage",
+        "type": "number",
+        "desc": "Container CPU percentage."
+      },
+      {
+        "name": "memory_mb",
+        "type": "number",
+        "desc": "Resident RAM used in megabytes."
+      },
+      {
+        "name": "uptime_seconds",
+        "type": "integer",
+        "desc": "Seconds elapsed since container start."
+      }
+    ],
+    "responseJson": "{\n  \"cpu_usage\": 3.8,\n  \"memory_mb\": 112.5,\n  \"uptime_seconds\": 86400\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-performance-get": {
+    "isApi": true,
+    "groupName": "Analytics & Telemetry",
+    "title": "Historical performance charts",
+    "lead": "Retrieve time-series performance data points over the last 24 hours / 7 days for graphing.",
+    "summary": "Retrieve time-series performance data points over the last 24 hours / 7 days for graphing.",
+    "method": "GET",
+    "path": "/api/projects/{project_id}/performance",
+    "contentType": "none",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [
+      {
+        "name": "range",
+        "type": "string",
+        "required": false,
+        "desc": "\"1h\", \"24h\", \"7d\" (default: 24h)."
+      }
+    ],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET \"https://sycord.site:8787/api/projects/proj_94821a/performance?range=24h\" \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "series",
+        "type": "array",
+        "desc": "Time-series data points with timestamps, CPU and memory values."
+      }
+    ],
+    "responseJson": "{\n  \"series\": [\n    {\n      \"timestamp\": \"2026-09-13T11:00:00Z\",\n      \"cpu\": 3.4,\n      \"memory\": 110.2\n    },\n    {\n      \"timestamp\": \"2026-09-13T12:00:00Z\",\n      \"cpu\": 4.1,\n      \"memory\": 112.5\n    }\n  ]\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-app-logs-get": {
+    "isApi": true,
+    "groupName": "Analytics & Telemetry",
+    "title": "Application runtime logs",
+    "lead": "Fetch parsed application standard output and error log streams with severity levels.",
+    "summary": "Fetch parsed application standard output and error log streams with severity levels.",
+    "method": "GET",
+    "path": "/api/projects/{project_id}/app-logs",
+    "contentType": "none",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/proj_94821a/app-logs \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "lines",
+        "type": "array",
+        "desc": "Array of parsed log line objects."
+      }
+    ],
+    "responseJson": "{\n  \"lines\": [\n    {\n      \"timestamp\": \"2026-09-13T12:00:01Z\",\n      \"level\": \"info\",\n      \"message\": \"Server listening on 3000\"\n    }\n  ]\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-router-logs-get": {
+    "isApi": true,
+    "groupName": "Analytics & Telemetry",
+    "title": "HTTP edge proxy access logs",
+    "lead": "Fetch reverse proxy HTTP access logs including client IP, status code, response time, and user agent.",
+    "summary": "Fetch reverse proxy HTTP access logs including client IP, status code, response time, and user agent.",
+    "method": "GET",
+    "path": "/api/projects/{project_id}/router-logs",
+    "contentType": "none",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [
+      {
+        "name": "limit",
+        "type": "integer",
+        "required": false,
+        "desc": "Max entries to fetch (default: 100)."
+      }
+    ],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/proj_94821a/router-logs \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "requests",
+        "type": "array",
+        "desc": "Array of HTTP access log entries."
+      }
+    ],
+    "responseJson": "{\n  \"requests\": [\n    {\n      \"timestamp\": \"2026-09-13T12:05:10Z\",\n      \"ip\": \"1.2.3.4\",\n      \"method\": \"GET\",\n      \"path\": \"/docs\",\n      \"status\": 200,\n      \"duration_ms\": 14\n    }\n  ]\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-visitors-get": {
+    "isApi": true,
+    "groupName": "Analytics & Telemetry",
+    "title": "Visitor geographic telemetry",
+    "lead": "Get aggregate geographic visitor countries, unique IP counts, and referrer distribution.",
+    "summary": "Get aggregate geographic visitor countries, unique IP counts, and referrer distribution.",
+    "method": "GET",
+    "path": "/api/projects/{project_id}/visitors",
+    "contentType": "none",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/proj_94821a/visitors \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "countries",
+        "type": "object",
+        "desc": "Country ISO codes mapped to visitor counts."
+      },
+      {
+        "name": "unique_visitors",
+        "type": "integer",
+        "desc": "Total unique visitors in time window."
+      }
+    ],
+    "responseJson": "{\n  \"unique_visitors\": 1420,\n  \"countries\": {\n    \"US\": 620,\n    \"DE\": 280,\n    \"FR\": 190,\n    \"GB\": 150\n  }\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-analytics-get": {
+    "isApi": true,
+    "groupName": "Analytics & Telemetry",
+    "title": "HTTP status & latency metrics",
+    "lead": "Breakdown of HTTP 2xx, 3xx, 4xx, 5xx status codes, p95 latency, and total bandwidth transferred.",
+    "summary": "Breakdown of HTTP 2xx, 3xx, 4xx, 5xx status codes, p95 latency, and total bandwidth transferred.",
+    "method": "GET",
+    "path": "/api/projects/{project_id}/analytics",
+    "contentType": "none",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/proj_94821a/analytics \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "total_requests",
+        "type": "integer",
+        "desc": "Total requests served."
+      },
+      {
+        "name": "status_codes",
+        "type": "object",
+        "desc": "Status code count distribution."
+      },
+      {
+        "name": "p95_latency_ms",
+        "type": "number",
+        "desc": "95th percentile latency."
+      }
+    ],
+    "responseJson": "{\n  \"total_requests\": 48290,\n  \"status_codes\": {\n    \"200\": 47100,\n    \"304\": 950,\n    \"404\": 210,\n    \"500\": 30\n  },\n  \"p95_latency_ms\": 18.5\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-release-get": {
+    "isApi": true,
+    "groupName": "Release & Previews",
+    "title": "Get release workspace",
+    "lead": "Retrieve deployment environments (production, staging), policies, approval workflows, and active restore points.",
+    "summary": "Retrieve deployment environments (production, staging), policies, approval workflows, and active restore points.",
+    "method": "GET",
+    "path": "/api/projects/{project_id}/release",
+    "contentType": "none",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/proj_94821a/release \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "environments",
+        "type": "array",
+        "desc": "List of environments (production, staging)."
+      },
+      {
+        "name": "policy",
+        "type": "object",
+        "desc": "Release approval policy object."
+      }
+    ],
+    "responseJson": "{\n  \"environments\": [\n    {\n      \"id\": \"env_prod\",\n      \"name\": \"production\",\n      \"auto_deploy\": false\n    },\n    {\n      \"id\": \"env_stg\",\n      \"name\": \"staging\",\n      \"auto_deploy\": true\n    }\n  ],\n  \"policy\": {\n    \"required_approvals\": 1,\n    \"enforce_tests\": true\n  }\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-release-environments-env-id-put": {
+    "isApi": true,
+    "groupName": "Release & Previews",
+    "title": "Update release environment",
+    "lead": "Configure environment branch targets, auto-deploy toggles, and variable overrides.",
+    "summary": "Configure environment branch targets, auto-deploy toggles, and variable overrides.",
+    "method": "PUT",
+    "path": "/api/projects/{project_id}/release/environments/{environment_id}",
+    "contentType": "application/json",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      },
+      {
+        "name": "environment_id",
+        "type": "string",
+        "required": true,
+        "desc": "Environment ID (e.g. \"env_prod\")."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "target_branch",
+        "type": "string",
+        "required": false,
+        "desc": "Target git branch name."
+      },
+      {
+        "name": "auto_deploy",
+        "type": "boolean",
+        "required": false,
+        "desc": "Enable automatic deploy on push."
+      }
+    ],
+    "curlCommand": "curl -X PUT https://sycord.site:8787/api/projects/proj_94821a/release/environments/env_prod \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"target_branch\": \"main\", \"auto_deploy\": false}'",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"saved\""
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"saved\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-release-policy-put": {
+    "isApi": true,
+    "groupName": "Release & Previews",
+    "title": "Update release policy",
+    "lead": "Set deployment guardrails, required peer approvals, and pre-deploy smoke test requirements.",
+    "summary": "Set deployment guardrails, required peer approvals, and pre-deploy smoke test requirements.",
+    "method": "PUT",
+    "path": "/api/projects/{project_id}/release/policy",
+    "contentType": "application/json",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "required_approvals",
+        "type": "integer",
+        "required": false,
+        "desc": "Number of sign-offs needed."
+      },
+      {
+        "name": "enforce_tests",
+        "type": "boolean",
+        "required": false,
+        "desc": "Require passing automated tests."
+      }
+    ],
+    "curlCommand": "curl -X PUT https://sycord.site:8787/api/projects/proj_94821a/release/policy \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"required_approvals\": 1, \"enforce_tests\": true}'",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"policy_updated\""
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"policy_updated\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-release-team-post": {
+    "isApi": true,
+    "groupName": "Release & Previews",
+    "title": "Upsert release team member",
+    "lead": "Add or update team member roles and deployment approval permissions.",
+    "summary": "Add or update team member roles and deployment approval permissions.",
+    "method": "POST",
+    "path": "/api/projects/{project_id}/release/team",
+    "contentType": "application/json",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "user_id",
+        "type": "string",
+        "required": true,
+        "desc": "User ID to add."
+      },
+      {
+        "name": "role",
+        "type": "string",
+        "required": true,
+        "desc": "\"lead\", \"reviewer\", or \"developer\"."
+      }
+    ],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/release/team \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"user_id\": \"usr_david\", \"role\": \"reviewer\"}'",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"member_added\""
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"member_added\",\n  \"user_id\": \"usr_david\",\n  \"role\": \"reviewer\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-release-team-member-id-delete": {
+    "isApi": true,
+    "groupName": "Release & Previews",
+    "title": "Remove release team member",
+    "lead": "Revoke deployment approval authority from a user.",
+    "summary": "Revoke deployment approval authority from a user.",
+    "method": "DELETE",
+    "path": "/api/projects/{project_id}/release/team/{member_id}",
+    "contentType": "none",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      },
+      {
+        "name": "member_id",
+        "type": "string",
+        "required": true,
+        "desc": "Team member record ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X DELETE https://sycord.site:8787/api/projects/proj_94821a/release/team/mem_81 \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"member_removed\""
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"member_removed\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-release-approvals-post": {
+    "isApi": true,
+    "groupName": "Release & Previews",
+    "title": "Request release approval",
+    "lead": "Submit a formal release deployment request to team reviewers.",
+    "summary": "Submit a formal release deployment request to team reviewers.",
+    "method": "POST",
+    "path": "/api/projects/{project_id}/release/approvals",
+    "contentType": "application/json",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "target_env",
+        "type": "string",
+        "required": true,
+        "desc": "\"production\" or \"staging\"."
+      },
+      {
+        "name": "commit_sha",
+        "type": "string",
+        "required": true,
+        "desc": "Git commit SHA to release."
+      },
+      {
+        "name": "notes",
+        "type": "string",
+        "required": false,
+        "desc": "Release notes for reviewer."
+      }
+    ],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/release/approvals \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"target_env\": \"production\", \"commit_sha\": \"a19f201\", \"notes\": \"Bug fixes\"}'",
+    "responseStatus": "201 Created",
+    "responseSchema": [
+      {
+        "name": "approval_id",
+        "type": "string",
+        "desc": "Approval request ID."
+      },
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"pending_review\""
+      }
+    ],
+    "responseJson": "{\n  \"approval_id\": \"appr_9918\",\n  \"status\": \"pending_review\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-release-approvals-decision-post": {
+    "isApi": true,
+    "groupName": "Release & Previews",
+    "title": "Submit approval decision",
+    "lead": "Approve or reject a pending release deployment request.",
+    "summary": "Approve or reject a pending release deployment request.",
+    "method": "POST",
+    "path": "/api/projects/{project_id}/release/approvals/{approval_id}/decision",
+    "contentType": "application/json",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      },
+      {
+        "name": "approval_id",
+        "type": "string",
+        "required": true,
+        "desc": "Approval request ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "decision",
+        "type": "string",
+        "required": true,
+        "desc": "\"approved\" or \"rejected\"."
+      },
+      {
+        "name": "comment",
+        "type": "string",
+        "required": false,
+        "desc": "Reviewer comments."
+      }
+    ],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/release/approvals/appr_9918/decision \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"decision\": \"approved\", \"comment\": \"Verified and passed QA\"}'",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"approved\""
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"approved\",\n  \"approval_id\": \"appr_9918\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-release-restore-points-post": {
+    "isApi": true,
+    "groupName": "Release & Previews",
+    "title": "Create restore snapshot",
+    "lead": "Create an immutable system snapshot of workspace files, database, and container image for rapid recovery.",
+    "summary": "Create an immutable system snapshot of workspace files, database, and container image for rapid recovery.",
+    "method": "POST",
+    "path": "/api/projects/{project_id}/release/restore-points",
+    "contentType": "application/json",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "label",
+        "type": "string",
+        "required": false,
+        "desc": "Snapshot label (e.g. \"Pre-v2.0 migration\")."
+      }
+    ],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/release/restore-points \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"label\": \"Pre-v2.0 migration\"}'",
+    "responseStatus": "201 Created",
+    "responseSchema": [
+      {
+        "name": "restore_point_id",
+        "type": "string",
+        "desc": "Created snapshot ID."
+      },
+      {
+        "name": "size_bytes",
+        "type": "integer",
+        "desc": "Total snapshot archive size."
+      }
+    ],
+    "responseJson": "{\n  \"restore_point_id\": \"snp_94812\",\n  \"label\": \"Pre-v2.0 migration\",\n  \"size_bytes\": 104857600\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-release-restore-points-verify-post": {
+    "isApi": true,
+    "groupName": "Release & Previews",
+    "title": "Verify restore snapshot",
+    "lead": "Verify checksum integrity and restore capability of a saved snapshot archive.",
+    "summary": "Verify checksum integrity and restore capability of a saved snapshot archive.",
+    "method": "POST",
+    "path": "/api/projects/{project_id}/release/restore-points/{restore_point_id}/verify",
+    "contentType": "none",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      },
+      {
+        "name": "restore_point_id",
+        "type": "string",
+        "required": true,
+        "desc": "Snapshot ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/release/restore-points/snp_94812/verify \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "valid",
+        "type": "boolean",
+        "desc": "True if snapshot passed checksum and integrity check."
+      }
+    ],
+    "responseJson": "{\n  \"valid\": true,\n  \"checksum\": \"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-release-preview-start-post": {
+    "isApi": true,
+    "groupName": "Release & Previews",
+    "title": "Start release preview",
+    "lead": "Spawn an isolated ephemeral sandbox preview for validating a proposed release.",
+    "summary": "Spawn an isolated ephemeral sandbox preview for validating a proposed release.",
+    "method": "POST",
+    "path": "/api/projects/{project_id}/release/preview/start",
+    "contentType": "application/json",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "commit_sha",
+        "type": "string",
+        "required": true,
+        "desc": "Git commit SHA to spin up."
+      }
+    ],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/release/preview/start \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"commit_sha\": \"a19f201\"}'",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "preview_url",
+        "type": "string",
+        "desc": "Isolated ephemeral HTTPS preview URL."
+      },
+      {
+        "name": "port",
+        "type": "integer",
+        "desc": "Allocated temporary port."
+      }
+    ],
+    "responseJson": "{\n  \"preview_url\": \"https://preview-a19f201.sycord.site\",\n  \"port\": 39042,\n  \"status\": \"running\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-release-preview-stop-post": {
+    "isApi": true,
+    "groupName": "Release & Previews",
+    "title": "Stop release preview",
+    "lead": "Terminate and tear down an ephemeral preview container.",
+    "summary": "Terminate and tear down an ephemeral preview container.",
+    "method": "POST",
+    "path": "/api/projects/{project_id}/release/preview/stop",
+    "contentType": "none",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/release/preview/stop \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"preview_stopped\""
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"preview_stopped\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-release-deploy-post": {
+    "isApi": true,
+    "groupName": "Release & Previews",
+    "title": "Execute release deploy",
+    "lead": "Execute approved release deployment with zero downtime swap.",
+    "summary": "Execute approved release deployment with zero downtime swap.",
+    "method": "POST",
+    "path": "/api/projects/{project_id}/release/deploy",
+    "contentType": "application/json",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "approval_id",
+        "type": "string",
+        "required": true,
+        "desc": "Approved release ID."
+      }
+    ],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/release/deploy \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"approval_id\": \"appr_9918\"}'",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"deployed\""
+      },
+      {
+        "name": "deployment_id",
+        "type": "string",
+        "desc": "Production deployment run ID."
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"deployed\",\n  \"deployment_id\": \"dep_19485\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-preview-start-post": {
+    "isApi": true,
+    "groupName": "Release & Previews",
+    "title": "Start interactive preview",
+    "lead": "Start interactive live preview sandbox container for immediate browser testing.",
+    "summary": "Start interactive live preview sandbox container for immediate browser testing.",
+    "method": "POST",
+    "path": "/api/projects/{project_id}/preview/start",
+    "contentType": "none",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/preview/start \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"running\""
+      },
+      {
+        "name": "preview_url",
+        "type": "string",
+        "desc": "Sandbox preview iframe URL."
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"running\",\n  \"preview_url\": \"https://sycord.site:8787/preview/proj_94821a\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-preview-stop-post": {
+    "isApi": true,
+    "groupName": "Release & Previews",
+    "title": "Stop interactive preview",
+    "lead": "Halt and tear down interactive sandbox preview session.",
+    "summary": "Halt and tear down interactive sandbox preview session.",
+    "method": "POST",
+    "path": "/api/projects/{project_id}/preview/stop",
+    "contentType": "none",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/preview/stop \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"stopped\""
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"stopped\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-preview-status-get": {
+    "isApi": true,
+    "groupName": "Release & Previews",
+    "title": "Get preview status",
+    "lead": "Check if sandbox preview process is running, responsive, and ready for iframe rendering.",
+    "summary": "Check if sandbox preview process is running, responsive, and ready for iframe rendering.",
+    "method": "GET",
+    "path": "/api/projects/{project_id}/preview/status",
+    "contentType": "none",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/proj_94821a/preview/status \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "running",
+        "type": "boolean",
+        "desc": "True if preview process is running."
+      },
+      {
+        "name": "ready",
+        "type": "boolean",
+        "desc": "True if HTTP port is responding with 200."
+      }
+    ],
+    "responseJson": "{\n  \"running\": true,\n  \"ready\": true,\n  \"port\": 34100\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-preview-iframe-check-get": {
+    "isApi": true,
+    "groupName": "Release & Previews",
+    "title": "Check preview iframe headers",
+    "lead": "Inspect X-Frame-Options and Content-Security-Policy headers on target preview port.",
+    "summary": "Inspect X-Frame-Options and Content-Security-Policy headers on target preview port.",
+    "method": "GET",
+    "path": "/api/projects/{project_id}/preview/iframe-check",
+    "contentType": "none",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/proj_94821a/preview/iframe-check \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "embeddable",
+        "type": "boolean",
+        "desc": "True if headers permit iframe preview rendering."
+      }
+    ],
+    "responseJson": "{\n  \"embeddable\": true\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-preview-logs-stream-get": {
+    "isApi": true,
+    "groupName": "Release & Previews",
+    "title": "Stream preview logs (SSE)",
+    "lead": "Real-time SSE event stream of stdout logs from sandbox preview server.",
+    "summary": "Real-time SSE event stream of stdout logs from sandbox preview server.",
+    "method": "GET",
+    "path": "/api/projects/{project_id}/preview/logs/stream",
+    "contentType": "text/event-stream",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -N -X GET https://sycord.site:8787/api/projects/proj_94821a/preview/logs/stream \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "data",
+        "type": "string",
+        "desc": "Real-time SSE preview log chunk."
+      }
+    ],
+    "responseJson": "data: {\"preview_log\": \"Compiled 42 modules in 120ms\"}\n\n",
+    "updated": "03/09/2026"
+  },
+  "api-projects-git-github-status-get": {
+    "isApi": true,
+    "groupName": "Git & Workspace Files",
+    "title": "GitHub connection status",
+    "lead": "Check if user has linked their personal or organization GitHub account.",
+    "summary": "Check if user has linked their personal or organization GitHub account.",
+    "method": "GET",
+    "path": "/api/projects/git/github/status",
+    "contentType": "none",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/git/github/status \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "connected",
+        "type": "boolean",
+        "desc": "True if connected to GitHub OAuth."
+      },
+      {
+        "name": "account",
+        "type": "string",
+        "desc": "GitHub username or organization handle."
+      }
+    ],
+    "responseJson": "{\n  \"connected\": true,\n  \"account\": \"MDavidka\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-git-github-config-put": {
+    "isApi": true,
+    "groupName": "Git & Workspace Files",
+    "title": "Configure GitHub OAuth",
+    "lead": "Save GitHub App Client ID and Secret for repository imports.",
+    "summary": "Save GitHub App Client ID and Secret for repository imports.",
+    "method": "PUT",
+    "path": "/api/projects/git/github/config",
+    "contentType": "application/json",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "client_id",
+        "type": "string",
+        "required": true,
+        "desc": "GitHub OAuth Client ID."
+      },
+      {
+        "name": "client_secret",
+        "type": "string",
+        "required": true,
+        "desc": "GitHub OAuth Client Secret."
+      }
+    ],
+    "curlCommand": "curl -X PUT https://sycord.site:8787/api/projects/git/github/config \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"client_id\": \"Iv1.8941829abc\", \"client_secret\": \"sec_gh_8921\"}'",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"saved\""
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"saved\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-git-github-connect-get": {
+    "isApi": true,
+    "groupName": "Git & Workspace Files",
+    "title": "Initiate GitHub OAuth",
+    "lead": "Generate OAuth redirect URL to authenticate with GitHub and grant repo permissions.",
+    "summary": "Generate OAuth redirect URL to authenticate with GitHub and grant repo permissions.",
+    "method": "GET",
+    "path": "/api/projects/git/github/connect",
+    "contentType": "none",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/git/github/connect \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "redirect_url",
+        "type": "string",
+        "desc": "GitHub authorization URL with state nonce."
+      }
+    ],
+    "responseJson": "{\n  \"redirect_url\": \"https://github.com/login/oauth/authorize?client_id=Iv1...&scope=repo\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-git-github-callback-get": {
+    "isApi": true,
+    "groupName": "Git & Workspace Files",
+    "title": "Handle GitHub callback",
+    "lead": "Exchange temporary OAuth code for persistent user access token.",
+    "summary": "Exchange temporary OAuth code for persistent user access token.",
+    "method": "GET",
+    "path": "/api/projects/git/github/callback",
+    "contentType": "none",
+    "pathParams": [],
+    "queryParams": [
+      {
+        "name": "code",
+        "type": "string",
+        "required": true,
+        "desc": "OAuth code from GitHub."
+      },
+      {
+        "name": "state",
+        "type": "string",
+        "required": true,
+        "desc": "State nonce for CSRF protection."
+      }
+    ],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET \"https://sycord.site:8787/api/projects/git/github/callback?code=gh_code_8192&state=nonce_99\" \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"connected\""
+      },
+      {
+        "name": "username",
+        "type": "string",
+        "desc": "Authenticated GitHub user handle."
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"connected\",\n  \"username\": \"MDavidka\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-git-github-disconnect-delete": {
+    "isApi": true,
+    "groupName": "Git & Workspace Files",
+    "title": "Disconnect GitHub account",
+    "lead": "Revoke stored GitHub OAuth tokens and disconnect linked account.",
+    "summary": "Revoke stored GitHub OAuth tokens and disconnect linked account.",
+    "method": "DELETE",
+    "path": "/api/projects/git/github/disconnect",
+    "contentType": "none",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X DELETE https://sycord.site:8787/api/projects/git/github/disconnect \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"disconnected\""
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"disconnected\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-git-github-repositories-get": {
+    "isApi": true,
+    "groupName": "Git & Workspace Files",
+    "title": "List GitHub repositories",
+    "lead": "Fetch public and private repositories accessible via linked GitHub token.",
+    "summary": "Fetch public and private repositories accessible via linked GitHub token.",
+    "method": "GET",
+    "path": "/api/projects/git/github/repositories",
+    "contentType": "none",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/git/github/repositories \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "repositories",
+        "type": "array",
+        "desc": "Array of repository objects (full_name, private, default_branch)."
+      }
+    ],
+    "responseJson": "{\n  \"repositories\": [\n    {\n      \"full_name\": \"MDavidka/sarra\",\n      \"private\": false,\n      \"default_branch\": \"main\",\n      \"language\": \"Python\"\n    }\n  ]\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-git-github-repositories-branches-get": {
+    "isApi": true,
+    "groupName": "Git & Workspace Files",
+    "title": "List repository branches",
+    "lead": "Fetch all git branches for a specific GitHub repository.",
+    "summary": "Fetch all git branches for a specific GitHub repository.",
+    "method": "GET",
+    "path": "/api/projects/git/github/repositories/{repository:path}/branches",
+    "contentType": "none",
+    "pathParams": [
+      {
+        "name": "repository",
+        "type": "string",
+        "required": true,
+        "desc": "Full repository path (e.g. \"MDavidka/sarra\")."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/git/github/repositories/MDavidka/sarra/branches \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "branches",
+        "type": "array",
+        "desc": "List of branch names and commit SHAs."
+      }
+    ],
+    "responseJson": "{\n  \"branches\": [\n    {\n      \"name\": \"main\",\n      \"commit\": {\n        \"sha\": \"a19f201\"\n      }\n    },\n    {\n      \"name\": \"feat/mobile-header-and-sidebar-accuracy\",\n      \"commit\": {\n        \"sha\": \"94812aa\"\n      }\n    }\n  ]\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-import-github-post": {
+    "isApi": true,
+    "groupName": "Git & Workspace Files",
+    "title": "Import GitHub repository",
+    "lead": "Clone repository from GitHub into a new project workspace and setup automatic deployment webhooks.",
+    "summary": "Clone repository from GitHub into a new project workspace and setup automatic deployment webhooks.",
+    "method": "POST",
+    "path": "/api/projects/import/github",
+    "contentType": "application/json",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "repo",
+        "type": "string",
+        "required": true,
+        "desc": "Full repository name (e.g. \"MDavidka/sarra\")."
+      },
+      {
+        "name": "branch",
+        "type": "string",
+        "required": false,
+        "desc": "Branch name (default: default_branch)."
+      },
+      {
+        "name": "name",
+        "type": "string",
+        "required": false,
+        "desc": "Optional project slug name."
+      }
+    ],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/import/github \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"repo\": \"MDavidka/sarra\", \"branch\": \"main\"}'",
+    "responseStatus": "201 Created",
+    "responseSchema": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "desc": "Created project ID."
+      },
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"imported\""
+      }
+    ],
+    "responseJson": "{\n  \"project_id\": \"proj_94821a\",\n  \"name\": \"sarra\",\n  \"status\": \"imported\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-import-repository-post": {
+    "isApi": true,
+    "groupName": "Git & Workspace Files",
+    "title": "Import public Git repository",
+    "lead": "Clone any public Git repository via HTTPS URL into a fresh workspace.",
+    "summary": "Clone any public Git repository via HTTPS URL into a fresh workspace.",
+    "method": "POST",
+    "path": "/api/projects/import/repository",
+    "contentType": "application/json",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "git_url",
+        "type": "string",
+        "required": true,
+        "desc": "Public Git HTTPS clone URL."
+      },
+      {
+        "name": "branch",
+        "type": "string",
+        "required": false,
+        "desc": "Target branch to check out."
+      }
+    ],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/import/repository \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"git_url\": \"https://github.com/vercel/next.js.git\", \"branch\": \"canary\"}'",
+    "responseStatus": "201 Created",
+    "responseSchema": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "desc": "Created project ID."
+      },
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"cloned\""
+      }
+    ],
+    "responseJson": "{\n  \"project_id\": \"proj_88192a\",\n  \"status\": \"cloned\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-import-zip-post": {
+    "isApi": true,
+    "groupName": "Git & Workspace Files",
+    "title": "Upload project ZIP archive",
+    "lead": "Upload and unpack a ZIP archive of source code directly into project workspace.",
+    "summary": "Upload and unpack a ZIP archive of source code directly into project workspace.",
+    "method": "POST",
+    "path": "/api/projects/import/zip",
+    "contentType": "multipart/form-data",
+    "pathParams": [],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "file",
+        "type": "binary",
+        "required": true,
+        "desc": "ZIP archive binary stream."
+      },
+      {
+        "name": "name",
+        "type": "string",
+        "required": false,
+        "desc": "Optional project slug name."
+      }
+    ],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/import/zip \\\n  -H \"Authorization: Bearer <token>\" \\\n  -F \"file=@project-source.zip\"",
+    "responseStatus": "201 Created",
+    "responseSchema": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "desc": "Created project ID."
+      },
+      {
+        "name": "files_extracted",
+        "type": "integer",
+        "desc": "Count of extracted files."
+      }
+    ],
+    "responseJson": "{\n  \"project_id\": \"proj_55219a\",\n  \"status\": \"extracted\",\n  \"files_extracted\": 48\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-workspace-files-get": {
+    "isApi": true,
+    "groupName": "Git & Workspace Files",
+    "title": "List workspace file tree",
+    "lead": "Retrieve hierarchical file tree and directory structure of project workspace.",
+    "summary": "Retrieve hierarchical file tree and directory structure of project workspace.",
+    "method": "GET",
+    "path": "/api/projects/{project_id}/workspace/files",
+    "contentType": "none",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [
+      {
+        "name": "path",
+        "type": "string",
+        "required": false,
+        "desc": "Subdirectory path to list (default: root)."
+      }
+    ],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/proj_94821a/workspace/files \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "files",
+        "type": "array",
+        "desc": "Array of file and folder nodes with size, path, and type."
+      }
+    ],
+    "responseJson": "{\n  \"files\": [\n    {\n      \"name\": \"package.json\",\n      \"type\": \"file\",\n      \"size\": 1024,\n      \"path\": \"package.json\"\n    },\n    {\n      \"name\": \"src\",\n      \"type\": \"directory\",\n      \"path\": \"src\"\n    }\n  ]\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-workspace-file-get": {
+    "isApi": true,
+    "groupName": "Git & Workspace Files",
+    "title": "Read workspace file",
+    "lead": "Read UTF-8 text content of a specific source code file.",
+    "summary": "Read UTF-8 text content of a specific source code file.",
+    "method": "GET",
+    "path": "/api/projects/{project_id}/workspace/file",
+    "contentType": "none",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [
+      {
+        "name": "path",
+        "type": "string",
+        "required": true,
+        "desc": "Relative file path inside workspace (e.g. \"package.json\")."
+      }
+    ],
+    "bodyParams": [],
+    "curlCommand": "curl -X GET \"https://sycord.site:8787/api/projects/proj_94821a/workspace/file?path=package.json\" \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "content",
+        "type": "string",
+        "desc": "Raw text file content."
+      },
+      {
+        "name": "size",
+        "type": "integer",
+        "desc": "File size in bytes."
+      }
+    ],
+    "responseJson": "{\n  \"path\": \"package.json\",\n  \"content\": \"{\\n  \\\"name\\\": \\\"sarra-app\\\",\\n  \\\"version\\\": \\\"1.0.0\\\"\\n}\",\n  \"size\": 42\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-workspace-file-post": {
+    "isApi": true,
+    "groupName": "Git & Workspace Files",
+    "title": "Write workspace file",
+    "lead": "Save or update text content of a file in the workspace.",
+    "summary": "Save or update text content of a file in the workspace.",
+    "method": "POST",
+    "path": "/api/projects/{project_id}/workspace/file",
+    "contentType": "application/json",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "path",
+        "type": "string",
+        "required": true,
+        "desc": "Relative file path."
+      },
+      {
+        "name": "content",
+        "type": "string",
+        "required": true,
+        "desc": "New file content to write."
+      }
+    ],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/workspace/file \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"path\": \"config.json\", \"content\": \"{\\\"port\\\": 3000}\"}'",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"saved\""
+      },
+      {
+        "name": "bytes_written",
+        "type": "integer",
+        "desc": "Number of bytes written to disk."
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"saved\",\n  \"bytes_written\": 16\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-workspace-mkdir-post": {
+    "isApi": true,
+    "groupName": "Git & Workspace Files",
+    "title": "Create folder in workspace",
+    "lead": "Create a new subdirectory directory in project workspace.",
+    "summary": "Create a new subdirectory directory in project workspace.",
+    "method": "POST",
+    "path": "/api/projects/{project_id}/workspace/mkdir",
+    "contentType": "application/json",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "path",
+        "type": "string",
+        "required": true,
+        "desc": "Relative directory path to create."
+      }
+    ],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/workspace/mkdir \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"path\": \"src/components\"}'",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"created\""
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"created\",\n  \"path\": \"src/components\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-workspace-file-delete": {
+    "isApi": true,
+    "groupName": "Git & Workspace Files",
+    "title": "Delete workspace file or folder",
+    "lead": "Permanently delete a file or directory from the workspace.",
+    "summary": "Permanently delete a file or directory from the workspace.",
+    "method": "DELETE",
+    "path": "/api/projects/{project_id}/workspace/file",
+    "contentType": "application/json",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [
+      {
+        "name": "path",
+        "type": "string",
+        "required": true,
+        "desc": "Relative path of file or folder to delete."
+      }
+    ],
+    "bodyParams": [],
+    "curlCommand": "curl -X DELETE \"https://sycord.site:8787/api/projects/proj_94821a/workspace/file?path=temp.log\" \\\n  -H \"Authorization: Bearer <token>\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"deleted\""
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"deleted\"\n}",
+    "updated": "03/09/2026"
+  },
+  "api-projects-project-id-workspace-upload-post": {
+    "isApi": true,
+    "groupName": "Git & Workspace Files",
+    "title": "Upload workspace file",
+    "lead": "Upload a binary or text file to a specific destination in project workspace.",
+    "summary": "Upload a binary or text file to a specific destination in project workspace.",
+    "method": "POST",
+    "path": "/api/projects/{project_id}/workspace/upload",
+    "contentType": "multipart/form-data",
+    "pathParams": [
+      {
+        "name": "project_id",
+        "type": "string",
+        "required": true,
+        "desc": "Project ID."
+      }
+    ],
+    "queryParams": [],
+    "bodyParams": [
+      {
+        "name": "file",
+        "type": "binary",
+        "required": true,
+        "desc": "File payload multipart stream."
+      },
+      {
+        "name": "destination_path",
+        "type": "string",
+        "required": true,
+        "desc": "Relative target folder path."
+      }
+    ],
+    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/workspace/upload \\\n  -H \"Authorization: Bearer <token>\" \\\n  -F \"file=@logo.png\" \\\n  -F \"destination_path=public/\"",
+    "responseStatus": "200 OK",
+    "responseSchema": [
+      {
+        "name": "status",
+        "type": "string",
+        "desc": "\"uploaded\""
+      },
+      {
+        "name": "file_path",
+        "type": "string",
+        "desc": "Saved file path in workspace."
+      }
+    ],
+    "responseJson": "{\n  \"status\": \"uploaded\",\n  \"file_path\": \"public/logo.png\"\n}",
+    "updated": "03/09/2026"
   }
 };
 
@@ -16335,124 +19834,181 @@ function showDocsPage(pageKey) {
   const container = document.getElementById('docs-main-content');
   if (!container) return;
 
-  // Build bottom navigation cards
-  let navCardsHtml = '<div class="docs-nav-cards-wrap">';
-  if (data.prev) {
-    navCardsHtml += `
-      <a class="docs-nav-card" onclick="showDocsPage('${data.prev.page}')">
-        <div class="docs-nav-card-head">
-          <i data-lucide="chevron-left" style="width:14px;height:14px;"></i>
-          <span>${escapeHtml(data.prev.title)}</span>
-        </div>
-        <div class="docs-nav-card-desc">${escapeHtml(data.prev.desc || '')}</div>
-      </a>
-    `;
-  }
-  if (data.next) {
-    navCardsHtml += `
-      <a class="docs-nav-card" onclick="showDocsPage('${data.next.page}')">
-        <div class="docs-nav-card-head right">
-          <span>${escapeHtml(data.next.title)}</span>
-          <i data-lucide="chevron-right" style="width:14px;height:14px;"></i>
-        </div>
-        <div class="docs-nav-card-desc right">${escapeHtml(data.next.desc || '')}</div>
-      </a>
-    `;
-  }
-  navCardsHtml += '</div>';
-
-  if (data.isApiDetail || (data.method && data.path)) {
-    // Exact minimalist layout matching media_1789303525729.jpg
-    const pillsHtml = (data.pills || []).map(p => `
-      <span class="docs-api-pill ${p.includes('!') ? 'required' : ''}">${escapeHtml(p)}</span>
-    `).join('');
-
-    let sendItemsHtml = '';
-    if (data.sendItems && data.sendItems.length > 0) {
-      sendItemsHtml = `
-        <div class="docs-spec-card">
-          <div class="docs-spec-card-head">
-            <i data-lucide="arrow-up-right" style="width:14px;height:14px;color:#2563eb;"></i>
-            <span>What to send (Request)</span>
-          </div>
-          <div class="docs-spec-items-list">
-            ${data.sendItems.map(item => `
-              <div class="docs-spec-item">
-                <span class="docs-spec-key">${escapeHtml(item.key)}</span>
-                <span class="docs-spec-val">${escapeHtml(item.val)}</span>
+  if (data.isApi) {
+    // Exact Dual-Card Layout matching media_1789305750389.png
+    
+    // Path Params HTML
+    let pathParamsHtml = '';
+    if (data.pathParams && data.pathParams.length > 0) {
+      pathParamsHtml = `
+        <div class="docs-api-section-subhead">PATH PARAMETERS</div>
+        <div class="docs-api-params-table">
+          ${data.pathParams.map(p => `
+            <div class="docs-api-param-row">
+              <div class="docs-api-param-meta">
+                <span class="docs-api-param-name">${escapeHtml(p.name)}</span>
+                <span class="docs-api-param-type">${escapeHtml(p.type)}</span>
+                <span class="docs-api-param-badge ${p.required ? 'required' : 'optional'}">${p.required ? 'REQUIRED' : 'OPTIONAL'}</span>
               </div>
-            `).join('')}
-          </div>
+              <div class="docs-api-param-desc">${escapeHtml(p.desc)}</div>
+            </div>
+          `).join('')}
         </div>
       `;
     }
 
-    let receiveItemsHtml = '';
-    if (data.receiveItems && data.receiveItems.length > 0) {
-      receiveItemsHtml = `
-        <div class="docs-spec-card">
-          <div class="docs-spec-card-head">
-            <i data-lucide="arrow-down-left" style="width:14px;height:14px;color:#16a34a;"></i>
-            <span>What you receive (Response)</span>
-          </div>
-          <div class="docs-spec-items-list">
-            ${data.receiveItems.map(item => `
-              <div class="docs-spec-item">
-                <span class="docs-spec-key" style="color:#16a34a;background:rgba(22,163,74,0.08);">${escapeHtml(item.key)}</span>
-                <span class="docs-spec-val">${escapeHtml(item.val)}</span>
+    // Query Params HTML
+    let queryParamsHtml = '';
+    if (data.queryParams && data.queryParams.length > 0) {
+      queryParamsHtml = `
+        <div class="docs-api-section-subhead">QUERY PARAMETERS</div>
+        <div class="docs-api-params-table">
+          ${data.queryParams.map(p => `
+            <div class="docs-api-param-row">
+              <div class="docs-api-param-meta">
+                <span class="docs-api-param-name">${escapeHtml(p.name)}</span>
+                <span class="docs-api-param-type">${escapeHtml(p.type)}</span>
+                <span class="docs-api-param-badge ${p.required ? 'required' : 'optional'}">${p.required ? 'REQUIRED' : 'OPTIONAL'}</span>
               </div>
-            `).join('')}
-          </div>
+              <div class="docs-api-param-desc">${escapeHtml(p.desc)}</div>
+            </div>
+          `).join('')}
         </div>
       `;
     }
 
-    let devSpecsGrid = '';
-    if (sendItemsHtml || receiveItemsHtml) {
-      devSpecsGrid = `
-        <div class="docs-dev-specs-grid">
-          ${sendItemsHtml}
-          ${receiveItemsHtml}
+    // Body Params HTML
+    let bodyParamsHtml = '';
+    if (data.bodyParams && data.bodyParams.length > 0) {
+      bodyParamsHtml = `
+        <div class="docs-api-section-subhead">REQUEST BODY</div>
+        <div class="docs-api-params-table">
+          ${data.bodyParams.map(p => `
+            <div class="docs-api-param-row">
+              <div class="docs-api-param-meta">
+                <span class="docs-api-param-name">${escapeHtml(p.name)}</span>
+                <span class="docs-api-param-type">${escapeHtml(p.type)}</span>
+                <span class="docs-api-param-badge ${p.required ? 'required' : 'optional'}">${p.required ? 'REQUIRED' : 'OPTIONAL'}</span>
+              </div>
+              <div class="docs-api-param-desc">${escapeHtml(p.desc)}</div>
+            </div>
+          `).join('')}
         </div>
       `;
     }
+
+    let noParamsNotice = '';
+    if (!pathParamsHtml && !queryParamsHtml && !bodyParamsHtml) {
+      noParamsNotice = '<div class="docs-api-no-params">No request parameters or body required.</div>';
+    }
+
+    // Response Schema HTML
+    let responseSchemaHtml = '';
+    if (data.responseSchema && data.responseSchema.length > 0) {
+      responseSchemaHtml = `
+        <div class="docs-api-section-subhead">RESPONSE SCHEMA</div>
+        <div class="docs-api-params-table">
+          ${data.responseSchema.map(p => `
+            <div class="docs-api-param-row">
+              <div class="docs-api-param-meta">
+                <span class="docs-api-param-name">${escapeHtml(p.name)}</span>
+                <span class="docs-api-param-type">${escapeHtml(p.type)}</span>
+              </div>
+              <div class="docs-api-param-desc">${escapeHtml(p.desc)}</div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    const curlEscaped = (data.curlCommand || '').replace(/`/g, '\`').replace(/\$/g, '\\$');
+    const responseEscaped = (data.responseJson || '{}').replace(/`/g, '\`').replace(/\$/g, '\\$');
 
     container.innerHTML = `
-      <div class="docs-api-header-row">
-        <span class="docs-api-method-badge ${(data.method || 'GET').toLowerCase()}">${escapeHtml(data.method || 'GET')}</span>
-        <span class="docs-api-path">${escapeHtml(data.path || '/api/projects')}</span>
+      <!-- Top header row matching media_1789305750389.png -->
+      <div class="docs-api-top-pill-row">
+        <div class="docs-api-top-pill-left">
+          <span class="docs-api-method-badge ${(data.method || 'GET').toLowerCase()}">${escapeHtml(data.method || 'GET')}</span>
+          <span class="docs-api-top-path">${escapeHtml(data.path || '')}</span>
+        </div>
+        <button type="button" class="docs-api-top-copy-btn" onclick="copySnippet(this, '${escapeHtml(data.path || '')}')" title="Copy endpoint path">
+          <i data-lucide="copy" style="width:13px;height:13px;"></i>
+          <span>Copy</span>
+        </button>
       </div>
 
-      <p class="docs-api-summary">${escapeHtml(data.summary || data.lead || '')}</p>
+      <h1 class="docs-api-page-title">${escapeHtml(data.title)}</h1>
+      <p class="docs-api-page-lead">${escapeHtml(data.summary || data.lead || '')}</p>
 
-      <div class="docs-api-pills-row">
-        ${pillsHtml}
-      </div>
-
-      <p class="docs-api-desc">${data.desc || data.lead || ''}</p>
-
-      ${devSpecsGrid}
-
-      <!-- Clean Gray Code Card matching media_1789303525729.jpg -->
-      <div class="docs-code-gray-card">
-        <div class="docs-code-gray-header">
-          <div class="docs-code-file-label">
-            <span class="docs-code-ts-icon">TS</span>
-            <span>${escapeHtml(data.codeFilename || 'source.config.ts')}</span>
+      <!-- Card 1: REQUEST PARAMETERS -->
+      <div class="docs-api-spec-card">
+        <div class="docs-api-card-header">
+          <div class="docs-api-card-title-group">
+            <i data-lucide="arrow-up-right" class="docs-api-arrow-icon req"></i>
+            <span class="docs-api-card-heading">REQUEST PARAMETERS</span>
           </div>
-          <button type="button" class="docs-cmd-copy-btn" onclick="copySnippet(this, \`${escapeHtml(data.codeSnippet || '').replace(/`/g, '\\`')}\`)" title="Copy snippet">
-            <i data-lucide="clipboard" style="width:15px;height:15px;"></i>
-          </button>
+          <span class="docs-api-content-tag">${escapeHtml(data.contentType || 'none')}</span>
         </div>
-        <div class="docs-code-gray-body">
-          <pre><code>${escapeHtml(data.codeSnippet || '')}</code></pre>
+        <div class="docs-api-card-body">
+          ${pathParamsHtml}
+          ${queryParamsHtml}
+          ${bodyParamsHtml}
+          ${noParamsNotice}
+
+          <!-- Terminal cURL block -->
+          <div class="docs-api-code-terminal">
+            <div class="docs-api-code-terminal-header">
+              <div class="docs-api-code-terminal-left">
+                <span class="docs-api-terminal-lang">cURL</span>
+                <span class="docs-api-terminal-sub">${data.contentType === 'application/json' ? 'JSON Body' : escapeHtml(data.contentType)}</span>
+              </div>
+              <button type="button" class="docs-api-terminal-copy-btn" onclick="copySnippet(this, \`${curlEscaped}\`)" title="Copy cURL snippet">
+                <i data-lucide="copy" style="width:12px;height:12px;"></i>
+                <span>Copy</span>
+              </button>
+            </div>
+            <div class="docs-api-code-terminal-content">
+              <pre><code>${escapeHtml(data.curlCommand || '')}</code></pre>
+            </div>
+          </div>
         </div>
       </div>
 
-      <h3 class="docs-api-res-title">response body /</h3>
-      <pre class="docs-api-res-box"><code>${escapeHtml(data.responseJson || '{}')}</code></pre>
+      <!-- Card 2: RESPONSE (200 OK) -->
+      <div class="docs-api-spec-card">
+        <div class="docs-api-card-header">
+          <div class="docs-api-card-title-group">
+            <i data-lucide="arrow-down-left" class="docs-api-arrow-icon res"></i>
+            <span class="docs-api-card-heading">RESPONSE (${escapeHtml(data.responseStatus || '200 OK')})</span>
+          </div>
+          <span class="docs-api-status-badge">
+            <span class="docs-api-status-dot"></span>
+            ${escapeHtml(data.responseStatus || '200 OK')}
+          </span>
+        </div>
+        <div class="docs-api-card-body">
+          ${responseSchemaHtml}
 
-      <div class="docs-feedback-row" style="margin-top:40px;">
+          <!-- Terminal response block -->
+          <div class="docs-api-code-terminal">
+            <div class="docs-api-code-terminal-header">
+              <div class="docs-api-code-terminal-left">
+                <span class="docs-api-terminal-lang">Example Payload</span>
+                <span class="docs-api-terminal-status-tag">${escapeHtml(data.responseStatus || '200 OK')}</span>
+              </div>
+              <button type="button" class="docs-api-terminal-copy-btn" onclick="copySnippet(this, \`${responseEscaped}\`)" title="Copy response JSON">
+                <i data-lucide="copy" style="width:12px;height:12px;"></i>
+                <span>Copy</span>
+              </button>
+            </div>
+            <div class="docs-api-code-terminal-content">
+              <pre><code>${escapeHtml(data.responseJson || '{}')}</code></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="docs-feedback-row" style="margin-top:36px;">
         <span class="docs-feedback-title">How is this guide?</span>
         <div class="docs-feedback-btns">
           <button type="button" class="docs-feedback-btn ${docsFeedbackState === 'good' ? 'active' : ''}" id="docs-feedback-good">
@@ -16467,11 +20023,9 @@ function showDocsPage(pageKey) {
       </div>
 
       <p class="docs-last-updated">Last updated on ${data.updated || '03/09/2026'}</p>
-
-      ${navCardsHtml}
     `;
   } else {
-    // Render standard documentation prose page
+    // Standard prose guides
     let heroHtml = '';
     if (data.hasHero || pageKey === 'qs-install') {
       heroHtml = `
@@ -16506,8 +20060,6 @@ function showDocsPage(pageKey) {
       </div>
 
       <p class="docs-last-updated">Last updated on ${data.updated || '03/09/2026'}</p>
-
-      ${navCardsHtml}
     `;
   }
 
