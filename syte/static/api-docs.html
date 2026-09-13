@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Syte Documentation</title>
+  <title>Syte API Reference</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="/static/vendor/lucide.min.js?v=__VERSION__"></script>
   <style>
@@ -275,6 +275,44 @@
       .info-row { grid-template-columns: 1fr; gap: 0.15rem; }
       pre { font-size: 10.5px; padding: 0.7rem 0.75rem; }
     }
+    /* API reference refresh: compact hierarchy, clearer developer context, and touch-safe controls. */
+    .api-quickstart {
+      display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(220px, 0.9fr); gap: 1rem;
+      margin-top: 1.5rem; padding: 1rem; border: 1px solid rgba(59, 130, 246, 0.25);
+      border-radius: 14px; background: linear-gradient(135deg, rgba(59,130,246,.12), rgba(34,197,94,.06));
+    }
+    .api-quickstart-copy { display: flex; flex-direction: column; gap: .25rem; }
+    .api-eyebrow { color: var(--accent-blue); font: 600 10px/1 var(--mono); text-transform: uppercase; letter-spacing: .09em; }
+    .api-quickstart-copy strong { font-size: 15px; letter-spacing: -.02em; }
+    .api-quickstart-copy > span:last-child { color: var(--text-muted); font-size: 12px; line-height: 1.5; }
+    .api-meta-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; align-items: stretch; }
+    .api-meta-grid div { display: flex; flex-direction: column; justify-content: center; gap: .25rem; padding: .6rem .65rem; background: rgba(0,0,0,.16); border: 1px solid var(--border-subtle); border-radius: 8px; min-width: 0; }
+    .api-meta-grid span { color: var(--text-dim); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+    .api-meta-grid code { color: var(--text); font: 500 11px var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .endpoint { box-shadow: 0 1px 0 rgba(255,255,255,.02); transition: border-color .15s, transform .15s; }
+    .endpoint:hover { border-color: rgba(59,130,246,.45); }
+    .endpoint-header { padding: 1.15rem 1.2rem; background: linear-gradient(180deg, rgba(255,255,255,.025), transparent); }
+    .endpoint-path { font-size: 14px; letter-spacing: -.02em; }
+    .endpoint-name { font-size: 12px; }
+    .panel-title { text-transform: uppercase; letter-spacing: .06em; font-size: 11px; color: var(--text-muted); }
+    .panel-meta { text-transform: none; letter-spacing: 0; }
+    pre { scrollbar-color: var(--border) transparent; }
+    @media (max-width: 768px) {
+      .mobile-toolbar { min-height: 54px; padding-left: max(.75rem, env(safe-area-inset-left)); padding-right: max(.75rem, env(safe-area-inset-right)); }
+      .util-btn { width: 44px; height: 44px; }
+      .main-inner { padding-top: 1.25rem; }
+      .page-header h1 { font-size: clamp(2.85rem, 14vw, 3.45rem); }
+      .api-quickstart { grid-template-columns: 1fr; gap: .85rem; margin-top: 1.25rem; padding: .9rem; }
+      .api-meta-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .api-meta-grid div { padding: .55rem .45rem; }
+      .api-meta-grid code { font-size: 10px; }
+      .endpoint-header { padding: 1rem; }
+      .endpoint-body { padding: 0 1rem 1rem; }
+      .endpoint-row { gap: .5rem; }
+      .endpoint-path { min-width: calc(100% - 4.5rem); font-size: 13px; }
+      .field-desc { font-size: 13px; }
+      pre { border-radius: 8px; }
+    }
   </style>
 </head>
 <body>
@@ -469,6 +507,18 @@
         <header class="page-header">
           <h1>Welcome to Syte</h1>
           <p>A self-hostable autonomous deployment platform, zero-downtime runner, and embedded AI builder operating directly on your Linux servers.</p>
+          <div class="api-quickstart" aria-label="API quickstart">
+            <div class="api-quickstart-copy">
+              <span class="api-eyebrow">Developer reference</span>
+              <strong>Build against the Syte API</strong>
+              <span>Every endpoint includes request fields, response schemas, and copy-ready examples.</span>
+            </div>
+            <div class="api-meta-grid">
+              <div><span>Base URL</span><code>/api</code></div>
+              <div><span>Auth</span><code>Bearer token</code></div>
+              <div><span>Format</span><code>JSON</code></div>
+            </div>
+          </div>
         </header>
 
       <div class="mini-tabs" id="tabs-overview" data-tabs-for="overview">
