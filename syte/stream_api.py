@@ -200,12 +200,34 @@ async def stream_health() -> Dict[str, Any]:
 @router.get("/models")
 async def stream_models(
     request: Request,
+    project_id: Optional[str] = Query(None, description="Project ID to load active model for"),
+    active_only: bool = Query(False, description="Stream only the model activated in the AI tab"),
     stream: bool = Query(False, description="Stream models as Server-Sent Events"),
 ):
-    """List available AI models or stream them over Better-SSE."""
+    """List available AI models or stream the model activated in the AI tab."""
     from syte.database import get_ai_builder_settings
-    settings_data = await get_ai_builder_settings("global")
+    pid = project_id or "global"
+    settings_data = await get_ai_builder_settings(pid)
     models_list = get_normalized_models_catalog(settings_data)
+
+    active_model_name = str(settings_data.get("model") or "gpt-4o").strip()
+    active_provider = str(settings_data.get("provider") or "openai").strip()
+
+    # Mark active model flag
+    active_model_obj = None
+    for m in models_list:
+        is_active = (m.get("id") == active_model_name or m.get("profile") == active_model_name)
+        m["active"] = is_active
+        m["is_active_in_ai_tab"] = is_active
+        if is_active:
+            active_model_obj = m
+
+    if not active_model_obj and models_list:
+        active_model_obj = models_list[0]
+        active_model_obj["active"] = True
+        active_model_obj["is_active_in_ai_tab"] = True
+
+    models_to_serve = [active_model_obj] if active_only else models_list
 
     accept = request.headers.get("accept", "")
     wants_stream = stream or ("text/event-stream" in accept)
@@ -213,8 +235,14 @@ async def stream_models(
     if wants_stream:
         async def _stream_models_gen():
             yield f"retry: {RETRY_MS}\n\n".encode("ascii")
-            for m in models_list:
-                payload = json.dumps({"model": m}, separators=(",", ":"))
+            for m in models_to_serve:
+                payload = json.dumps({
+                    "event": "model_stream",
+                    "model": m,
+                    "active": m.get("active", False),
+                    "active_model": active_model_name,
+                    "active_provider": active_provider,
+                }, separators=(",", ":"))
                 yield f"event: model_stream\ndata: {payload}\n\n".encode("utf-8")
             yield b"event: done\ndata: [DONE]\n\n"
 
@@ -222,12 +250,14 @@ async def stream_models(
 
     return {
         "ok": True,
+        "active_model": active_model_name,
+        "active_provider": active_provider,
+        "current_model": active_model_name,
+        "current_provider": active_provider,
+        "active_model_profile": active_model_obj,
+        "models": models_to_serve,
         "available_models": models_list,
-        "models": models_list,
-        "ai_tab_models": models_list,
         "saved_providers": settings_data.get("saved_providers", []),
-        "current_model": settings_data.get("model", "gpt-4o"),
-        "current_provider": settings_data.get("provider", "openai"),
     }
 
 

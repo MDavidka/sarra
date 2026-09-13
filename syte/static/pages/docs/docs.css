@@ -3663,7 +3663,7 @@ body.dark .docs-photo-copy-path-btn:hover {
   color: #ffffff;
 }
 
-/* 2. Action Buttons Row */
+/* 2. Action Buttons Row (Clean Modern Minimalist Outline Design - No Gray Fill) */
 .docs-photo-btn-bar {
   margin-top: 18px;
   display: flex;
@@ -3675,15 +3675,17 @@ body.dark .docs-photo-copy-path-btn:hover {
 .docs-photo-dual-btn {
   display: inline-flex;
   align-items: stretch;
-  border: 1px solid #d1d5db;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
-  background: #ececec;
+  background: #ffffff;
   overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 
 body.dark .docs-photo-dual-btn {
-  border-color: #3f3f46;
-  background: #27272a;
+  border-color: rgba(255, 255, 255, 0.1);
+  background: #18181b;
+  box-shadow: none;
 }
 
 .docs-photo-btn-prev,
@@ -3691,11 +3693,11 @@ body.dark .docs-photo-dual-btn {
   padding: 7px 16px;
   font-size: 13.5px;
   font-weight: 500;
-  color: #1f2937;
+  color: #1e293b;
   background: transparent;
   border: none;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: all 0.15s ease;
 }
 
 body.dark .docs-photo-btn-prev,
@@ -3704,47 +3706,55 @@ body.dark .docs-photo-btn-next {
 }
 
 .docs-photo-btn-prev {
-  border-right: 1px solid #d1d5db;
+  border-right: 1px solid #e2e8f0;
 }
 
 body.dark .docs-photo-btn-prev {
-  border-right-color: #3f3f46;
+  border-right-color: rgba(255, 255, 255, 0.1);
 }
 
 .docs-photo-btn-prev:hover,
 .docs-photo-btn-next:hover {
-  background: rgba(0, 0, 0, 0.06);
+  background: #f8fafc;
+  color: #0f172a;
 }
 
 body.dark .docs-photo-btn-prev:hover,
 body.dark .docs-photo-btn-next:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: #27272a;
+  color: #ffffff;
 }
 
 .docs-photo-btn-single {
   padding: 7px 16px;
   font-size: 13.5px;
   font-weight: 500;
-  color: #1f2937;
-  background: #ececec;
-  border: 1px solid #d1d5db;
+  color: #1e293b;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
   cursor: pointer;
-  transition: background 0.15s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  transition: all 0.15s ease;
 }
 
 body.dark .docs-photo-btn-single {
   color: #f4f4f5;
-  background: #27272a;
-  border-color: #3f3f46;
+  background: #18181b;
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: none;
 }
 
 .docs-photo-btn-single:hover {
-  background: #e2e5e9;
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #0f172a;
 }
 
 body.dark .docs-photo-btn-single:hover {
-  background: #3f3f46;
+  background: #27272a;
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
 }
 
 .docs-photo-btn-more {
@@ -3752,26 +3762,32 @@ body.dark .docs-photo-btn-single:hover {
   font-size: 13.5px;
   font-weight: 700;
   letter-spacing: 0.1em;
-  color: #1f2937;
-  background: #ececec;
-  border: 1px solid #d1d5db;
+  color: #1e293b;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
   cursor: pointer;
-  transition: background 0.15s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  transition: all 0.15s ease;
 }
 
 body.dark .docs-photo-btn-more {
   color: #f4f4f5;
-  background: #27272a;
-  border-color: #3f3f46;
+  background: #18181b;
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: none;
 }
 
 .docs-photo-btn-more:hover {
-  background: #e2e5e9;
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #0f172a;
 }
 
 body.dark .docs-photo-btn-more:hover {
-  background: #3f3f46;
+  background: #27272a;
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
 }
 
 /* More Dropdown Menu */
@@ -4459,7 +4475,7 @@ body.dark .docs-photo-copy-path-btn:hover {
   color: #ffffff;
 }
 
-/* 2. Action Buttons Row */
+/* 2. Action Buttons Row (Clean Modern Minimalist Outline Design - No Gray Fill) */
 .docs-photo-btn-bar {
   margin-top: 18px;
   display: flex;
@@ -4471,15 +4487,17 @@ body.dark .docs-photo-copy-path-btn:hover {
 .docs-photo-dual-btn {
   display: inline-flex;
   align-items: stretch;
-  border: 1px solid #d1d5db;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
-  background: #ececec;
+  background: #ffffff;
   overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 
 body.dark .docs-photo-dual-btn {
-  border-color: #3f3f46;
-  background: #27272a;
+  border-color: rgba(255, 255, 255, 0.1);
+  background: #18181b;
+  box-shadow: none;
 }
 
 .docs-photo-btn-prev,
@@ -4487,11 +4505,11 @@ body.dark .docs-photo-dual-btn {
   padding: 7px 16px;
   font-size: 13.5px;
   font-weight: 500;
-  color: #1f2937;
+  color: #1e293b;
   background: transparent;
   border: none;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: all 0.15s ease;
 }
 
 body.dark .docs-photo-btn-prev,
@@ -4500,47 +4518,55 @@ body.dark .docs-photo-btn-next {
 }
 
 .docs-photo-btn-prev {
-  border-right: 1px solid #d1d5db;
+  border-right: 1px solid #e2e8f0;
 }
 
 body.dark .docs-photo-btn-prev {
-  border-right-color: #3f3f46;
+  border-right-color: rgba(255, 255, 255, 0.1);
 }
 
 .docs-photo-btn-prev:hover,
 .docs-photo-btn-next:hover {
-  background: rgba(0, 0, 0, 0.06);
+  background: #f8fafc;
+  color: #0f172a;
 }
 
 body.dark .docs-photo-btn-prev:hover,
 body.dark .docs-photo-btn-next:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: #27272a;
+  color: #ffffff;
 }
 
 .docs-photo-btn-single {
   padding: 7px 16px;
   font-size: 13.5px;
   font-weight: 500;
-  color: #1f2937;
-  background: #ececec;
-  border: 1px solid #d1d5db;
+  color: #1e293b;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
   cursor: pointer;
-  transition: background 0.15s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  transition: all 0.15s ease;
 }
 
 body.dark .docs-photo-btn-single {
   color: #f4f4f5;
-  background: #27272a;
-  border-color: #3f3f46;
+  background: #18181b;
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: none;
 }
 
 .docs-photo-btn-single:hover {
-  background: #e2e5e9;
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #0f172a;
 }
 
 body.dark .docs-photo-btn-single:hover {
-  background: #3f3f46;
+  background: #27272a;
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
 }
 
 .docs-photo-btn-more {
@@ -4548,26 +4574,32 @@ body.dark .docs-photo-btn-single:hover {
   font-size: 13.5px;
   font-weight: 700;
   letter-spacing: 0.1em;
-  color: #1f2937;
-  background: #ececec;
-  border: 1px solid #d1d5db;
+  color: #1e293b;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
   cursor: pointer;
-  transition: background 0.15s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  transition: all 0.15s ease;
 }
 
 body.dark .docs-photo-btn-more {
   color: #f4f4f5;
-  background: #27272a;
-  border-color: #3f3f46;
+  background: #18181b;
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: none;
 }
 
 .docs-photo-btn-more:hover {
-  background: #e2e5e9;
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #0f172a;
 }
 
 body.dark .docs-photo-btn-more:hover {
-  background: #3f3f46;
+  background: #27272a;
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
 }
 
 /* More Dropdown Menu */
@@ -5255,7 +5287,7 @@ body.dark .docs-photo-copy-path-btn:hover {
   color: #ffffff;
 }
 
-/* 2. Action Buttons Row */
+/* 2. Action Buttons Row (Clean Modern Minimalist Outline Design - No Gray Fill) */
 .docs-photo-btn-bar {
   margin-top: 18px;
   display: flex;
@@ -5267,15 +5299,17 @@ body.dark .docs-photo-copy-path-btn:hover {
 .docs-photo-dual-btn {
   display: inline-flex;
   align-items: stretch;
-  border: 1px solid #d1d5db;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
-  background: #ececec;
+  background: #ffffff;
   overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 
 body.dark .docs-photo-dual-btn {
-  border-color: #3f3f46;
-  background: #27272a;
+  border-color: rgba(255, 255, 255, 0.1);
+  background: #18181b;
+  box-shadow: none;
 }
 
 .docs-photo-btn-prev,
@@ -5283,11 +5317,11 @@ body.dark .docs-photo-dual-btn {
   padding: 7px 16px;
   font-size: 13.5px;
   font-weight: 500;
-  color: #1f2937;
+  color: #1e293b;
   background: transparent;
   border: none;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: all 0.15s ease;
 }
 
 body.dark .docs-photo-btn-prev,
@@ -5296,47 +5330,55 @@ body.dark .docs-photo-btn-next {
 }
 
 .docs-photo-btn-prev {
-  border-right: 1px solid #d1d5db;
+  border-right: 1px solid #e2e8f0;
 }
 
 body.dark .docs-photo-btn-prev {
-  border-right-color: #3f3f46;
+  border-right-color: rgba(255, 255, 255, 0.1);
 }
 
 .docs-photo-btn-prev:hover,
 .docs-photo-btn-next:hover {
-  background: rgba(0, 0, 0, 0.06);
+  background: #f8fafc;
+  color: #0f172a;
 }
 
 body.dark .docs-photo-btn-prev:hover,
 body.dark .docs-photo-btn-next:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: #27272a;
+  color: #ffffff;
 }
 
 .docs-photo-btn-single {
   padding: 7px 16px;
   font-size: 13.5px;
   font-weight: 500;
-  color: #1f2937;
-  background: #ececec;
-  border: 1px solid #d1d5db;
+  color: #1e293b;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
   cursor: pointer;
-  transition: background 0.15s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  transition: all 0.15s ease;
 }
 
 body.dark .docs-photo-btn-single {
   color: #f4f4f5;
-  background: #27272a;
-  border-color: #3f3f46;
+  background: #18181b;
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: none;
 }
 
 .docs-photo-btn-single:hover {
-  background: #e2e5e9;
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #0f172a;
 }
 
 body.dark .docs-photo-btn-single:hover {
-  background: #3f3f46;
+  background: #27272a;
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
 }
 
 .docs-photo-btn-more {
@@ -5344,26 +5386,32 @@ body.dark .docs-photo-btn-single:hover {
   font-size: 13.5px;
   font-weight: 700;
   letter-spacing: 0.1em;
-  color: #1f2937;
-  background: #ececec;
-  border: 1px solid #d1d5db;
+  color: #1e293b;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
   cursor: pointer;
-  transition: background 0.15s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  transition: all 0.15s ease;
 }
 
 body.dark .docs-photo-btn-more {
   color: #f4f4f5;
-  background: #27272a;
-  border-color: #3f3f46;
+  background: #18181b;
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: none;
 }
 
 .docs-photo-btn-more:hover {
-  background: #e2e5e9;
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #0f172a;
 }
 
 body.dark .docs-photo-btn-more:hover {
-  background: #3f3f46;
+  background: #27272a;
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
 }
 
 /* More Dropdown Menu */

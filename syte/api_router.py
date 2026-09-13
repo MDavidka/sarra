@@ -731,6 +731,7 @@ async def api_agent_activity_stream(
     uuid: str = Query(...),
     since_id: int = Query(0, ge=0),
     session: str | None = Query(None),
+    request: Request = None,
     _token: dict[str, Any] = Depends(verify_api_token),
 ):
     project = await get_project(uuid)
@@ -739,7 +740,7 @@ async def api_agent_activity_stream(
 
     async def _sse_gen():
         try:
-            async for frame in session_manager.subscribe(uuid, since_id=since_id, replay=(since_id <= 0)):
+            async for frame in session_manager.subscribe(uuid, since_id=since_id, replay=(since_id <= 0), request=request):
                 yield frame
         except Exception as exc:
             err_data = json.dumps({"event": "error", "event_type": "error", "error": str(exc)})
@@ -1268,11 +1269,12 @@ async def api_agent_activity_project(
 @router.get("/projects/{uuid}/agent/activity/stream")
 async def api_agent_activity_stream_project(
     uuid: str,
+    request: Request,
     since_id: int = Query(0, ge=0),
     session: str | None = Query(None),
     _token: dict[str, Any] = Depends(verify_api_token),
 ):
-    return await api_agent_activity_stream(uuid=uuid, since_id=since_id, session=session, _token=_token)
+    return await api_agent_activity_stream(uuid=uuid, since_id=since_id, session=session, request=request, _token=_token)
 
 
 @router.post("/projects/{uuid}/agent/service")

@@ -24306,22 +24306,10 @@ window.renderApiDocPage = function(ep) {
   // 5. Render Full Exact Photo Layout
   container.innerHTML = `
     <div class="docs-photo-page-wrap">
-      <!-- 1. Top GET / API searchbar (optimized) -->
+      <!-- 1. Top GET / API router display (clean, without search/copy icons) -->
       <div class="docs-photo-top-bar">
-        <div class="docs-photo-top-left">
-          <span class="docs-photo-method-badge ${methodClass}">${escapeHtml(ep.method)}</span>
-          <span class="docs-photo-path">${escapeHtml(ep.path)}</span>
-        </div>
-        <div class="docs-photo-top-actions">
-          <button type="button" class="docs-photo-search-btn" onclick="openDocsSearchModal()" title="Search endpoints (Ctrl+K)">
-            <i data-lucide="search"></i>
-            <span class="search-label">Search API...</span>
-            <kbd>⌘K</kbd>
-          </button>
-          <button type="button" class="docs-photo-copy-path-btn" onclick="copySnippet(this, '${escapeHtml(ep.path)}')" title="Copy path">
-            <i data-lucide="copy"></i>
-          </button>
-        </div>
+        <span class="docs-photo-method-badge ${methodClass}">${escapeHtml(ep.method)}</span>
+        <span class="docs-photo-path">${escapeHtml(ep.path)}</span>
       </div>
 
       <!-- 2. Dual button (Previous / Next) + Report + More -->

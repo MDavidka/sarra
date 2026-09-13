@@ -484,12 +484,14 @@ async def export_project_ai_diagnostics(
     )
 
 
+@router.post("/api/ai/upload")
+@router.post("/api/agent/upload")
 @router.post("/api/projects/{project_id}/ai/upload")
 @router.post("/api/projects/{project_id}/upload")
 @router.post("/projects/{project_id}/ai/upload")
 @router.post("/projects/{project_id}/upload")
 async def upload_ai_files(
-    project_id: str,
+    project_id: str = "global",
     files: List[UploadFile] = File(...),
     extract_to_workspace: bool = Form(False),
     _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
