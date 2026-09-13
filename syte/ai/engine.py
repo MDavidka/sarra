@@ -141,11 +141,12 @@ class AIAgentEngine:
         self,
         user_message: str,
         settings_override: Optional[Dict[str, Any]] = None,
+        request_id: Optional[str] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """Execute a full autonomous agent turn with streaming output and tool execution."""
         # One request id per turn ties every event (deltas, tool calls,
         # lifecycle) to this run so clients can group/deduplicate streams.
-        request_id = f"req-{uuid.uuid4().hex[:12]}"
+        request_id = request_id or f"req-{uuid.uuid4().hex[:12]}"
         turn_started = time.monotonic()
 
         # 1. Save incoming user message

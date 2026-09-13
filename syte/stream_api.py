@@ -278,12 +278,13 @@ async def stream_chat(
     overrides = {k: v for k, v in body.items() if k != "message" and v is not None}
     session = session_manager.get_or_create_session(project_id)
     since_id = session.last_event_id
-
+    req_id = str(body.get("request_id") or "").strip() or None
     # Start the agent turn
     await session_manager.start_turn(
         project_id=project_id,
         user_message=message,
         settings_override=overrides if overrides else None,
+        request_id=req_id,
     )
 
     async def frames():

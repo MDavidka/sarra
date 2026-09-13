@@ -900,7 +900,7 @@ async def api_agent_change(
         if not project:
             _http_error(404, "not_found", "Project not found")
 
-    req_id = f"req_{uuid_mod.uuid4().hex[:8]}"
+    req_id = getattr(body, "request_id", None) or f"req_{uuid_mod.uuid4().hex[:8]}"
     sess_id = f"sess_{body.uuid[:8]}"
 
     overrides = {}
@@ -915,6 +915,7 @@ async def api_agent_change(
         project_id=body.uuid,
         user_message=body.message,
         settings_override=overrides if overrides else None,
+        request_id=req_id,
     )
 
     return {
@@ -936,7 +937,7 @@ async def api_agent_communicate(
         if not project:
             _http_error(404, "not_found", "Project not found")
 
-    req_id = f"req_{uuid_mod.uuid4().hex[:8]}"
+    req_id = getattr(body, "request_id", None) or f"req_{uuid_mod.uuid4().hex[:8]}"
     sess_id = f"sess_{body.uuid[:8]}"
 
     overrides = {}
@@ -951,6 +952,7 @@ async def api_agent_communicate(
         project_id=body.uuid,
         user_message=body.message,
         settings_override=overrides if overrides else None,
+        request_id=req_id,
     )
 
     session = session_manager.get_or_create_session(body.uuid)
