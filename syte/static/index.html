@@ -2023,10 +2023,15 @@
           <div class="docs-view-container">
             <!-- Topbar Row 1 -->
             <header class="docs-topbar">
-              <a class="docs-brand" onclick="showDocsPage('welcome')">
-                <span class="docs-brand-cross">✕</span>
-                <span>Syte</span>
-              </a>
+              <div class="docs-brand-group">
+                <a class="docs-brand" onclick="showDocsPage('welcome')">
+                  <img src="/static/syte-logo.png" alt="Syte" class="docs-brand-logo">
+                  <span>Syte</span>
+                </a>
+                <button type="button" class="docs-icon-btn docs-menu-btn" id="docs-mobile-menu-btn" title="Navigation Menu">
+                  <i data-lucide="menu"></i>
+                </button>
+              </div>
               <div class="docs-topbar-actions">
                 <button type="button" class="docs-icon-btn" id="docs-search-btn" title="Search (⌘K)">
                   <i data-lucide="search"></i>
@@ -2037,48 +2042,59 @@
               </div>
             </header>
 
-            <!-- Subheader Ribbon Row 2 -->
-            <div class="docs-subbar">
-              <button type="button" class="docs-subbar-btn" id="docs-subbar-title-btn">
-                <span class="docs-brand-cross" style="font-size:14px;">✕</span>
-                <span id="docs-subbar-title">Welcome to Syte</span>
-                <i data-lucide="chevron-down" style="width:14px;height:14px;opacity:0.6;"></i>
-              </button>
-            </div>
+
 
             <!-- Backdrop for Mobile Sidebar -->
             <div class="docs-sidebar-backdrop" id="docs-sidebar-backdrop"></div>
+
+                        <!-- Search & AI Modal -->
+            <div class="docs-search-modal-backdrop" id="docs-search-modal-backdrop">
+              <div class="docs-search-modal">
+                <div class="docs-search-input-row">
+                  <i data-lucide="search" style="width:18px;height:18px;color:#71717a;"></i>
+                  <input type="text" class="docs-search-modal-input" id="docs-search-input" placeholder="Search documentation, guides, or ask AI (e.g. how to deploy)..." autocomplete="off">
+                  <button type="button" class="docs-icon-btn" id="docs-search-close-btn" title="Close (Esc)">
+                    <i data-lucide="x" style="width:16px;height:16px;"></i>
+                  </button>
+                </div>
+                <div class="docs-search-results-list" id="docs-search-results-list">
+                  <!-- Live search results rendered dynamically -->
+                </div>
+              </div>
+            </div>
 
             <div class="docs-layout-body">
               <!-- Sidebar Drawer -->
               <aside class="docs-sidebar-drawer" id="docs-sidebar-drawer">
                 <div class="docs-sidebar-top">
-                  <a href="https://github.com" target="_blank" rel="noreferrer" class="docs-icon-btn" title="GitHub">
+                  <a href="https://github.com/MDavidka/sarra" target="_blank" rel="noreferrer" class="docs-icon-btn" title="GitHub">
                     <i data-lucide="github"></i>
                   </a>
-                  <div class="docs-theme-toggle-pill">
-                    <button type="button" class="docs-theme-btn" id="docs-theme-light" title="Light Theme">
-                      <i data-lucide="sun" style="width:13px;height:13px;"></i>
-                    </button>
-                    <button type="button" class="docs-theme-btn active" id="docs-theme-dark" title="Dark Theme">
-                      <i data-lucide="moon" style="width:13px;height:13px;"></i>
+                  <div class="docs-sidebar-top-right">
+                    <div class="docs-theme-toggle-pill">
+                      <button type="button" class="docs-theme-btn" id="docs-theme-light" title="Light Theme">
+                        <i data-lucide="sun" style="width:13px;height:13px;"></i>
+                      </button>
+                      <button type="button" class="docs-theme-btn active" id="docs-theme-dark" title="Dark Theme">
+                        <i data-lucide="moon" style="width:13px;height:13px;"></i>
+                      </button>
+                    </div>
+                    <button type="button" class="docs-icon-btn" id="docs-sidebar-close-btn" title="Close Sidebar">
+                      <i data-lucide="panel-right"></i>
                     </button>
                   </div>
-                  <button type="button" class="docs-icon-btn" id="docs-sidebar-close-btn" title="Close">
-                    <i data-lucide="panel-right"></i>
-                  </button>
                 </div>
 
-                <!-- Framework card -->
-                <div class="docs-framework-card">
-                  <div class="docs-framework-badge">
-                    <i data-lucide="layers"></i>
+                <!-- Core Scope Card (matching media_1789295735526.png) -->
+                <div class="docs-scope-card" onclick="showDocsPage('welcome')" title="Core Documentation">
+                  <div class="docs-scope-badge">
+                    <i data-lucide="box"></i>
                   </div>
-                  <div class="docs-framework-info" style="flex:1;">
-                    <strong>Framework</strong>
-                    <span>The docs framework</span>
+                  <div class="docs-scope-info">
+                    <strong class="docs-scope-title">Core</strong>
+                    <span class="docs-scope-desc">Essential guides for deploying and managing applications, databases, and server configurations</span>
                   </div>
-                  <i data-lucide="chevrons-up-down" style="width:14px;height:14px;color:#71717a;"></i>
+                  <i data-lucide="chevrons-up-down" class="docs-scope-switch"></i>
                 </div>
 
                 <!-- Sidebar Nav Groups -->
@@ -2086,11 +2102,11 @@
                   <div class="docs-nav-group">
                     <div class="docs-nav-group-title">QuickStart</div>
                     <div class="docs-nav-links">
-                      <div class="docs-nav-parent is-open" data-parent="quickstart">
+                      <div class="docs-nav-parent" data-parent="quickstart">
                         <span>Getting Started</span>
                         <i data-lucide="chevron-right" class="docs-parent-chevron"></i>
                       </div>
-                      <div class="docs-nav-subitems is-open" data-subitems-for="quickstart">
+                      <div class="docs-nav-subitems" data-subitems-for="quickstart">
                         <a class="docs-nav-item active" data-docs-page="qs-install"><span>Install</span></a>
                         <a class="docs-nav-item" data-docs-page="qs-update"><span>Update</span></a>
                         <a class="docs-nav-item" data-docs-page="qs-restart"><span>Restart</span></a>
@@ -2102,11 +2118,11 @@
                   <div class="docs-nav-group">
                     <div class="docs-nav-group-title">Git</div>
                     <div class="docs-nav-links">
-                      <div class="docs-nav-parent is-open" data-parent="git">
+                      <div class="docs-nav-parent" data-parent="git">
                         <span>Source Control</span>
                         <i data-lucide="chevron-right" class="docs-parent-chevron"></i>
                       </div>
-                      <div class="docs-nav-subitems is-open" data-subitems-for="git">
+                      <div class="docs-nav-subitems" data-subitems-for="git">
                         <a class="docs-nav-item" data-docs-page="git-connect"><span>Connect</span></a>
                         <a class="docs-nav-item" data-docs-page="git-auto-update"><span>Auto Update</span></a>
                       </div>
@@ -2116,11 +2132,11 @@
                   <div class="docs-nav-group">
                     <div class="docs-nav-group-title">Domain</div>
                     <div class="docs-nav-links">
-                      <div class="docs-nav-parent is-open" data-parent="domain">
+                      <div class="docs-nav-parent" data-parent="domain">
                         <span>Networking &amp; SSL</span>
                         <i data-lucide="chevron-right" class="docs-parent-chevron"></i>
                       </div>
-                      <div class="docs-nav-subitems is-open" data-subitems-for="domain">
+                      <div class="docs-nav-subitems" data-subitems-for="domain">
                         <a class="docs-nav-item" data-docs-page="domain-setup"><span>Setup</span></a>
                         <a class="docs-nav-item" data-docs-page="domain-cloudflare"><span>Cloudflare</span></a>
                         <a class="docs-nav-item" data-docs-page="domain-ssl"><span>SSL</span></a>
@@ -2132,11 +2148,11 @@
                   <div class="docs-nav-group">
                     <div class="docs-nav-group-title">Environment Variables &amp; Secrets</div>
                     <div class="docs-nav-links">
-                      <div class="docs-nav-parent is-open" data-parent="env">
+                      <div class="docs-nav-parent" data-parent="env">
                         <span>Configuration</span>
                         <i data-lucide="chevron-right" class="docs-parent-chevron"></i>
                       </div>
-                      <div class="docs-nav-subitems is-open" data-subitems-for="env">
+                      <div class="docs-nav-subitems" data-subitems-for="env">
                         <a class="docs-nav-item" data-docs-page="env-what-is"><span>What is an ENV?</span></a>
                         <a class="docs-nav-item" data-docs-page="env-setup"><span>Setup</span></a>
                         <a class="docs-nav-item" data-docs-page="env-global"><span>Global Variables</span></a>
@@ -2147,11 +2163,11 @@
                   <div class="docs-nav-group">
                     <div class="docs-nav-group-title">AI</div>
                     <div class="docs-nav-links">
-                      <div class="docs-nav-parent is-open" data-parent="ai">
+                      <div class="docs-nav-parent" data-parent="ai">
                         <span>Syra Engine</span>
                         <i data-lucide="chevron-right" class="docs-parent-chevron"></i>
                       </div>
-                      <div class="docs-nav-subitems is-open" data-subitems-for="ai">
+                      <div class="docs-nav-subitems" data-subitems-for="ai">
                         <a class="docs-nav-item" data-docs-page="ai-how-it-works"><span>How It Works</span></a>
                         <a class="docs-nav-item" data-docs-page="ai-providers"><span>Providers</span></a>
                       </div>
@@ -2161,11 +2177,11 @@
                   <div class="docs-nav-group">
                     <div class="docs-nav-group-title">Server Swarm</div>
                     <div class="docs-nav-links">
-                      <div class="docs-nav-parent is-open" data-parent="swarm">
+                      <div class="docs-nav-parent" data-parent="swarm">
                         <span>Cluster Nodes</span>
                         <i data-lucide="chevron-right" class="docs-parent-chevron"></i>
                       </div>
-                      <div class="docs-nav-subitems is-open" data-subitems-for="swarm">
+                      <div class="docs-nav-subitems" data-subitems-for="swarm">
                         <a class="docs-nav-item" data-docs-page="swarm-setup"><span>Setup a Server</span></a>
                         <a class="docs-nav-item" data-docs-page="swarm-node"><span>Create a Node</span></a>
                       </div>
@@ -2175,40 +2191,198 @@
                   <div class="docs-nav-group">
                     <div class="docs-nav-group-title">Application</div>
                     <div class="docs-nav-links">
-                      <div class="docs-nav-parent is-open" data-parent="app">
+                      <div class="docs-nav-parent" data-parent="app">
                         <span>Pipelines</span>
                         <i data-lucide="chevron-right" class="docs-parent-chevron"></i>
                       </div>
-                      <div class="docs-nav-subitems is-open" data-subitems-for="app">
+                      <div class="docs-nav-subitems" data-subitems-for="app">
                         <a class="docs-nav-item" data-docs-page="app-builds"><span>Builds</span></a>
                         <a class="docs-nav-item" data-docs-page="app-prev-prod"><span>Prev / Prod</span></a>
                       </div>
                     </div>
                   </div>
 
-                  <div class="docs-nav-group">
-                    <div class="docs-nav-group-title">API Reference</div>
+                                    <div class="docs-nav-group">
+                    <div class="docs-nav-group-title">API Reference (113 Endpoints)</div>
                     <div class="docs-nav-links">
-                      <div class="docs-nav-parent is-open" data-parent="api-core">
-                        <span>Applications</span>
+                      <div class="docs-nav-parent" data-parent="api-system-health">
+                        <span>System &amp; Health</span>
                         <i data-lucide="chevron-right" class="docs-parent-chevron"></i>
                       </div>
-                      <div class="docs-nav-subitems is-open" data-subitems-for="api-core">
-                        <a class="docs-nav-item" data-docs-page="api-all"><span>Overview</span></a>
-                        <a class="docs-nav-item" data-docs-page="api-app-create"><span>Application create</span></a>
-                        <a class="docs-nav-item" data-docs-page="api-app-deploy"><span>Application deploy</span></a>
-                        <a class="docs-nav-item" data-docs-page="api-app-list"><span>Application list</span></a>
-                        <a class="docs-nav-item" data-docs-page="api-app-env"><span>Application env</span></a>
-                        <a class="docs-nav-item" data-docs-page="api-app-domain"><span>Application domain</span></a>
+                      <div class="docs-nav-subitems" data-subitems-for="api-system-health">
+                        <a class="docs-nav-item" data-docs-page="api-health-get" onclick="showDocsPage('api-health-get')"><span class="docs-api-method-badge get">GET</span><span>Health check</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-system-get" onclick="showDocsPage('api-system-get')"><span class="docs-api-method-badge get">GET</span><span>System hardware metrics</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-system-update-info-get" onclick="showDocsPage('api-system-update-info-get')"><span class="docs-api-method-badge get">GET</span><span>Check release updates</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-system-update-post" onclick="showDocsPage('api-system-update-post')"><span class="docs-api-method-badge post">POST</span><span>Trigger platform self-update</span></a>
                       </div>
-                      <div class="docs-nav-parent is-open" data-parent="api-advanced">
-                        <span>Streaming &amp; Auth</span>
+                      <div class="docs-nav-parent" data-parent="api-notifications">
+                        <span>Notifications</span>
                         <i data-lucide="chevron-right" class="docs-parent-chevron"></i>
                       </div>
-                      <div class="docs-nav-subitems is-open" data-subitems-for="api-advanced">
-                        <a class="docs-nav-item" data-docs-page="api-logs-stream"><span>Live SSE Logs</span></a>
-                        <a class="docs-nav-item" data-docs-page="api-agent-stream"><span>AI Deployer Stream</span></a>
-                        <a class="docs-nav-item" data-docs-page="api-auth-tokens"><span>API Tokens</span></a>
+                      <div class="docs-nav-subitems" data-subitems-for="api-notifications">
+                        <a class="docs-nav-item" data-docs-page="api-notifications-settings-get" onclick="showDocsPage('api-notifications-settings-get')"><span class="docs-api-method-badge get">GET</span><span>Get notification settings</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-notifications-settings-put" onclick="showDocsPage('api-notifications-settings-put')"><span class="docs-api-method-badge put">PUT</span><span>Update notification settings</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-notifications-get" onclick="showDocsPage('api-notifications-get')"><span class="docs-api-method-badge get">GET</span><span>List notifications</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-notifications-read-post" onclick="showDocsPage('api-notifications-read-post')"><span class="docs-api-method-badge post">POST</span><span>Mark notifications read</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-notifications-push-vapid-public-key-get" onclick="showDocsPage('api-notifications-push-vapid-public-key-get')"><span class="docs-api-method-badge get">GET</span><span>Get VAPID public key</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-notifications-push-subscriptions-post" onclick="showDocsPage('api-notifications-push-subscriptions-post')"><span class="docs-api-method-badge post">POST</span><span>Register push subscription</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-notifications-test-post" onclick="showDocsPage('api-notifications-test-post')"><span class="docs-api-method-badge post">POST</span><span>Send test notification</span></a>
+                      </div>
+                      <div class="docs-nav-parent" data-parent="api-auth-op">
+                        <span>Auth &amp; Operator</span>
+                        <i data-lucide="chevron-right" class="docs-parent-chevron"></i>
+                      </div>
+                      <div class="docs-nav-subitems" data-subitems-for="api-auth-op">
+                        <a class="docs-nav-item" data-docs-page="api-auth-setup-get" onclick="showDocsPage('api-auth-setup-get')"><span class="docs-api-method-badge get">GET</span><span>Check setup status</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-auth-setup-post" onclick="showDocsPage('api-auth-setup-post')"><span class="docs-api-method-badge post">POST</span><span>Initialize administrator</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-auth-login-post" onclick="showDocsPage('api-auth-login-post')"><span class="docs-api-method-badge post">POST</span><span>User login</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-auth-session-get" onclick="showDocsPage('api-auth-session-get')"><span class="docs-api-method-badge get">GET</span><span>Inspect active session</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-auth-session-delete" onclick="showDocsPage('api-auth-session-delete')"><span class="docs-api-method-badge delete">DELETE</span><span>Logout session</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-auth-profile-get" onclick="showDocsPage('api-auth-profile-get')"><span class="docs-api-method-badge get">GET</span><span>Get user profile</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-auth-profile-put" onclick="showDocsPage('api-auth-profile-put')"><span class="docs-api-method-badge put">PUT</span><span>Update user profile</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-operator-session-get" onclick="showDocsPage('api-operator-session-get')"><span class="docs-api-method-badge get">GET</span><span>Get operator session</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-operator-session-post" onclick="showDocsPage('api-operator-session-post')"><span class="docs-api-method-badge post">POST</span><span>Start operator session</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-operator-session-delete" onclick="showDocsPage('api-operator-session-delete')"><span class="docs-api-method-badge delete">DELETE</span><span>End operator session</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-tokens-get" onclick="showDocsPage('api-tokens-get')"><span class="docs-api-method-badge get">GET</span><span>List API tokens</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-tokens-post" onclick="showDocsPage('api-tokens-post')"><span class="docs-api-method-badge post">POST</span><span>Create API token</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-tokens-token-id-delete" onclick="showDocsPage('api-tokens-token-id-delete')"><span class="docs-api-method-badge delete">DELETE</span><span>Revoke API token</span></a>
+                      </div>
+                      <div class="docs-nav-parent" data-parent="api-settings-gh">
+                        <span>Settings &amp; GitHub</span>
+                        <i data-lucide="chevron-right" class="docs-parent-chevron"></i>
+                      </div>
+                      <div class="docs-nav-subitems" data-subitems-for="api-settings-gh">
+                        <a class="docs-nav-item" data-docs-page="api-settings-get" onclick="showDocsPage('api-settings-get')"><span class="docs-api-method-badge get">GET</span><span>Get platform settings</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-settings-put" onclick="showDocsPage('api-settings-put')"><span class="docs-api-method-badge put">PUT</span><span>Save platform settings</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-settings-cache-get" onclick="showDocsPage('api-settings-cache-get')"><span class="docs-api-method-badge get">GET</span><span>Get cache metrics</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-settings-cache-clear-post" onclick="showDocsPage('api-settings-cache-clear-post')"><span class="docs-api-method-badge post">POST</span><span>Clear system cache</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-settings-github-get" onclick="showDocsPage('api-settings-github-get')"><span class="docs-api-method-badge get">GET</span><span>Get GitHub App config</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-settings-github-put" onclick="showDocsPage('api-settings-github-put')"><span class="docs-api-method-badge put">PUT</span><span>Update GitHub App config</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-settings-github-test-post" onclick="showDocsPage('api-settings-github-test-post')"><span class="docs-api-method-badge post">POST</span><span>Test GitHub credentials</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-github-status-get" onclick="showDocsPage('api-github-status-get')"><span class="docs-api-method-badge get">GET</span><span>Check GitHub link status</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-github-pulls-get" onclick="showDocsPage('api-github-pulls-get')"><span class="docs-api-method-badge get">GET</span><span>List project pull requests</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-github-pulls-number-merge-post" onclick="showDocsPage('api-github-pulls-number-merge-post')"><span class="docs-api-method-badge post">POST</span><span>Merge GitHub pull request</span></a>
+                      </div>
+                      <div class="docs-nav-parent" data-parent="api-ssl-certs">
+                        <span>SSL &amp; Certificates</span>
+                        <i data-lucide="chevron-right" class="docs-parent-chevron"></i>
+                      </div>
+                      <div class="docs-nav-subitems" data-subitems-for="api-ssl-certs">
+                        <a class="docs-nav-item" data-docs-page="api-ssl-get" onclick="showDocsPage('api-ssl-get')"><span class="docs-api-method-badge get">GET</span><span>Global SSL status</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-ssl-resolve-post" onclick="showDocsPage('api-ssl-resolve-post')"><span class="docs-api-method-badge post">POST</span><span>Resolve DNS records</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-ssl-projects-custom-tls-post" onclick="showDocsPage('api-ssl-projects-custom-tls-post')"><span class="docs-api-method-badge post">POST</span><span>Upload custom TLS certificate</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-certificates-guide-get" onclick="showDocsPage('api-certificates-guide-get')"><span class="docs-api-method-badge get">GET</span><span>Get certificate guide</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-certificates-issue-post" onclick="showDocsPage('api-certificates-issue-post')"><span class="docs-api-method-badge post">POST</span><span>Issue Let's Encrypt SSL</span></a>
+                      </div>
+                      <div class="docs-nav-parent" data-parent="api-projects-life">
+                        <span>Projects &amp; Lifecycle</span>
+                        <i data-lucide="chevron-right" class="docs-parent-chevron"></i>
+                      </div>
+                      <div class="docs-nav-subitems" data-subitems-for="api-projects-life">
+                        <a class="docs-nav-item" data-docs-page="api-projects-get" onclick="showDocsPage('api-projects-get')"><span class="docs-api-method-badge get">GET</span><span>List all projects</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-post" onclick="showDocsPage('api-projects-post')"><span class="docs-api-method-badge post">POST</span><span>Create new project</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-get" onclick="showDocsPage('api-projects-project-id-get')"><span class="docs-api-method-badge get">GET</span><span>Get project details</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-put" onclick="showDocsPage('api-projects-project-id-put')"><span class="docs-api-method-badge put">PUT</span><span>Update project settings</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-delete" onclick="showDocsPage('api-projects-project-id-delete')"><span class="docs-api-method-badge delete">DELETE</span><span>Delete project</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-start-post" onclick="showDocsPage('api-projects-project-id-start-post')"><span class="docs-api-method-badge post">POST</span><span>Start project container</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-stop-post" onclick="showDocsPage('api-projects-project-id-stop-post')"><span class="docs-api-method-badge post">POST</span><span>Stop project container</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-domain-post" onclick="showDocsPage('api-projects-project-id-domain-post')"><span class="docs-api-method-badge post">POST</span><span>Bind custom domain</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-domain-delete" onclick="showDocsPage('api-projects-project-id-domain-delete')"><span class="docs-api-method-badge delete">DELETE</span><span>Unbind custom domain</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-environment-put" onclick="showDocsPage('api-projects-project-id-environment-put')"><span class="docs-api-method-badge put">PUT</span><span>Upsert environment variables</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-environment-key-delete" onclick="showDocsPage('api-projects-project-id-environment-key-delete')"><span class="docs-api-method-badge delete">DELETE</span><span>Delete environment variable</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-health-get" onclick="showDocsPage('api-projects-project-id-health-get')"><span class="docs-api-method-badge get">GET</span><span>Check project health probe</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-deployment-config-put" onclick="showDocsPage('api-projects-project-id-deployment-config-put')"><span class="docs-api-method-badge put">PUT</span><span>Update deployment config</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-analyze-post" onclick="showDocsPage('api-projects-project-id-analyze-post')"><span class="docs-api-method-badge post">POST</span><span>Analyze project source</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-deploy-detected-post" onclick="showDocsPage('api-projects-project-id-deploy-detected-post')"><span class="docs-api-method-badge post">POST</span><span>Deploy detected framework</span></a>
+                      </div>
+                      <div class="docs-nav-parent" data-parent="api-builds-deploy">
+                        <span>Builds &amp; Deployments</span>
+                        <i data-lucide="chevron-right" class="docs-parent-chevron"></i>
+                      </div>
+                      <div class="docs-nav-subitems" data-subitems-for="api-builds-deploy">
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-builds-get" onclick="showDocsPage('api-projects-project-id-builds-get')"><span class="docs-api-method-badge get">GET</span><span>List project builds</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-builds-track-get" onclick="showDocsPage('api-projects-project-id-builds-track-get')"><span class="docs-api-method-badge get">GET</span><span>Track active build</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-builds-trigger-post" onclick="showDocsPage('api-projects-project-id-builds-trigger-post')"><span class="docs-api-method-badge post">POST</span><span>Trigger new build</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-builds-build-id-logs-get" onclick="showDocsPage('api-projects-project-id-builds-build-id-logs-get')"><span class="docs-api-method-badge get">GET</span><span>Get build run logs</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-deployments-build-id-logs-get" onclick="showDocsPage('api-projects-project-id-deployments-build-id-logs-get')"><span class="docs-api-method-badge get">GET</span><span>Get deployment container logs</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-deploy-post" onclick="showDocsPage('api-projects-project-id-deploy-post')"><span class="docs-api-method-badge post">POST</span><span>Issue immediate deploy</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-deployments-get" onclick="showDocsPage('api-projects-project-id-deployments-get')"><span class="docs-api-method-badge get">GET</span><span>List deployment revisions</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-deployments-run-id-rollback-post" onclick="showDocsPage('api-projects-project-id-deployments-run-id-rollback-post')"><span class="docs-api-method-badge post">POST</span><span>Rollback deployment</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-logs-get" onclick="showDocsPage('api-projects-project-id-logs-get')"><span class="docs-api-method-badge get">GET</span><span>Get container logs</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-logs-stream-get" onclick="showDocsPage('api-projects-project-id-logs-stream-get')"><span class="docs-api-method-badge get">GET</span><span>Stream container logs (SSE)</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-update-post" onclick="showDocsPage('api-projects-project-id-update-post')"><span class="docs-api-method-badge post">POST</span><span>Pull Git update and rebuild</span></a>
+                      </div>
+                      <div class="docs-nav-parent" data-parent="api-redirects-route">
+                        <span>Redirects &amp; Routing</span>
+                        <i data-lucide="chevron-right" class="docs-parent-chevron"></i>
+                      </div>
+                      <div class="docs-nav-subitems" data-subitems-for="api-redirects-route">
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-redirects-get" onclick="showDocsPage('api-projects-project-id-redirects-get')"><span class="docs-api-method-badge get">GET</span><span>List redirect rules</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-redirects-post" onclick="showDocsPage('api-projects-project-id-redirects-post')"><span class="docs-api-method-badge post">POST</span><span>Create redirect rule</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-redirects-redirect-id-put" onclick="showDocsPage('api-projects-project-id-redirects-redirect-id-put')"><span class="docs-api-method-badge put">PUT</span><span>Update redirect rule</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-redirects-redirect-id-patch" onclick="showDocsPage('api-projects-project-id-redirects-redirect-id-patch')"><span class="docs-api-method-badge patch">PATCH</span><span>Toggle redirect rule status</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-redirects-redirect-id-delete" onclick="showDocsPage('api-projects-project-id-redirects-redirect-id-delete')"><span class="docs-api-method-badge delete">DELETE</span><span>Delete redirect rule</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-redirects-reorder-post" onclick="showDocsPage('api-projects-project-id-redirects-reorder-post')"><span class="docs-api-method-badge post">POST</span><span>Reorder redirect rules</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-redirects-bulk-post" onclick="showDocsPage('api-projects-project-id-redirects-bulk-post')"><span class="docs-api-method-badge post">POST</span><span>Bulk update redirect rules</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-redirects-test-post" onclick="showDocsPage('api-projects-project-id-redirects-test-post')"><span class="docs-api-method-badge post">POST</span><span>Test redirect URL matching</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-redirects-import-post" onclick="showDocsPage('api-projects-project-id-redirects-import-post')"><span class="docs-api-method-badge post">POST</span><span>Import redirects file</span></a>
+                      </div>
+                      <div class="docs-nav-parent" data-parent="api-analytics-telem">
+                        <span>Analytics &amp; Telemetry</span>
+                        <i data-lucide="chevron-right" class="docs-parent-chevron"></i>
+                      </div>
+                      <div class="docs-nav-subitems" data-subitems-for="api-analytics-telem">
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-stats-get" onclick="showDocsPage('api-projects-project-id-stats-get')"><span class="docs-api-method-badge get">GET</span><span>Real-time project stats</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-performance-get" onclick="showDocsPage('api-projects-project-id-performance-get')"><span class="docs-api-method-badge get">GET</span><span>Historical performance charts</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-app-logs-get" onclick="showDocsPage('api-projects-project-id-app-logs-get')"><span class="docs-api-method-badge get">GET</span><span>Application runtime logs</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-router-logs-get" onclick="showDocsPage('api-projects-project-id-router-logs-get')"><span class="docs-api-method-badge get">GET</span><span>HTTP edge proxy access logs</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-visitors-get" onclick="showDocsPage('api-projects-project-id-visitors-get')"><span class="docs-api-method-badge get">GET</span><span>Visitor geographic telemetry</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-analytics-get" onclick="showDocsPage('api-projects-project-id-analytics-get')"><span class="docs-api-method-badge get">GET</span><span>HTTP status &amp; latency metrics</span></a>
+                      </div>
+                      <div class="docs-nav-parent" data-parent="api-release-prev">
+                        <span>Release &amp; Previews</span>
+                        <i data-lucide="chevron-right" class="docs-parent-chevron"></i>
+                      </div>
+                      <div class="docs-nav-subitems" data-subitems-for="api-release-prev">
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-release-get" onclick="showDocsPage('api-projects-project-id-release-get')"><span class="docs-api-method-badge get">GET</span><span>Get release workspace</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-release-environments-env-id-put" onclick="showDocsPage('api-projects-project-id-release-environments-env-id-put')"><span class="docs-api-method-badge put">PUT</span><span>Update release environment</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-release-policy-put" onclick="showDocsPage('api-projects-project-id-release-policy-put')"><span class="docs-api-method-badge put">PUT</span><span>Update release policy</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-release-team-post" onclick="showDocsPage('api-projects-project-id-release-team-post')"><span class="docs-api-method-badge post">POST</span><span>Upsert release team member</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-release-team-member-id-delete" onclick="showDocsPage('api-projects-project-id-release-team-member-id-delete')"><span class="docs-api-method-badge delete">DELETE</span><span>Remove release team member</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-release-approvals-post" onclick="showDocsPage('api-projects-project-id-release-approvals-post')"><span class="docs-api-method-badge post">POST</span><span>Request release approval</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-release-approvals-decision-post" onclick="showDocsPage('api-projects-project-id-release-approvals-decision-post')"><span class="docs-api-method-badge post">POST</span><span>Submit approval decision</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-release-restore-points-post" onclick="showDocsPage('api-projects-project-id-release-restore-points-post')"><span class="docs-api-method-badge post">POST</span><span>Create restore snapshot</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-release-restore-points-verify-post" onclick="showDocsPage('api-projects-project-id-release-restore-points-verify-post')"><span class="docs-api-method-badge post">POST</span><span>Verify restore snapshot</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-release-preview-start-post" onclick="showDocsPage('api-projects-project-id-release-preview-start-post')"><span class="docs-api-method-badge post">POST</span><span>Start release preview</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-release-preview-stop-post" onclick="showDocsPage('api-projects-project-id-release-preview-stop-post')"><span class="docs-api-method-badge post">POST</span><span>Stop release preview</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-release-deploy-post" onclick="showDocsPage('api-projects-project-id-release-deploy-post')"><span class="docs-api-method-badge post">POST</span><span>Execute release deploy</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-preview-start-post" onclick="showDocsPage('api-projects-project-id-preview-start-post')"><span class="docs-api-method-badge post">POST</span><span>Start interactive preview</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-preview-stop-post" onclick="showDocsPage('api-projects-project-id-preview-stop-post')"><span class="docs-api-method-badge post">POST</span><span>Stop interactive preview</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-preview-status-get" onclick="showDocsPage('api-projects-project-id-preview-status-get')"><span class="docs-api-method-badge get">GET</span><span>Get preview status</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-preview-iframe-check-get" onclick="showDocsPage('api-projects-project-id-preview-iframe-check-get')"><span class="docs-api-method-badge get">GET</span><span>Check preview iframe headers</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-preview-logs-stream-get" onclick="showDocsPage('api-projects-project-id-preview-logs-stream-get')"><span class="docs-api-method-badge get">GET</span><span>Stream preview logs (SSE)</span></a>
+                      </div>
+                      <div class="docs-nav-parent" data-parent="api-git-workspace">
+                        <span>Git &amp; Workspace Files</span>
+                        <i data-lucide="chevron-right" class="docs-parent-chevron"></i>
+                      </div>
+                      <div class="docs-nav-subitems" data-subitems-for="api-git-workspace">
+                        <a class="docs-nav-item" data-docs-page="api-projects-git-github-status-get" onclick="showDocsPage('api-projects-git-github-status-get')"><span class="docs-api-method-badge get">GET</span><span>GitHub connection status</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-git-github-config-put" onclick="showDocsPage('api-projects-git-github-config-put')"><span class="docs-api-method-badge put">PUT</span><span>Configure GitHub OAuth</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-git-github-connect-get" onclick="showDocsPage('api-projects-git-github-connect-get')"><span class="docs-api-method-badge get">GET</span><span>Initiate GitHub OAuth</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-git-github-callback-get" onclick="showDocsPage('api-projects-git-github-callback-get')"><span class="docs-api-method-badge get">GET</span><span>Handle GitHub callback</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-git-github-disconnect-delete" onclick="showDocsPage('api-projects-git-github-disconnect-delete')"><span class="docs-api-method-badge delete">DELETE</span><span>Disconnect GitHub account</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-git-github-repositories-get" onclick="showDocsPage('api-projects-git-github-repositories-get')"><span class="docs-api-method-badge get">GET</span><span>List GitHub repositories</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-git-github-repositories-branches-get" onclick="showDocsPage('api-projects-git-github-repositories-branches-get')"><span class="docs-api-method-badge get">GET</span><span>List repository branches</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-import-github-post" onclick="showDocsPage('api-projects-import-github-post')"><span class="docs-api-method-badge post">POST</span><span>Import GitHub repository</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-import-repository-post" onclick="showDocsPage('api-projects-import-repository-post')"><span class="docs-api-method-badge post">POST</span><span>Import public Git repository</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-import-zip-post" onclick="showDocsPage('api-projects-import-zip-post')"><span class="docs-api-method-badge post">POST</span><span>Upload project ZIP archive</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-workspace-files-get" onclick="showDocsPage('api-projects-project-id-workspace-files-get')"><span class="docs-api-method-badge get">GET</span><span>List workspace file tree</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-workspace-file-get" onclick="showDocsPage('api-projects-project-id-workspace-file-get')"><span class="docs-api-method-badge get">GET</span><span>Read workspace file</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-workspace-file-post" onclick="showDocsPage('api-projects-project-id-workspace-file-post')"><span class="docs-api-method-badge post">POST</span><span>Write workspace file</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-workspace-mkdir-post" onclick="showDocsPage('api-projects-project-id-workspace-mkdir-post')"><span class="docs-api-method-badge post">POST</span><span>Create folder in workspace</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-workspace-file-delete" onclick="showDocsPage('api-projects-project-id-workspace-file-delete')"><span class="docs-api-method-badge delete">DELETE</span><span>Delete workspace file or folder</span></a>
+                        <a class="docs-nav-item" data-docs-page="api-projects-project-id-workspace-upload-post" onclick="showDocsPage('api-projects-project-id-workspace-upload-post')"><span class="docs-api-method-badge post">POST</span><span>Upload workspace file</span></a>
                       </div>
                     </div>
                   </div>
