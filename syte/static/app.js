@@ -16850,6 +16850,7 @@ function setupDocsEventsOnce() {
   const backdrop = document.getElementById('docs-sidebar-backdrop');
 
   document.getElementById('docs-sidebar-toggle-btn')?.addEventListener('click', () => toggleDocsSidebar());
+  document.getElementById('docs-mobile-menu-btn')?.addEventListener('click', () => toggleDocsSidebar());
   document.getElementById('docs-sidebar-close-btn')?.addEventListener('click', () => toggleDocsSidebar(false));
   document.getElementById('docs-subbar-title-btn')?.addEventListener('click', () => toggleDocsSidebar(true));
   backdrop?.addEventListener('click', () => toggleDocsSidebar(false));

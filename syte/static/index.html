@@ -2023,10 +2023,15 @@
           <div class="docs-view-container">
             <!-- Topbar Row 1 -->
             <header class="docs-topbar">
-              <a class="docs-brand" onclick="showDocsPage('welcome')">
-                <span class="docs-brand-cross">✕</span>
-                <span>Syte</span>
-              </a>
+              <div class="docs-brand-group">
+                <a class="docs-brand" onclick="showDocsPage('welcome')">
+                  <img src="/static/syte-logo.png" alt="Syte" class="docs-brand-logo">
+                  <span>Syte</span>
+                </a>
+                <button type="button" class="docs-icon-btn docs-menu-btn" id="docs-mobile-menu-btn" title="Navigation Menu">
+                  <i data-lucide="menu"></i>
+                </button>
+              </div>
               <div class="docs-topbar-actions">
                 <button type="button" class="docs-icon-btn" id="docs-search-btn" title="Search (⌘K)">
                   <i data-lucide="search"></i>
@@ -2053,32 +2058,34 @@
               <!-- Sidebar Drawer -->
               <aside class="docs-sidebar-drawer" id="docs-sidebar-drawer">
                 <div class="docs-sidebar-top">
-                  <a href="https://github.com" target="_blank" rel="noreferrer" class="docs-icon-btn" title="GitHub">
+                  <a href="https://github.com/MDavidka/sarra" target="_blank" rel="noreferrer" class="docs-icon-btn" title="GitHub">
                     <i data-lucide="github"></i>
                   </a>
-                  <div class="docs-theme-toggle-pill">
-                    <button type="button" class="docs-theme-btn" id="docs-theme-light" title="Light Theme">
-                      <i data-lucide="sun" style="width:13px;height:13px;"></i>
-                    </button>
-                    <button type="button" class="docs-theme-btn active" id="docs-theme-dark" title="Dark Theme">
-                      <i data-lucide="moon" style="width:13px;height:13px;"></i>
+                  <div class="docs-sidebar-top-right">
+                    <div class="docs-theme-toggle-pill">
+                      <button type="button" class="docs-theme-btn" id="docs-theme-light" title="Light Theme">
+                        <i data-lucide="sun" style="width:13px;height:13px;"></i>
+                      </button>
+                      <button type="button" class="docs-theme-btn active" id="docs-theme-dark" title="Dark Theme">
+                        <i data-lucide="moon" style="width:13px;height:13px;"></i>
+                      </button>
+                    </div>
+                    <button type="button" class="docs-icon-btn" id="docs-sidebar-close-btn" title="Close Sidebar">
+                      <i data-lucide="panel-right"></i>
                     </button>
                   </div>
-                  <button type="button" class="docs-icon-btn" id="docs-sidebar-close-btn" title="Close">
-                    <i data-lucide="panel-right"></i>
-                  </button>
                 </div>
 
-                <!-- Framework card -->
-                <div class="docs-framework-card">
-                  <div class="docs-framework-badge">
-                    <i data-lucide="layers"></i>
+                <!-- Core Scope Card (matching media_1789295735526.png) -->
+                <div class="docs-scope-card" onclick="showDocsPage('welcome')" title="Core Documentation">
+                  <div class="docs-scope-badge">
+                    <i data-lucide="box"></i>
                   </div>
-                  <div class="docs-framework-info" style="flex:1;">
-                    <strong>Framework</strong>
-                    <span>The docs framework</span>
+                  <div class="docs-scope-info">
+                    <strong class="docs-scope-title">Core</strong>
+                    <span class="docs-scope-desc">Essential guides for deploying and managing applications, databases, and server configurations</span>
                   </div>
-                  <i data-lucide="chevrons-up-down" style="width:14px;height:14px;color:#71717a;"></i>
+                  <i data-lucide="chevrons-up-down" class="docs-scope-switch"></i>
                 </div>
 
                 <!-- Sidebar Nav Groups -->
