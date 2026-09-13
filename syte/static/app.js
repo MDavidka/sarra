@@ -16541,13 +16541,23 @@ function showDocsPage(pageKey) {
   activeDocsPage = pageKey;
   const data = DOCS_DATA[pageKey] || DOCS_DATA['qs-install'];
 
-  // Update subbar title
-  const subbarTitle = document.getElementById('docs-subbar-title');
-  if (subbarTitle) subbarTitle.textContent = data.subbarTitle || data.title || (data.groupName ? `${data.groupName} · ${data.endpointTitle}` : 'Docs');
+  // Update active sidebar nav item and auto-open only its parent category drawer
+  document.querySelectorAll('.docs-nav-subitems').forEach(sub => sub.classList.remove('is-open'));
+  document.querySelectorAll('.docs-nav-parent').forEach(p => p.classList.remove('is-open'));
 
-  // Update active sidebar nav item
   document.querySelectorAll('.docs-nav-item').forEach(item => {
-    item.classList.toggle('active', item.dataset.docsPage === pageKey);
+    const isActive = item.dataset.docsPage === pageKey;
+    item.classList.toggle('active', isActive);
+    if (isActive) {
+      const parentContainer = item.closest('.docs-nav-subitems');
+      if (parentContainer) {
+        parentContainer.classList.add('is-open');
+        const parentHeader = parentContainer.previousElementSibling;
+        if (parentHeader && parentHeader.classList.contains('docs-nav-parent')) {
+          parentHeader.classList.add('is-open');
+        }
+      }
+    }
   });
 
   const container = document.getElementById('docs-main-content');
@@ -16580,7 +16590,7 @@ function showDocsPage(pageKey) {
   navCardsHtml += '</div>';
 
   if (data.isApiDetail) {
-    // Render rich API endpoint detail layout matching screenshot
+    // Render minimalist, high-readability API endpoint detail layout
     const originUrl = window.location.origin + '/api';
     let paramsHtml = '';
     if (data.params && data.params.length > 0) {
@@ -16609,12 +16619,12 @@ function showDocsPage(pageKey) {
           <summary class="docs-api-subcollapse-head">
             <div class="docs-api-subcollapse-title">
               <i data-lucide="file-text" style="width:14px;height:14px;"></i>
-              <span>Body</span>
+              <span>Body (JSON)</span>
             </div>
             <i data-lucide="chevron-down" class="docs-api-subcollapse-chev"></i>
           </summary>
           <div class="docs-api-subcollapse-body">
-            <textarea class="docs-api-json-textarea" id="body-json-${pageKey}" rows="6">${escapeHtml(data.defaultBody || '')}</textarea>
+            <textarea class="docs-api-json-textarea" id="body-json-${pageKey}" rows="5">${escapeHtml(data.defaultBody || '')}</textarea>
           </div>
         </details>
       `;
@@ -16637,7 +16647,7 @@ function showDocsPage(pageKey) {
       <h2 class="docs-api-detail-sub">${escapeHtml(data.endpointTitle || 'Endpoint')}</h2>
       <p class="docs-api-detail-desc">${escapeHtml(data.lead || '')}</p>
 
-      <!-- Interactive Request Card -->
+      <!-- Minimalist Interactive Request Card -->
       <div class="docs-api-req-card">
         <div class="docs-api-url-row">
           <span class="docs-api-url-val">${escapeHtml(originUrl)}</span>
@@ -16665,15 +16675,14 @@ function showDocsPage(pageKey) {
           </summary>
           <div class="docs-api-subcollapse-body">
             <div class="docs-api-input-wrap">
-              <label class="docs-api-input-lbl">Token (${data.authType || 'x-api-key'}):</label>
-              <input type="text" class="docs-api-text-input" id="auth-token-input-${pageKey}" value="${escapeHtml(data.defaultAuthToken || 'YOUR-API-KEY')}" />
+              <input type="text" class="docs-api-text-input" id="auth-token-input-${pageKey}" value="${escapeHtml(data.defaultAuthToken || 'YOUR-API-KEY')}" placeholder="API Key or Bearer Token" />
             </div>
           </div>
         </details>
 
         ${bodyDrawerHtml}
 
-        <!-- Live Response Output -->
+        <!-- Live Response Console -->
         <div class="docs-api-response-live hidden" id="response-box-${pageKey}">
           <div class="docs-api-response-live-head">
             <div class="docs-api-res-status">
@@ -16688,7 +16697,7 @@ function showDocsPage(pageKey) {
         </div>
       </div>
 
-      <!-- Authorization Section -->
+      <!-- Minimalist Authorization Specification -->
       <div class="docs-api-section-header">
         <h3>Authorization</h3>
         <span class="docs-api-type-tag">${escapeHtml(data.authType || 'x-api-key')}</span>
@@ -16706,7 +16715,7 @@ function showDocsPage(pageKey) {
       </div>
       <div class="docs-api-in-header-badge">In: <code>${escapeHtml(data.authLocation || 'header')}</code></div>
 
-      <!-- Request Body Section -->
+      <!-- Minimalist Request Body Specification -->
       ${data.bodyType !== 'none' ? `
         <div class="docs-api-section-header">
           <h3>Request Body</h3>
@@ -16717,8 +16726,8 @@ function showDocsPage(pageKey) {
         </div>
       ` : ''}
 
-      <!-- Responses Section -->
-      <div class="docs-api-section-header" style="margin-top:32px;">
+      <!-- Minimalist Responses Section -->
+      <div class="docs-api-section-header" style="margin-top:28px;">
         <h3>Responses</h3>
         <span class="docs-api-type-tag">${escapeHtml(data.responseStatus || '200 OK')}</span>
       </div>
@@ -16730,14 +16739,14 @@ function showDocsPage(pageKey) {
         <p class="param-desc">Success response returned by Syte instance.</p>
         <div class="docs-code-block" style="margin-top:10px;">
           <div class="docs-code-header">
-            <span class="docs-code-title">Response Example</span>
+            <span class="docs-code-title">Response Schema</span>
             <button type="button" class="docs-code-copy-btn" onclick="copySnippet(this, \`${escapeHtml(data.responseBody || '').replace(/`/g, '\\`')}\`)"><i data-lucide="copy"></i><span>Copy</span></button>
           </div>
           <pre class="docs-code-pre"><code>${escapeHtml(data.responseBody || '')}</code></pre>
         </div>
       </div>
 
-      <div class="docs-feedback-row" style="margin-top:36px;">
+      <div class="docs-feedback-row" style="margin-top:32px;">
         <span class="docs-feedback-title">How is this guide?</span>
         <div class="docs-feedback-btns">
           <button type="button" class="docs-feedback-btn ${docsFeedbackState === 'good' ? 'active' : ''}" id="docs-feedback-good">
@@ -16836,7 +16845,7 @@ function showDocsPage(pageKey) {
     toggleDocsSidebar(true);
   });
 
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  container.scrollTop = 0;
   refreshIcons();
 }
 
