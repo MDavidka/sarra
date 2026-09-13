@@ -15508,6 +15508,14 @@ const DOCS_DATA = {
     "hasHero": true,
     "isApi": false
   },
+  "welcome": {
+    "title": "Syte Documentation",
+    "lead": "Everything you need to build, deploy, scale, and manage projects on Syte.",
+    "updated": "03/09/2026",
+    "content": "\n      <p>Welcome to Syte documentation. Choose a category from the sidebar or search above to explore getting started guides, architecture, networking, or the full 113 API endpoints reference.</p>\n      \n      <div class=\"docs-step-item\">\n        <div class=\"docs-step-num\">1</div>\n        <div class=\"docs-step-content\">\n          <h4><a onclick=\"showDocsPage('qs-install')\" style=\"cursor:pointer;color:inherit;text-decoration:underline;\">Quickstart &amp; Installation</a></h4>\n          <p>Get Syte up and running on your local machine or Linux server in under 2 minutes.</p>\n        </div>\n      </div>\n      <div class=\"docs-step-item\">\n        <div class=\"docs-step-num\">2</div>\n        <div class=\"docs-step-content\">\n          <h4><a onclick=\"showDocsPage('qs-deploy')\" style=\"cursor:pointer;color:inherit;text-decoration:underline;\">Deploy Your First Application</a></h4>\n          <p>Import from GitHub, upload a ZIP, or connect a public repository for instant zero-downtime deployment.</p>\n        </div>\n      </div>\n      <div class=\"docs-step-item\">\n        <div class=\"docs-step-num\">3</div>\n        <div class=\"docs-step-content\">\n          <h4><a onclick=\"showDocsPage('api-projects-get')\" style=\"cursor:pointer;color:inherit;text-decoration:underline;\">Explore API Reference</a></h4>\n          <p>Programmatically automate projects, builds, custom domains, secrets, and telemetry.</p>\n        </div>\n      </div>\n            ",
+    "hasHero": true,
+    "isApi": false
+  },
   "qs-deploy": {
     "title": "Deploying Your First App",
     "lead": "Step-by-step instructions to import, build, and deploy your web app.",
@@ -19808,9 +19816,37 @@ const DOCS_DATA = {
   }
 };
 
+window.copySnippet = function(btn, text) {
+  if (text) {
+    navigator.clipboard?.writeText(text);
+    toast('Copied to clipboard');
+    if (btn) {
+      const orig = btn.innerHTML;
+      btn.innerHTML = '<i data-lucide="check" style="width:12px;height:12px;color:#10b981;"></i><span>Copied!</span>';
+      refreshIcons();
+      setTimeout(() => {
+        btn.innerHTML = orig;
+        refreshIcons();
+      }, 1500);
+    }
+  }
+};
+
+window.switchCmdTab = function(btn, tabKey) {
+  const card = btn.closest('.docs-cmd-card');
+  if (!card) return;
+  card.querySelectorAll('.docs-cmd-tab').forEach(t => t.classList.toggle('active', t === btn));
+  card.querySelectorAll('.docs-cmd-snippet').forEach(s => s.classList.toggle('active', s.dataset.content === tabKey));
+};
+
+window.renderDocsView = function() {
+  setupDocsEventsOnce();
+  showDocsPage(activeDocsPage || 'qs-install');
+};
+
 function showDocsPage(pageKey) {
   activeDocsPage = pageKey;
-  const data = DOCS_DATA[pageKey] || DOCS_DATA['qs-install'];
+  const data = DOCS_DATA[pageKey] || DOCS_DATA['welcome'] || DOCS_DATA['qs-install'];
 
   // Update active sidebar nav item and auto-open only its parent category drawer
   document.querySelectorAll('.docs-nav-subitems').forEach(sub => sub.classList.remove('is-open'));
@@ -20027,7 +20063,7 @@ function showDocsPage(pageKey) {
   } else {
     // Standard prose guides
     let heroHtml = '';
-    if (data.hasHero || pageKey === 'qs-install') {
+    if (data.hasHero || pageKey === 'qs-install' || pageKey === 'welcome') {
       heroHtml = `
         <div class="docs-hero-panel">
           <img src="/static/syte-hero.png" alt="Syte deployment platform">
@@ -20078,6 +20114,7 @@ function showDocsPage(pageKey) {
   container.scrollTop = 0;
   refreshIcons();
 }
+window.showDocsPage = showDocsPage;
 
 let docsEventsInitialized = false;
 function setupDocsEventsOnce() {
@@ -20161,7 +20198,7 @@ function setupDocsEventsOnce() {
       const title = val.title || val.path || key;
       const desc = val.lead || val.summary || val.desc || '';
       if (!q || title.toLowerCase().includes(q) || desc.toLowerCase().includes(q) || key.includes(q)) {
-        results.push({ key, title, desc, method: val.method, isApi: val.isApiDetail });
+        results.push({ key, title, desc, method: val.method, isApi: val.isApi || val.isApiDetail });
       }
     }
 
@@ -20228,3 +20265,11 @@ function toggleDocsSidebar(forceOpen) {
   sidebar.classList.toggle('is-open', isOpen);
   backdrop?.classList.toggle('is-open', isOpen);
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+  if (document.getElementById('docs-main-content')) {
+    setupDocsEventsOnce();
+    showDocsPage(activeDocsPage || 'welcome');
+  }
+});
+

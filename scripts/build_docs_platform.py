@@ -75,8 +75,7 @@ def build():
 
     all_api_nav_html = "\n".join(sidebar_api_groups_html)
 
-    # Match lines from `<div class="docs-nav-group-title">API Reference</div>` to `</div>\n                  </div>\n                </nav>`
-    api_ref_pattern = re.compile(r'<div class="docs-nav-group">\s*<div class="docs-nav-group-title">API Reference</div>\s*<div class="docs-nav-links">.*?</div>\s*</div>\s*</nav>', re.DOTALL)
+    api_ref_pattern = re.compile(r'<div class="docs-nav-group">\s*<div class="docs-nav-group-title">API Reference.*?</div>\s*<div class="docs-nav-links">.*?</div>\s*</div>\s*</nav>', re.DOTALL)
     
     new_api_group_chunk = f"""<div class="docs-nav-group">
                     <div class="docs-nav-group-title">API Reference ({len(API_ENDPOINTS)} Endpoints)</div>
@@ -143,6 +142,37 @@ def build():
         </div>
         <div class="docs-cmd-body">
           <pre class="docs-cmd-snippet active"><code>curl -sSL https://get.syte.dev | bash</code></pre>
+        </div>
+      </div>
+            """
+        },
+        "welcome": {
+            "title": "Syte Documentation",
+            "lead": "Everything you need to build, deploy, scale, and manage projects on Syte.",
+            "hasHero": True,
+            "updated": "03/09/2026",
+            "content": """
+      <p>Welcome to Syte documentation. Choose a category from the sidebar or search above to explore getting started guides, architecture, networking, or the full 113 API endpoints reference.</p>
+      
+      <div class="docs-step-item">
+        <div class="docs-step-num">1</div>
+        <div class="docs-step-content">
+          <h4><a onclick="showDocsPage('qs-install')" style="cursor:pointer;color:inherit;text-decoration:underline;">Quickstart &amp; Installation</a></h4>
+          <p>Get Syte up and running on your local machine or Linux server in under 2 minutes.</p>
+        </div>
+      </div>
+      <div class="docs-step-item">
+        <div class="docs-step-num">2</div>
+        <div class="docs-step-content">
+          <h4><a onclick="showDocsPage('qs-deploy')" style="cursor:pointer;color:inherit;text-decoration:underline;">Deploy Your First Application</a></h4>
+          <p>Import from GitHub, upload a ZIP, or connect a public repository for instant zero-downtime deployment.</p>
+        </div>
+      </div>
+      <div class="docs-step-item">
+        <div class="docs-step-num">3</div>
+        <div class="docs-step-content">
+          <h4><a onclick="showDocsPage('api-projects-get')" style="cursor:pointer;color:inherit;text-decoration:underline;">Explore API Reference</a></h4>
+          <p>Programmatically automate projects, builds, custom domains, secrets, and telemetry.</p>
         </div>
       </div>
             """
@@ -299,9 +329,37 @@ TTL: Auto / 300</code></pre>
         }
 
     show_docs_page_js = """
+window.copySnippet = function(btn, text) {
+  if (text) {
+    navigator.clipboard?.writeText(text);
+    toast('Copied to clipboard');
+    if (btn) {
+      const orig = btn.innerHTML;
+      btn.innerHTML = '<i data-lucide="check" style="width:12px;height:12px;color:#10b981;"></i><span>Copied!</span>';
+      refreshIcons();
+      setTimeout(() => {
+        btn.innerHTML = orig;
+        refreshIcons();
+      }, 1500);
+    }
+  }
+};
+
+window.switchCmdTab = function(btn, tabKey) {
+  const card = btn.closest('.docs-cmd-card');
+  if (!card) return;
+  card.querySelectorAll('.docs-cmd-tab').forEach(t => t.classList.toggle('active', t === btn));
+  card.querySelectorAll('.docs-cmd-snippet').forEach(s => s.classList.toggle('active', s.dataset.content === tabKey));
+};
+
+window.renderDocsView = function() {
+  setupDocsEventsOnce();
+  showDocsPage(activeDocsPage || 'qs-install');
+};
+
 function showDocsPage(pageKey) {
   activeDocsPage = pageKey;
-  const data = DOCS_DATA[pageKey] || DOCS_DATA['qs-install'];
+  const data = DOCS_DATA[pageKey] || DOCS_DATA['welcome'] || DOCS_DATA['qs-install'];
 
   // Update active sidebar nav item and auto-open only its parent category drawer
   document.querySelectorAll('.docs-nav-subitems').forEach(sub => sub.classList.remove('is-open'));
@@ -518,7 +576,7 @@ function showDocsPage(pageKey) {
   } else {
     // Standard prose guides
     let heroHtml = '';
-    if (data.hasHero || pageKey === 'qs-install') {
+    if (data.hasHero || pageKey === 'qs-install' || pageKey === 'welcome') {
       heroHtml = `
         <div class="docs-hero-panel">
           <img src="/static/syte-hero.png" alt="Syte deployment platform">
@@ -569,6 +627,7 @@ function showDocsPage(pageKey) {
   container.scrollTop = 0;
   refreshIcons();
 }
+window.showDocsPage = showDocsPage;
 """
 
     end_marker = "let docsEventsInitialized = false;"
