@@ -15502,179 +15502,189 @@ let docsFeedbackState = null;
 const DOCS_DATA = {
   // ---------------- QuickStart ----------------
   'qs-install': {
-    title: 'Install Syte',
-    subbarTitle: 'QuickStart · Install',
-    lead: 'Set up Syte on any fresh Linux server (Ubuntu, Debian, AlmaLinux, Rocky) with a single command.',
+    title: "QuickStart Installation",
+    lead: "Deploy Syte on any fresh Linux VPS or cloud instance with a single command. Automated configuration sets up Docker, Node.js, and reverse-proxy routing out of the box.",
     hasHero: true,
     content: `
-      <div class="docs-alerts-grid">
-        <div class="docs-alert-card tip">
-          <div class="docs-alert-card-header">
-            <div class="docs-alert-card-icon"><i data-lucide="lightbulb" style="width:14px;height:14px;"></i></div>
-            <span>Requirements</span>
-          </div>
-          <div class="docs-alert-card-desc">1 vCPU, 1 GB RAM, Linux x86_64 or arm64 with root or sudo access.</div>
-        </div>
-        <div class="docs-alert-card note">
-          <div class="docs-alert-card-header">
-            <div class="docs-alert-card-icon"><i data-lucide="file-text" style="width:14px;height:14px;"></i></div>
-            <span>Automated</span>
-          </div>
-          <div class="docs-alert-card-desc">Installs Docker, Node.js, Python, and Caddy automatically.</div>
-        </div>
-      </div>
+      <p>Syte turns any raw Linux server into a complete autonomous PaaS with zero-downtime deployment pipelines, automatic SSL issuance, and live log streaming.</p>
 
-      <h2>Single-Line Installation</h2>
-      <div class="docs-code-block">
-        <div class="docs-code-block-header">
-          <div class="docs-code-title">
-            <i data-lucide="terminal" style="width:14px;height:14px;"></i>
-            <span>install command</span>
+      <h2>Automated Installation</h2>
+      <p>Run the official installation script on your server as root or a user with sudo privileges:</p>
+
+      <div class="docs-cmd-tabs-card">
+        <div class="docs-cmd-tabs-header">
+          <div class="docs-cmd-tabs-list">
+            <button type="button" class="docs-cmd-tab active" onclick="switchCmdTab(this, 'curl')">curl</button>
+            <button type="button" class="docs-cmd-tab" onclick="switchCmdTab(this, 'wget')">wget</button>
+            <button type="button" class="docs-cmd-tab" onclick="switchCmdTab(this, 'docker')">docker</button>
+            <button type="button" class="docs-cmd-tab" onclick="switchCmdTab(this, 'npm')">npm</button>
           </div>
-          <div class="docs-code-actions">
-            <span class="docs-code-lang">bash</span>
-            <button type="button" class="docs-code-copy-btn" onclick="copySnippet(this, 'curl -fsSL https://sycord.site/install.sh | bash')">
-              <i data-lucide="copy" style="width:12px;height:12px;"></i><span>Copy</span>
+        </div>
+        <div class="docs-cmd-tabs-body">
+          <div class="docs-cmd-snippet active" data-content="curl">
+            <code><span class="cmd-cli">curl</span> <span class="cmd-flag">-fsSL</span> <span class="cmd-arg">https://sycord.site/install.sh</span> | bash</code>
+            <button type="button" class="docs-cmd-copy-btn" onclick="copySnippet(this, 'curl -fsSL https://sycord.site/install.sh | bash')" title="Copy command">
+              <i data-lucide="clipboard" style="width:16px;height:16px;"></i>
+            </button>
+          </div>
+          <div class="docs-cmd-snippet" data-content="wget">
+            <code><span class="cmd-cli">wget</span> <span class="cmd-flag">-qO-</span> <span class="cmd-arg">https://sycord.site/install.sh</span> | bash</code>
+            <button type="button" class="docs-cmd-copy-btn" onclick="copySnippet(this, 'wget -qO- https://sycord.site/install.sh | bash')" title="Copy command">
+              <i data-lucide="clipboard" style="width:16px;height:16px;"></i>
+            </button>
+          </div>
+          <div class="docs-cmd-snippet" data-content="docker">
+            <code><span class="cmd-cli">docker</span> <span class="cmd-action">run</span> <span class="cmd-flag">-d -p 8787:8787 -v /var/run/docker.sock:/var/run/docker.sock</span> <span class="cmd-arg">ghcr.io/mdavidka/syte:latest</span></code>
+            <button type="button" class="docs-cmd-copy-btn" onclick="copySnippet(this, 'docker run -d -p 8787:8787 -v /var/run/docker.sock:/var/run/docker.sock ghcr.io/mdavidka/syte:latest')" title="Copy command">
+              <i data-lucide="clipboard" style="width:16px;height:16px;"></i>
+            </button>
+          </div>
+          <div class="docs-cmd-snippet" data-content="npm">
+            <code><span class="cmd-cli">npm</span> <span class="cmd-action">create</span> <span class="cmd-target">fumadocs-app</span></code>
+            <button type="button" class="docs-cmd-copy-btn" onclick="copySnippet(this, 'npm create fumadocs-app')" title="Copy command">
+              <i data-lucide="clipboard" style="width:16px;height:16px;"></i>
             </button>
           </div>
         </div>
-        <div class="docs-code-body">
-          <div class="docs-code-lines"><span>1</span></div>
-          <pre class="docs-code-text"><code>curl -fsSL https://sycord.site/install.sh | bash</code></pre>
-        </div>
       </div>
 
-      <h2>Post-Install Verification</h2>
-      <p>Once installation finishes, check the systemd service status and open port <code>8787</code> in your browser:</p>
-      <div class="docs-code-block">
-        <div class="docs-code-block-header">
-          <div class="docs-code-title"><span>verify service</span></div>
-          <div class="docs-code-actions">
-            <span class="docs-code-lang">bash</span>
-            <button type="button" class="docs-code-copy-btn" onclick="copySnippet(this, 'systemctl status syte --no-pager')">
-              <i data-lucide="copy" style="width:12px;height:12px;"></i><span>Copy</span>
-            </button>
-          </div>
-        </div>
-        <div class="docs-code-body">
-          <div class="docs-code-lines"><span>1</span></div>
-          <pre class="docs-code-text"><code>systemctl status syte --no-pager</code></pre>
-        </div>
-      </div>
+      <h2>Minimum System Requirements</h2>
+      <p>Before launching Syte, ensure your hosting environment meets the baseline resource allocation:</p>
+      <ul>
+        <li><strong>Architecture:</strong> x86_64 (Intel / AMD) or arm64 (AWS Graviton, Apple Silicon, Raspberry Pi 4/5).</li>
+        <li><strong>Memory:</strong> 1 GB RAM minimum (2 GB+ recommended for large Next.js and Docker builds).</li>
+        <li><strong>Disk Space:</strong> 10 GB available storage.</li>
+        <li><strong>Operating System:</strong> Ubuntu 22.04 / 24.04 LTS, Debian 12, AlmaLinux 9, or Rocky Linux.</li>
+      </ul>
+
+      <h2>Post-Installation Verification</h2>
+      <p>Once installation finishes, the service runs continuously under systemd. Open your browser and navigate to port 8787 on your server's IP address or domain to complete initial setup.</p>
     `,
-    prev: null,
-    next: { title: 'Update', page: 'qs-update', desc: 'Upgrading your Syte installation.' },
+    prev: {"title": "API Reference", "page": "api-all", "desc": "Explore endpoints."},
+    next: {"title": "Update Guide", "page": "qs-update", "desc": "Keep Syte updated."},
     updated: '03/09/2026',
   },
-
   'qs-update': {
-    title: 'Update Syte',
-    subbarTitle: 'QuickStart · Update',
-    lead: 'Keep your server up to date with the latest features, security patches, and agent abilities.',
+    title: "Updating Syte",
+    lead: "Seamlessly update your Syte instance to the latest release with zero downtime for running applications.",
     hasHero: false,
     content: `
-      <h2>1-Click Web Update</h2>
-      <p>Inside the Syte workspace, navigate to <strong>Settings → Git &amp; Updates</strong> and click <strong>Check for Updates</strong>.</p>
+      <p>Syte provides built-in automated update channels as well as direct terminal upgrade commands. Containerized user applications continue running uninterrupted during host updates.</p>
 
-      <h2>CLI Update Command</h2>
-      <div class="docs-code-block">
-        <div class="docs-code-block-header">
-          <div class="docs-code-title"><span>update command</span></div>
-          <div class="docs-code-actions">
-            <span class="docs-code-lang">bash</span>
-            <button type="button" class="docs-code-copy-btn" onclick="copySnippet(this, 'syte update || (cd /root/syte && git pull && systemctl restart syte)')">
-              <i data-lucide="copy" style="width:12px;height:12px;"></i><span>Copy</span>
+      <h2>One-Click Web Upgrade</h2>
+      <p>Navigate to <strong>Settings → System Update</strong> in the dashboard. When a new version is detected, click <em>Update Now</em>. Syte will download the latest assets and reload the control plane in under 3 seconds.</p>
+
+      <h2>Terminal Upgrade Command</h2>
+      <p>You can also pull the latest release directly through the CLI:</p>
+
+      <div class="docs-cmd-tabs-card">
+        <div class="docs-cmd-tabs-header">
+          <div class="docs-cmd-tabs-list">
+            <button type="button" class="docs-cmd-tab active" onclick="switchCmdTab(this, 'curl')">curl</button>
+            <button type="button" class="docs-cmd-tab" onclick="switchCmdTab(this, 'systemctl')">systemctl</button>
+          </div>
+        </div>
+        <div class="docs-cmd-tabs-body">
+          <div class="docs-cmd-snippet active" data-content="curl">
+            <code><span class="cmd-cli">curl</span> <span class="cmd-flag">-fsSL</span> <span class="cmd-arg">https://sycord.site/update.sh</span> | bash</code>
+            <button type="button" class="docs-cmd-copy-btn" onclick="copySnippet(this, 'curl -fsSL https://sycord.site/update.sh | bash')" title="Copy command">
+              <i data-lucide="clipboard" style="width:16px;height:16px;"></i>
+            </button>
+          </div>
+          <div class="docs-cmd-snippet" data-content="systemctl">
+            <code><span class="cmd-cli">systemctl</span> <span class="cmd-action">restart</span> <span class="cmd-target">syte</span></code>
+            <button type="button" class="docs-cmd-copy-btn" onclick="copySnippet(this, 'systemctl restart syte')" title="Copy command">
+              <i data-lucide="clipboard" style="width:16px;height:16px;"></i>
             </button>
           </div>
         </div>
-        <div class="docs-code-body">
-          <div class="docs-code-lines"><span>1</span></div>
-          <pre class="docs-code-text"><code>syte update || (cd /root/syte && git pull && systemctl restart syte)</code></pre>
-        </div>
       </div>
     `,
-    prev: { title: 'Install', page: 'qs-install', desc: 'Single-line install.' },
-    next: { title: 'Restart', page: 'qs-restart', desc: 'Restarting services.' },
+    prev: {"title": "Install", "page": "qs-install", "desc": "Quickstart installation."},
+    next: {"title": "Restart", "page": "qs-restart", "desc": "Manage daemons."},
     updated: '03/09/2026',
   },
-
   'qs-restart': {
-    title: 'Restart Services',
-    subbarTitle: 'QuickStart · Restart',
-    lead: 'Restart the control plane, project instances, or Caddy web server gracefully.',
+    title: "Restarting Services",
+    lead: "Manage and cycle the Syte runtime engine, background supervisors, and Caddy reverse proxy.",
     hasHero: false,
     content: `
-      <h2>Systemd Service Restart</h2>
-      <div class="docs-code-block">
-        <div class="docs-code-block-header">
-          <div class="docs-code-title"><span>restart daemon</span></div>
-          <div class="docs-code-actions">
-            <span class="docs-code-lang">bash</span>
-            <button type="button" class="docs-code-copy-btn" onclick="copySnippet(this, 'sudo systemctl restart syte')">
-              <i data-lucide="copy" style="width:12px;height:12px;"></i><span>Copy</span>
-            </button>
-          </div>
-        </div>
-        <div class="docs-code-body">
-          <div class="docs-code-lines"><span>1</span></div>
-          <pre class="docs-code-text"><code>sudo systemctl restart syte</code></pre>
-        </div>
-      </div>
+      <p>When changing host-level networking rules or installing system updates, you can safely restart the management daemon without restarting existing app containers.</p>
 
-      <h2>Restarting Caddy Reverse Proxy</h2>
-      <div class="docs-code-block">
-        <div class="docs-code-block-header">
-          <div class="docs-code-title"><span>reload proxy</span></div>
-          <div class="docs-code-actions">
-            <span class="docs-code-lang">bash</span>
-            <button type="button" class="docs-code-copy-btn" onclick="copySnippet(this, 'sudo systemctl reload caddy')">
-              <i data-lucide="copy" style="width:12px;height:12px;"></i><span>Copy</span>
-            </button>
+      <h2>Service Management Commands</h2>
+      <p>Use standard systemd commands to manage the host service:</p>
+
+      <div class="docs-cmd-tabs-card">
+        <div class="docs-cmd-tabs-header">
+          <div class="docs-cmd-tabs-list">
+            <button type="button" class="docs-cmd-tab active" onclick="switchCmdTab(this, 'restart')">restart</button>
+            <button type="button" class="docs-cmd-tab" onclick="switchCmdTab(this, 'status')">status</button>
+            <button type="button" class="docs-cmd-tab" onclick="switchCmdTab(this, 'stop')">stop</button>
           </div>
         </div>
-        <div class="docs-code-body">
-          <div class="docs-code-lines"><span>1</span></div>
-          <pre class="docs-code-text"><code>sudo systemctl reload caddy</code></pre>
+        <div class="docs-cmd-tabs-body">
+          <div class="docs-cmd-snippet active" data-content="restart">
+            <code><span class="cmd-cli">systemctl</span> <span class="cmd-action">restart</span> <span class="cmd-target">syte</span></code>
+            <button type="button" class="docs-cmd-copy-btn" onclick="copySnippet(this, 'systemctl restart syte')" title="Copy command">
+              <i data-lucide="clipboard" style="width:16px;height:16px;"></i>
+            </button>
+          </div>
+          <div class="docs-cmd-snippet" data-content="status">
+            <code><span class="cmd-cli">systemctl</span> <span class="cmd-action">status</span> <span class="cmd-target">syte</span></code>
+            <button type="button" class="docs-cmd-copy-btn" onclick="copySnippet(this, 'systemctl status syte')" title="Copy command">
+              <i data-lucide="clipboard" style="width:16px;height:16px;"></i>
+            </button>
+          </div>
+          <div class="docs-cmd-snippet" data-content="stop">
+            <code><span class="cmd-cli">systemctl</span> <span class="cmd-action">stop</span> <span class="cmd-target">syte</span></code>
+            <button type="button" class="docs-cmd-copy-btn" onclick="copySnippet(this, 'systemctl stop syte')" title="Copy command">
+              <i data-lucide="clipboard" style="width:16px;height:16px;"></i>
+            </button>
+          </div>
         </div>
       </div>
     `,
-    prev: { title: 'Update', page: 'qs-update', desc: 'Updating Syte.' },
-    next: { title: 'Debug', page: 'qs-debug', desc: 'Troubleshooting.' },
+    prev: {"title": "Update", "page": "qs-update", "desc": "Update guide."},
+    next: {"title": "Debug", "page": "qs-debug", "desc": "Troubleshooting logs."},
     updated: '03/09/2026',
   },
-
   'qs-debug': {
-    title: 'Debug & Diagnostics',
-    subbarTitle: 'QuickStart · Debug',
-    lead: 'Inspect real-time logs, collect error dumps, and diagnose network issues.',
+    title: "Debugging & Diagnostic Logs",
+    lead: "Inspect real-time system logs, diagnose network issues, and troubleshoot failed application builds.",
     hasHero: false,
     content: `
-      <h2>Live Journald Logs</h2>
-      <div class="docs-code-block">
-        <div class="docs-code-block-header">
-          <div class="docs-code-title"><span>tail logs</span></div>
-          <div class="docs-code-actions">
-            <span class="docs-code-lang">bash</span>
-            <button type="button" class="docs-code-copy-btn" onclick="copySnippet(this, 'journalctl -u syte -f -n 100')">
-              <i data-lucide="copy" style="width:12px;height:12px;"></i><span>Copy</span>
+      <p>Diagnosing issues in Syte is straightforward thanks to unified logging across the API, Docker daemon, and Caddy proxy.</p>
+
+      <h2>Inspecting Real-time Logs</h2>
+      <p>Stream real-time server output using <code>journalctl</code>:</p>
+
+      <div class="docs-cmd-tabs-card">
+        <div class="docs-cmd-tabs-header">
+          <div class="docs-cmd-tabs-list">
+            <button type="button" class="docs-cmd-tab active" onclick="switchCmdTab(this, 'journalctl')">journalctl</button>
+            <button type="button" class="docs-cmd-tab" onclick="switchCmdTab(this, 'docker')">docker logs</button>
+          </div>
+        </div>
+        <div class="docs-cmd-tabs-body">
+          <div class="docs-cmd-snippet active" data-content="journalctl">
+            <code><span class="cmd-cli">journalctl</span> <span class="cmd-flag">-u syte -f -n 100</span></code>
+            <button type="button" class="docs-cmd-copy-btn" onclick="copySnippet(this, 'journalctl -u syte -f -n 100')" title="Copy command">
+              <i data-lucide="clipboard" style="width:16px;height:16px;"></i>
+            </button>
+          </div>
+          <div class="docs-cmd-snippet" data-content="docker">
+            <code><span class="cmd-cli">docker</span> <span class="cmd-action">logs</span> <span class="cmd-flag">-f --tail 100</span> <span class="cmd-target">&lt;container-name&gt;</span></code>
+            <button type="button" class="docs-cmd-copy-btn" onclick="copySnippet(this, 'docker logs -f --tail 100 <container-name>')" title="Copy command">
+              <i data-lucide="clipboard" style="width:16px;height:16px;"></i>
             </button>
           </div>
         </div>
-        <div class="docs-code-body">
-          <div class="docs-code-lines"><span>1</span></div>
-          <pre class="docs-code-text"><code>journalctl -u syte -f -n 100</code></pre>
-        </div>
       </div>
-
-      <h2>Collect Diagnostic JSON Bundle</h2>
-      <p>Click the <strong>Bug icon</strong> in the top-right corner of the AI Builder or visit <code>/api/debug</code> to download an immediate snapshot of server memory, docker containers, and active ports.</p>
     `,
-    prev: { title: 'Restart', page: 'qs-restart', desc: 'Restarting services.' },
-    next: { title: 'Connect Git', page: 'git-connect', desc: 'Connecting Git repositories.' },
+    prev: {"title": "Restart", "page": "qs-restart", "desc": "Manage daemons."},
+    next: {"title": "Git Connect", "page": "git-connect", "desc": "Source control."},
     updated: '03/09/2026',
   },
-
-  // ---------------- Git ----------------
   'git-connect': {
     title: 'Connect Git Repositories',
     subbarTitle: 'Git · Connect',
@@ -16479,6 +16489,13 @@ function copySnippet(btn, code) {
   toast('Copied to clipboard');
 }
 
+window.switchCmdTab = function(btn, tabKey) {
+  const card = btn.closest('.docs-cmd-tabs-card');
+  if (!card) return;
+  card.querySelectorAll('.docs-cmd-tab').forEach(t => t.classList.toggle('active', t === btn));
+  card.querySelectorAll('.docs-cmd-snippet').forEach(s => s.classList.toggle('active', s.dataset.content === tabKey));
+};
+
 window.copyApiEndpointMarkdown = function(pageKey) {
   const data = DOCS_DATA[pageKey];
   if (!data) return;
@@ -16854,26 +16871,37 @@ function setupDocsEventsOnce() {
   if (docsEventsInitialized) return;
   docsEventsInitialized = true;
 
-  // Toggle sidebar drawer on mobile
   const sidebar = document.getElementById('docs-sidebar-drawer');
   const backdrop = document.getElementById('docs-sidebar-backdrop');
 
   document.getElementById('docs-sidebar-toggle-btn')?.addEventListener('click', () => toggleDocsSidebar());
   document.getElementById('docs-mobile-menu-btn')?.addEventListener('click', () => toggleDocsSidebar());
   document.getElementById('docs-sidebar-close-btn')?.addEventListener('click', () => toggleDocsSidebar(false));
-  document.getElementById('docs-subbar-title-btn')?.addEventListener('click', () => toggleDocsSidebar(true));
   backdrop?.addEventListener('click', () => toggleDocsSidebar(false));
 
-  // Sidebar item click handlers
-  document.querySelectorAll('.docs-nav-item').forEach(item => {
-    item.addEventListener('click', (e) => {
+  // Event delegation on sidebar drawer for accordion parents and items
+  sidebar?.addEventListener('click', (e) => {
+    const parent = e.target.closest('.docs-nav-parent');
+    if (parent) {
+      e.preventDefault();
+      e.stopPropagation();
+      parent.classList.toggle('is-open');
+      const subitems = parent.nextElementSibling;
+      if (subitems && subitems.classList.contains('docs-nav-subitems')) {
+        subitems.classList.toggle('is-open');
+      }
+      return;
+    }
+
+    const item = e.target.closest('.docs-nav-item');
+    if (item) {
       e.preventDefault();
       const pageKey = item.dataset.docsPage;
       if (pageKey) {
         showDocsPage(pageKey);
         toggleDocsSidebar(false);
       }
-    });
+    }
   });
 
   // Search button
