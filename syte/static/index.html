@@ -2047,6 +2047,22 @@
             <!-- Backdrop for Mobile Sidebar -->
             <div class="docs-sidebar-backdrop" id="docs-sidebar-backdrop"></div>
 
+                        <!-- Search & AI Modal -->
+            <div class="docs-search-modal-backdrop" id="docs-search-modal-backdrop">
+              <div class="docs-search-modal">
+                <div class="docs-search-input-row">
+                  <i data-lucide="search" style="width:18px;height:18px;color:#71717a;"></i>
+                  <input type="text" class="docs-search-modal-input" id="docs-search-input" placeholder="Search documentation, guides, or ask AI (e.g. how to deploy)..." autocomplete="off">
+                  <button type="button" class="docs-icon-btn" id="docs-search-close-btn" title="Close (Esc)">
+                    <i data-lucide="x" style="width:16px;height:16px;"></i>
+                  </button>
+                </div>
+                <div class="docs-search-results-list" id="docs-search-results-list">
+                  <!-- Live search results rendered dynamically -->
+                </div>
+              </div>
+            </div>
+
             <div class="docs-layout-body">
               <!-- Sidebar Drawer -->
               <aside class="docs-sidebar-drawer" id="docs-sidebar-drawer">
