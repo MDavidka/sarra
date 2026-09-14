@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
+from pathlib import Path
+import re
 import time
 from typing import Any, Dict, List, Optional
 
@@ -508,16 +510,38 @@ async def upload_ai_files(
         ws_dir = settings.data_dir
 
     from syte.ai.file_parser import extract_zip_to_workspace, parse_uploaded_file
+    from syte.database import list_project_uploaded_files, save_project_uploaded_file
 
     parsed_results = []
     extraction_results = []
     total_bytes = 0
 
+    uploads_dir = Path(ws_dir) / "uploads"
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+
     for file in files:
         raw_bytes = await file.read()
         total_bytes += len(raw_bytes)
-        parsed = parse_uploaded_file(file.filename or "uploaded_file", raw_bytes)
+        safe_name = re.sub(r"[^\w\.-]", "_", file.filename or "uploaded_file")
+        parsed = parse_uploaded_file(safe_name, raw_bytes)
         parsed_results.append(parsed)
+
+        # 1. Save physical file to uploads directory so tools and agent can read it
+        dest_path = uploads_dir / safe_name
+        dest_path.write_bytes(raw_bytes)
+        rel_path = f"uploads/{safe_name}"
+
+        # 2. Persist record in project_uploaded_files table
+        if project_id != "global":
+            await save_project_uploaded_file(
+                project_id=project_id,
+                filename=safe_name,
+                file_path=rel_path,
+                file_size=len(raw_bytes),
+                extension=parsed.get("extension") or Path(safe_name).suffix,
+                summary=parsed.get("summary") or "",
+                parsed_content=(parsed.get("parsed_content") or "")[:5000],
+            )
 
         # If user requested to unpack zip directly into the workspace
         if extract_to_workspace and parsed.get("extension") == ".zip":
@@ -537,8 +561,46 @@ async def upload_ai_files(
         "files": parsed_results,
         "combined_prompt_context": combined_prompt_context,
         "extraction_results": extraction_results if extraction_results else None,
-        "message": f"Successfully parsed {len(parsed_results)} file(s) for AI understanding.",
+        "message": f"Successfully parsed and saved {len(parsed_results)} file(s) to workspace uploads for AI understanding.",
     }
+
+
+@router.get("/api/projects/{project_id}/ai/uploads")
+@router.get("/projects/{project_id}/ai/uploads")
+async def list_project_uploads_endpoint(
+    project_id: str,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    """Retrieve all loaded files currently available to the AI agent in this project."""
+    from syte.database import list_project_uploaded_files
+    uploads = await list_project_uploaded_files(project_id)
+    return {"ok": True, "project_id": project_id, "uploads": uploads, "count": len(uploads)}
+
+
+@router.delete("/api/projects/{project_id}/ai/uploads/{file_id}")
+@router.delete("/projects/{project_id}/ai/uploads/{file_id}")
+async def delete_project_upload_endpoint(
+    project_id: str,
+    file_id: str,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    """Remove a previously uploaded file from the project workspace and AI context."""
+    from syte.database import delete_project_uploaded_file, list_project_uploaded_files
+    uploads = await list_project_uploaded_files(project_id)
+    target = next((u for u in uploads if u["id"] == file_id), None)
+    if target:
+        project = await get_project(project_id)
+        if project:
+            from syte.ai.tools import _get_project_workspace_dir
+            ws_dir = _get_project_workspace_dir(project)
+            file_on_disk = Path(ws_dir) / target["file_path"]
+            if file_on_disk.exists():
+                try:
+                    file_on_disk.unlink()
+                except Exception:
+                    pass
+    deleted = await delete_project_uploaded_file(project_id, file_id)
+    return {"ok": deleted, "deleted_id": file_id}
 
 
 class DeepFocusUpdateRequest(BaseModel):

@@ -69,6 +69,7 @@ class ProjectAISession:
         self.active_plan: Optional[Dict[str, Any]] = None
         self.pending_question: Optional[Dict[str, Any]] = None
         self.answer_queue: asyncio.Queue = asyncio.Queue()
+        self.credentials: List[Dict[str, Any]] = []
         self.last_activity = time.time()
         self.lock = asyncio.Lock()
 
@@ -360,12 +361,15 @@ class AIAgentSessionManager:
         user_message: str,
         settings_override: Optional[Dict[str, Any]] = None,
         request_id: Optional[str] = None,
+        credentials: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
         """Spawn or run the autonomous agent turn in a background task."""
         import uuid as _uuid
         from syte.ai.engine import AIAgentEngine
 
         session = self.get_or_create_session(project_id)
+        if credentials:
+            session.credentials = credentials
         req_id = request_id or f"req-{_uuid.uuid4().hex[:12]}"
         async with session.lock:
             if session.is_running and session.active_task and not session.active_task.done():
@@ -392,6 +396,7 @@ class AIAgentSessionManager:
                         user_message=user_message,
                         settings_override=settings_override,
                         request_id=req_id,
+                        credentials=credentials,
                     ):
                         session.add_event(event)
                 except asyncio.CancelledError:

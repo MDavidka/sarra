@@ -185,6 +185,7 @@ class AgentSkillDisableBody(BaseModel):
 class AgentSkillAddBody(BaseModel):
     uuid: str
     name: str
+    responsibility: str = "general"
     content: str = ""
     description: str = ""
     parameters: dict[str, Any] = Field(default_factory=dict)
@@ -196,9 +197,11 @@ class AgentSkillUpdateBody(BaseModel):
     uuid: str
     skill_id: str
     name: str | None = None
+    responsibility: str | None = None
     content: str | None = None
     description: str | None = None
     parameters: dict[str, Any] | None = None
+    active: bool | None = None
 
 
 class AgentSkillDeleteBody(BaseModel):
@@ -916,6 +919,7 @@ async def api_agent_change(
         user_message=body.message,
         settings_override=overrides if overrides else None,
         request_id=req_id,
+        credentials=body.credentials if body.credentials else None,
     )
 
     return {
@@ -953,6 +957,7 @@ async def api_agent_communicate(
         user_message=body.message,
         settings_override=overrides if overrides else None,
         request_id=req_id,
+        credentials=body.credentials if body.credentials else None,
     )
 
     session = session_manager.get_or_create_session(body.uuid)
@@ -1032,6 +1037,22 @@ async def api_agent_answer_question_project(
         answer=body.get("answer"),
     )
     return await api_agent_answer_question(body=ans_body, _token=_token)
+
+
+@router.post("/projects/{uuid}/agent/questions/{question_id}/answer")
+async def api_agent_answer_question_path(
+    uuid: str,
+    question_id: str,
+    body: dict[str, Any] = Body(...),
+    _token: dict[str, Any] = Depends(verify_api_token),
+):
+    ans_body = AgentQuestionAnswerBody(
+        uuid=uuid,
+        question_id=question_id,
+        answer=body.get("answer"),
+    )
+    return await api_agent_answer_question(body=ans_body, _token=_token)
+
 
 
 @router.get("/agent_screenshots")
@@ -1223,10 +1244,11 @@ async def api_agent_skills_list(
     _token: dict[str, Any] = Depends(verify_api_token),
 ):
     project = await get_project(uuid)
-    if not project:
+    if not project and uuid != "global":
         _http_error(404, "not_found", "Project not found")
-    from syte.ai.skills import list_available_skills
-    return {"ok": True, "uuid": uuid, "skills": list_available_skills()}
+    from syte.database import list_project_skills
+    skills = await list_project_skills(uuid)
+    return {"ok": True, "uuid": uuid, "skills": skills}
 
 
 @router.get("/projects/{uuid}/agent/skills")
@@ -1238,44 +1260,155 @@ async def api_agent_skills_list_project(
 
 
 @router.post("/agent_skills_add")
+@router.post("/projects/{uuid}/agent/skills/add")
 async def api_agent_skills_add(body: AgentSkillAddBody, _token: dict[str, Any] = Depends(verify_api_token)):
     project = await get_project(body.uuid)
-    if not project:
+    if not project and body.uuid != "global":
         _http_error(404, "not_found", "Project not found")
-    skill_id = body.skill_id or body.name.lower().replace(" ", "-")
-    return {"ok": True, "uuid": body.uuid, "skill_id": skill_id, "name": body.name, "enabled": body.enable}
+    from syte.database import save_project_skill
+    skill_id = body.skill_id or f"skill_{uuid_mod.uuid4().hex[:8]}"
+    saved = await save_project_skill(
+        project_id=body.uuid,
+        skill_id=skill_id,
+        name=body.name,
+        content=body.content or f"# Skill: {body.name}\n\n{body.description}",
+        responsibility=body.responsibility or "general",
+        description=body.description or "",
+        parameters=body.parameters or {},
+        active=body.enable,
+    )
+    return {"ok": True, "uuid": body.uuid, "skill": saved, "skill_id": skill_id, "name": body.name, "enabled": body.enable}
+
+
+async def _process_skill_file_upload(
+    uuid: str,
+    file: UploadFile,
+    responsibility: str,
+) -> dict[str, Any]:
+    project = await get_project(uuid)
+    if not project and uuid != "global":
+        _http_error(404, "not_found", "Project not found")
+    from syte.database import save_project_skill
+    raw_bytes = await file.read()
+    content_str = raw_bytes.decode("utf-8", errors="replace")
+
+    # Try parsing JSON first if .json
+    name = (file.filename or "uploaded_skill").replace(".md", "").replace(".json", "").replace("_", " ").title()
+    desc = ""
+    resp = responsibility or "general"
+    final_content = content_str
+
+    if file.filename and file.filename.endswith(".json"):
+        try:
+            parsed = json.loads(content_str)
+            if isinstance(parsed, dict):
+                name = parsed.get("name") or name
+                resp = parsed.get("responsibility") or resp
+                desc = parsed.get("description") or desc
+                final_content = parsed.get("content") or parsed.get("instructions") or content_str
+        except Exception:
+            pass
+    elif content_str.startswith("---"):
+        # Simple YAML frontmatter parser
+        parts = content_str.split("---", 2)
+        if len(parts) >= 3:
+            fm_text = parts[1]
+            final_content = parts[2].strip()
+            for line in fm_text.splitlines():
+                if ":" in line:
+                    k, v = line.split(":", 1)
+                    k = k.strip().lower()
+                    v = v.strip().strip('"').strip("'")
+                    if k == "name":
+                        name = v
+                    elif k in ("responsibility", "role", "phase", "category"):
+                        resp = v.lower()
+                    elif k == "description":
+                        desc = v
+
+    skill_id = f"skill_{uuid_mod.uuid4().hex[:8]}"
+    saved = await save_project_skill(
+        project_id=uuid,
+        skill_id=skill_id,
+        name=name,
+        content=final_content,
+        responsibility=resp,
+        description=desc,
+        active=True,
+    )
+    return {"ok": True, "uuid": uuid, "skill": saved, "skill_id": skill_id, "name": name, "enabled": True}
+
+
+@router.post("/agent_skills_upload")
+async def api_agent_skills_upload(
+    uuid: str = Form(...),
+    file: UploadFile = File(...),
+    responsibility: str = Form("general"),
+    _token: dict[str, Any] = Depends(verify_api_token),
+):
+    return await _process_skill_file_upload(uuid, file, responsibility)
+
+
+@router.post("/projects/{uuid}/agent/skills/upload")
+async def api_agent_skills_upload_project(
+    uuid: str,
+    file: UploadFile = File(...),
+    responsibility: str = Form("general"),
+    _token: dict[str, Any] = Depends(verify_api_token),
+):
+    return await _process_skill_file_upload(uuid, file, responsibility)
 
 
 @router.post("/agent_skills_update")
 async def api_agent_skills_update(body: AgentSkillUpdateBody, _token: dict[str, Any] = Depends(verify_api_token)):
     project = await get_project(body.uuid)
-    if not project:
+    if not project and body.uuid != "global":
         _http_error(404, "not_found", "Project not found")
-    return {"ok": True, "uuid": body.uuid, "skill_id": body.skill_id, "updated": True}
+    from syte.database import get_project_skill, save_project_skill
+    existing = await get_project_skill(body.uuid, body.skill_id)
+    if not existing:
+        _http_error(404, "not_found", f"Skill '{body.skill_id}' not found")
+    updated = await save_project_skill(
+        project_id=body.uuid,
+        skill_id=body.skill_id,
+        name=body.name or existing["name"],
+        content=body.content if body.content is not None else existing["content"],
+        responsibility=body.responsibility or existing.get("responsibility", "general"),
+        description=body.description if body.description is not None else existing.get("description", ""),
+        parameters=body.parameters if body.parameters is not None else existing.get("parameters", {}),
+        active=body.active if body.active is not None else existing.get("active", True),
+    )
+    return {"ok": True, "uuid": body.uuid, "skill_id": body.skill_id, "skill": updated, "updated": True}
 
 
 @router.post("/agent_skills_enable")
 async def api_agent_skills_enable(body: AgentSkillEnableBody, _token: dict[str, Any] = Depends(verify_api_token)):
     project = await get_project(body.uuid)
-    if not project:
+    if not project and body.uuid != "global":
         _http_error(404, "not_found", "Project not found")
-    return {"ok": True, "uuid": body.uuid, "skill_id": body.skill_id, "enabled": True}
+    from syte.database import set_project_skill_active
+    ok = await set_project_skill_active(body.uuid, body.skill_id, True)
+    return {"ok": ok, "uuid": body.uuid, "skill_id": body.skill_id, "enabled": True}
 
 
 @router.post("/agent_skills_disable")
 async def api_agent_skills_disable(body: AgentSkillDisableBody, _token: dict[str, Any] = Depends(verify_api_token)):
     project = await get_project(body.uuid)
-    if not project:
+    if not project and body.uuid != "global":
         _http_error(404, "not_found", "Project not found")
-    return {"ok": True, "uuid": body.uuid, "skill_id": body.skill_id, "enabled": False}
+    from syte.database import set_project_skill_active
+    ok = await set_project_skill_active(body.uuid, body.skill_id, False)
+    return {"ok": ok, "uuid": body.uuid, "skill_id": body.skill_id, "enabled": False}
 
 
 @router.post("/agent_skills_delete")
 async def api_agent_skills_delete(body: AgentSkillDeleteBody, _token: dict[str, Any] = Depends(verify_api_token)):
     project = await get_project(body.uuid)
-    if not project:
+    if not project and body.uuid != "global":
         _http_error(404, "not_found", "Project not found")
-    return {"ok": True, "uuid": body.uuid, "skill_id": body.skill_id, "deleted": True}
+    from syte.database import delete_project_skill
+    ok = await delete_project_skill(body.uuid, body.skill_id)
+    return {"ok": ok, "uuid": body.uuid, "skill_id": body.skill_id, "deleted": ok}
 
 
 @router.get("/projects/{uuid}/agent")

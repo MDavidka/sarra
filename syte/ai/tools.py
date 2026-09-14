@@ -12,7 +12,13 @@ import re
 import shutil
 from typing import Any, Dict, List, Optional
 
-from syte.ai.skills import discover_skills_catalog, get_skill_content, list_available_skills
+from syte.ai.skills import (
+    discover_skills_catalog,
+    get_skill_content,
+    get_skill_content_for_project,
+    list_available_skills,
+    list_available_skills_for_project,
+)
 from syte.config import settings
 from syte.database import get_project, list_project_router_logs
 from syte.deployment import issue_deploy, start_service, stop_service
@@ -361,6 +367,63 @@ def get_ai_tools_schema() -> List[Dict[str, Any]]:
                 },
             },
         },
+        {
+            "type": "function",
+            "function": {
+                "name": "syte_git_diff",
+                "description": "Show repository git diff (unstaged changes, staged changes with staged=true, or diff against a commit/branch).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "target": {
+                            "type": "string",
+                            "description": "Optional branch, commit, or file path to diff against.",
+                        },
+                        "staged": {
+                            "type": "boolean",
+                            "description": "Whether to view staged changes (--cached). Default is false.",
+                        },
+                    },
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "syte_git_log",
+                "description": "Show recent commit history for the project repository.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "limit": {
+                            "type": "integer",
+                            "description": "Number of recent commits to return (default: 10).",
+                        },
+                    },
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "syte_git_clone",
+                "description": "Clone a remote Git repository into the workspace using user credentials.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "repo_url": {
+                            "type": "string",
+                            "description": "HTTPS Git repository URL to clone.",
+                        },
+                        "target_dir": {
+                            "type": "string",
+                            "description": "Target folder name in workspace to clone into.",
+                        },
+                    },
+                    "required": ["repo_url"],
+                },
+            },
+        },
         # 4. Performance, Environment & Domains
         {
             "type": "function",
@@ -699,11 +762,49 @@ def get_ai_tools_schema() -> List[Dict[str, Any]]:
                 },
             },
         },
+        # 11. Model Context Protocol (MCP) Addons & Connections
+        {
+            "type": "function",
+            "function": {
+                "name": "syte_mcp_list",
+                "description": "List connected Model Context Protocol (MCP) servers and available external tools for this project.",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "syte_mcp_call",
+                "description": "Call an external or built-in tool via Model Context Protocol (MCP) server.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "addon": {
+                            "type": "string",
+                            "description": "Name of the MCP server or addon (e.g. 'syte_project', 'github', 'filesystem').",
+                        },
+                        "tool": {
+                            "type": "string",
+                            "description": "Name of the tool to execute on the MCP server.",
+                        },
+                        "arguments": {
+                            "type": "object",
+                            "description": "JSON arguments dictionary for the MCP tool.",
+                        },
+                    },
+                    "required": ["tool"],
+                },
+            },
+        },
     ]
 
 
 def _get_project_workspace_dir(project: dict[str, Any]) -> Path:
     """Resolve project directory safely on disk."""
+    if project.get("workspace_dir"):
+        ws = Path(project["workspace_dir"])
+        if ws.exists():
+            return ws
     pid = project["id"]
     p_name = project.get("name") or ""
     candidates = [
@@ -921,7 +1022,113 @@ def _build_workspace_tree(ws_dir: Path, max_depth: int = 3) -> Dict[str, Any]:
     return {"root": str(ws_dir.name), "tree": _walk(ws_dir, 1)}
 
 
-async def execute_syte_tool(project_id: Any, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+async def _get_git_auth_options(
+    project_id: Any,
+    project: dict[str, Any],
+    session: Optional[Any] = None,
+    credentials: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    """Resolve user git credentials and build git configuration arguments and environment."""
+    token = ""
+    user_name = ""
+    user_email = ""
+
+    if credentials and isinstance(credentials, dict):
+        token = str(
+            credentials.get("github_token")
+            or credentials.get("GITHUB_TOKEN")
+            or credentials.get("token")
+            or credentials.get("git_token")
+            or credentials.get("GH_TOKEN")
+            or credentials.get("accessToken")
+            or ""
+        ).strip()
+        user_name = str(credentials.get("git_name") or credentials.get("author_name") or credentials.get("owner") or credentials.get("user_name") or credentials.get("username") or "").strip()
+        user_email = str(credentials.get("git_email") or credentials.get("author_email") or credentials.get("email") or "").strip()
+
+    if not token and session and hasattr(session, "credentials") and isinstance(session.credentials, dict):
+        token = str(
+            session.credentials.get("github_token")
+            or session.credentials.get("GITHUB_TOKEN")
+            or session.credentials.get("token")
+            or session.credentials.get("git_token")
+            or session.credentials.get("GH_TOKEN")
+            or session.credentials.get("accessToken")
+            or ""
+        ).strip()
+        if not user_name:
+            user_name = str(session.credentials.get("git_name") or session.credentials.get("author_name") or session.credentials.get("owner") or session.credentials.get("user_name") or session.credentials.get("username") or "").strip()
+        if not user_email:
+            user_email = str(session.credentials.get("git_email") or session.credentials.get("author_email") or session.credentials.get("email") or "").strip()
+
+
+    env_vars = project.get("env_vars") or {}
+    if isinstance(env_vars, str):
+        try:
+            env_vars = json.loads(env_vars)
+        except Exception:
+            env_vars = {}
+    if not isinstance(env_vars, dict):
+        env_vars = {}
+
+    if not token:
+        token = str(env_vars.get("GITHUB_TOKEN") or env_vars.get("GH_TOKEN") or env_vars.get("GIT_TOKEN") or "").strip()
+    if not user_name:
+        user_name = str(env_vars.get("GIT_AUTHOR_NAME") or env_vars.get("GITHUB_OWNER") or env_vars.get("GITHUB_USERNAME") or "").strip()
+    if not user_email:
+        user_email = str(env_vars.get("GIT_AUTHOR_EMAIL") or "").strip()
+
+    if not token:
+        try:
+            from syte.database import list_operator_accounts
+            from syte.github_oauth import token_for_account
+            accounts = await list_operator_accounts()
+            for acc in accounts:
+                try:
+                    t = await token_for_account(acc["id"])
+                    if t:
+                        token = t
+                        if not user_name:
+                            user_name = str(acc.get("username") or "").strip()
+                        break
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    user_name = user_name or "Syte AI Agent"
+    user_email = user_email or "agent@sycord.site"
+
+    git_config_args = ["-c", f"user.name={user_name}", "-c", f"user.email={user_email}"]
+    if token:
+        git_config_args.extend(["-c", f"http.extraHeader=Authorization: token {token}"])
+
+    env = os.environ.copy()
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    env["GIT_AUTHOR_NAME"] = user_name
+    env["GIT_AUTHOR_EMAIL"] = user_email
+    env["GIT_COMMITTER_NAME"] = user_name
+    env["GIT_COMMITTER_EMAIL"] = user_email
+    if token:
+        env["GITHUB_TOKEN"] = token
+        env["GH_TOKEN"] = token
+
+    return {
+        "token": token,
+        "user_name": user_name,
+        "user_email": user_email,
+        "git_config_args": git_config_args,
+        "env": env,
+    }
+
+
+async def execute_syte_tool(
+    project_id: Any,
+    tool_name: str,
+    arguments: dict[str, Any],
+    session: Optional[Any] = None,
+    credentials: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
     """Execute a tool requested by the AI Builder agent against the Syte framework and VM."""
     if isinstance(project_id, dict):
         project = project_id
@@ -934,6 +1141,7 @@ async def execute_syte_tool(project_id: Any, tool_name: str, arguments: dict[str
             return {"ok": False, "error": f"Project '{project_id}' not found."}
 
     ws_dir = _get_project_workspace_dir(project)
+    git_auth = await _get_git_auth_options(project_id, project, session=session, credentials=credentials)
 
     # Normalize tools.md / Hungarian tool specification names to syte_* handlers
     tool_aliases = {
@@ -979,6 +1187,29 @@ async def execute_syte_tool(project_id: Any, tool_name: str, arguments: dict[str
         "install_package": "syte_install_package",
         "create_folder": "syte_create_folder",
         "detect_framework": "syte_detect_framework",
+        "git_status": "syte_git_status",
+        "gitStatus": "syte_git_status",
+        "git_commit": "syte_git_commit",
+        "gitCommit": "syte_git_commit",
+        "git_push": "syte_git_push",
+        "gitPush": "syte_git_push",
+        "git_pull": "syte_git_pull",
+        "gitPull": "syte_git_pull",
+        "git_diff": "syte_git_diff",
+        "gitDiff": "syte_git_diff",
+        "git_log": "syte_git_log",
+        "gitLog": "syte_git_log",
+        "git_clone": "syte_git_clone",
+        "gitClone": "syte_git_clone",
+        "git_create_branch": "syte_git_create_branch",
+        "gitBranch": "syte_git_create_branch",
+        "github_account_info": "syte_github_account_info",
+        "github_list_repos": "syte_github_list_repos",
+        "list_skills": "syte_list_skills",
+        "load_skill": "syte_load_skill",
+        "discover_skills": "syte_discover_skills",
+        "mcp_list": "syte_mcp_list",
+        "mcp_call": "syte_mcp_call",
     }
     tool_name = tool_aliases.get(tool_name, tool_name)
 
@@ -1178,6 +1409,7 @@ async def execute_syte_tool(project_id: Any, tool_name: str, arguments: dict[str
                 cwd=str(ws_dir),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env=git_auth["env"],
             )
             try:
                 stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
@@ -1202,6 +1434,17 @@ async def execute_syte_tool(project_id: Any, tool_name: str, arguments: dict[str
                 summ = await connection_summary(acc["id"])
                 if summ.get("connected"):
                     return {"ok": True, "connected": True, "account": summ}
+            if git_auth.get("token"):
+                return {
+                    "ok": True,
+                    "connected": True,
+                    "account": {
+                        "provider": "github",
+                        "connected": True,
+                        "login": git_auth.get("user_name"),
+                        "token_available": True,
+                    },
+                }
             return {"ok": True, "connected": False, "message": "No GitHub account currently connected in Syte."}
 
         elif tool_name == "syte_github_list_repos":
@@ -1215,23 +1458,43 @@ async def execute_syte_tool(project_id: Any, tool_name: str, arguments: dict[str
                     return {"ok": True, "connected": True, "count": len(repos), "repositories": repos[:40]}
                 except Exception:
                     continue
+            if git_auth.get("token"):
+                try:
+                    import httpx
+                    async with httpx.AsyncClient(timeout=15) as gh_cli:
+                        r = await gh_cli.get(
+                            "https://api.github.com/user/repos",
+                            headers={
+                                "Authorization": f"token {git_auth['token']}",
+                                "Accept": "application/vnd.github+json",
+                            },
+                        )
+                        if r.status_code == 200:
+                            repos = r.json()
+                            if query:
+                                repos = [repo for repo in repos if query.lower() in repo.get("name", "").lower()]
+                            return {"ok": True, "connected": True, "count": len(repos), "repositories": repos[:40]}
+                except Exception:
+                    pass
             return {"ok": False, "error": "No connected GitHub account with repository access."}
 
         elif tool_name == "syte_git_status":
             proc = await asyncio.create_subprocess_exec(
-                "git", "status", "--short", "--branch",
+                "git", *git_auth["git_config_args"], "status", "--short", "--branch",
                 cwd=str(ws_dir),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env=git_auth["env"],
             )
             stdout, stderr = await proc.communicate()
             status_out = stdout.decode("utf-8", errors="replace")
 
             proc_log = await asyncio.create_subprocess_exec(
-                "git", "log", "-n", "5", "--oneline",
+                "git", *git_auth["git_config_args"], "log", "-n", "5", "--oneline",
                 cwd=str(ws_dir),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env=git_auth["env"],
             )
             log_out, _ = await proc_log.communicate()
 
@@ -1251,7 +1514,7 @@ async def execute_syte_tool(project_id: Any, tool_name: str, arguments: dict[str
             if isinstance(files, str):
                 files = [files]
 
-            add_args = ["git", "add"]
+            add_args = ["git", *git_auth["git_config_args"], "add"]
             if files and files != ["*"]:
                 add_args.extend(files)
             else:
@@ -1262,14 +1525,17 @@ async def execute_syte_tool(project_id: Any, tool_name: str, arguments: dict[str
                 cwd=str(ws_dir),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env=git_auth["env"],
             )
             await p_add.communicate()
 
+            commit_args = ["git", *git_auth["git_config_args"], "commit", "-m", msg]
             p_commit = await asyncio.create_subprocess_exec(
-                "git", "commit", "-m", msg,
+                *commit_args,
                 cwd=str(ws_dir),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env=git_auth["env"],
             )
             stdout, stderr = await p_commit.communicate()
             return {
@@ -1282,10 +1548,11 @@ async def execute_syte_tool(project_id: Any, tool_name: str, arguments: dict[str
         elif tool_name == "syte_git_push":
             branch = str(arguments.get("branch") or project.get("branch") or "main").strip()
             p_push = await asyncio.create_subprocess_exec(
-                "git", "push", "origin", branch,
+                "git", *git_auth["git_config_args"], "push", "origin", branch,
                 cwd=str(ws_dir),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env=git_auth["env"],
             )
             stdout, stderr = await p_push.communicate()
             return {
@@ -1297,10 +1564,11 @@ async def execute_syte_tool(project_id: Any, tool_name: str, arguments: dict[str
         elif tool_name == "syte_git_pull":
             branch = str(arguments.get("branch") or project.get("branch") or "main").strip()
             p_pull = await asyncio.create_subprocess_exec(
-                "git", "pull", "origin", branch,
+                "git", *git_auth["git_config_args"], "pull", "origin", branch,
                 cwd=str(ws_dir),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env=git_auth["env"],
             )
             stdout, stderr = await p_pull.communicate()
             return {
@@ -1314,10 +1582,11 @@ async def execute_syte_tool(project_id: Any, tool_name: str, arguments: dict[str
             if not bname:
                 return {"ok": False, "error": "Branch name is required."}
             p_b = await asyncio.create_subprocess_exec(
-                "git", "checkout", "-b", bname,
+                "git", *git_auth["git_config_args"], "checkout", "-b", bname,
                 cwd=str(ws_dir),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env=git_auth["env"],
             )
             stdout, stderr = await p_b.communicate()
             return {
@@ -1325,6 +1594,67 @@ async def execute_syte_tool(project_id: Any, tool_name: str, arguments: dict[str
                 "stdout": stdout.decode("utf-8", errors="replace").strip(),
                 "stderr": stderr.decode("utf-8", errors="replace").strip(),
                 "branch": bname,
+            }
+
+        elif tool_name == "syte_git_diff":
+            target = str(arguments.get("target") or "").strip()
+            staged = bool(arguments.get("staged", False))
+            diff_cmd = ["git", *git_auth["git_config_args"], "diff"]
+            if staged:
+                diff_cmd.append("--cached")
+            if target:
+                diff_cmd.append(target)
+            p_diff = await asyncio.create_subprocess_exec(
+                *diff_cmd,
+                cwd=str(ws_dir),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=git_auth["env"],
+            )
+            stdout, stderr = await p_diff.communicate()
+            return {
+                "ok": p_diff.returncode == 0,
+                "diff": stdout.decode("utf-8", errors="replace").strip() or "No differences detected.",
+                "staged": staged,
+            }
+
+        elif tool_name == "syte_git_log":
+            limit = int(arguments.get("limit") or 10)
+            p_log = await asyncio.create_subprocess_exec(
+                "git", *git_auth["git_config_args"], "log", f"-n{limit}", "--pretty=format:%h - %an, %ar : %s",
+                cwd=str(ws_dir),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=git_auth["env"],
+            )
+            stdout, stderr = await p_log.communicate()
+            lines = stdout.decode("utf-8", errors="replace").strip().splitlines()
+            return {
+                "ok": p_log.returncode == 0,
+                "count": len(lines),
+                "commits": lines,
+            }
+
+        elif tool_name == "syte_git_clone":
+            repo_url = str(arguments.get("repo_url") or "").strip()
+            target_dir = str(arguments.get("target_dir") or "").strip()
+            if not repo_url:
+                return {"ok": False, "error": "Repository URL is required."}
+            clone_cmd = ["git", *git_auth["git_config_args"], "clone", repo_url]
+            if target_dir:
+                clone_cmd.append(target_dir)
+            p_clone = await asyncio.create_subprocess_exec(
+                *clone_cmd,
+                cwd=str(ws_dir),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=git_auth["env"],
+            )
+            stdout, stderr = await p_clone.communicate()
+            return {
+                "ok": p_clone.returncode == 0,
+                "stdout": stdout.decode("utf-8", errors="replace").strip(),
+                "stderr": stderr.decode("utf-8", errors="replace").strip(),
             }
 
         elif tool_name == "syte_get_performance":
@@ -1443,7 +1773,7 @@ async def execute_syte_tool(project_id: Any, tool_name: str, arguments: dict[str
             }
 
         elif tool_name == "syte_list_skills":
-            skills = list_available_skills()
+            skills = await list_available_skills_for_project(str(project_id))
             return {"ok": True, "skills": skills, "count": len(skills)}
 
         elif tool_name == "syte_discover_skills":
@@ -1454,7 +1784,9 @@ async def execute_syte_tool(project_id: Any, tool_name: str, arguments: dict[str
 
         elif tool_name == "syte_load_skill":
             sname = str(arguments.get("skill_name") or "").strip()
-            content = get_skill_content(sname)
+            content = await get_skill_content_for_project(sname, str(project_id))
+            if not content:
+                content = get_skill_content(sname)
             if not content:
                 return {
                     "ok": False,
@@ -1466,6 +1798,32 @@ async def execute_syte_tool(project_id: Any, tool_name: str, arguments: dict[str
                 "content": content,
                 "message": f"Successfully loaded skill blueprint for '{sname}'.",
             }
+
+        elif tool_name == "syte_mcp_list":
+            from syte.mcp_stdio import TOOLS as STDIO_TOOLS
+            return {
+                "ok": True,
+                "addons": [
+                    {
+                        "id": "syte_project",
+                        "name": "Syte Project System MCP",
+                        "connected": True,
+                        "description": "Project service and preview control MCP server",
+                        "tools": [t["name"] for t in STDIO_TOOLS],
+                    }
+                ],
+            }
+
+        elif tool_name == "syte_mcp_call":
+            addon = str(arguments.get("addon") or arguments.get("server") or "syte_project").strip()
+            subtool = str(arguments.get("tool") or arguments.get("tool_name") or "").strip()
+            subargs = arguments.get("arguments") or {}
+            from syte.mcp_stdio import _call_tool
+            try:
+                res = _call_tool(subtool, subargs)
+                return {"ok": True, "addon": addon, "tool": subtool, "result": res}
+            except Exception as ex:
+                return {"ok": False, "addon": addon, "tool": subtool, "error": str(ex)}
 
         elif tool_name == "syte_ask_question":
             question = str(arguments.get("question") or "").strip()

@@ -142,12 +142,16 @@ class AIAgentEngine:
         user_message: str,
         settings_override: Optional[Dict[str, Any]] = None,
         request_id: Optional[str] = None,
+        credentials: Optional[List[Dict[str, Any]]] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """Execute a full autonomous agent turn with streaming output and tool execution."""
         # One request id per turn ties every event (deltas, tool calls,
         # lifecycle) to this run so clients can group/deduplicate streams.
         request_id = request_id or f"req-{uuid.uuid4().hex[:12]}"
         turn_started = time.monotonic()
+
+        if credentials and self.session:
+            self.session.credentials = credentials
 
         # 1. Save incoming user message
         await save_ai_chat_message(self.project_id, role="user", content=user_message)
@@ -192,6 +196,27 @@ class AIAgentEngine:
             deep_focus = await build_deep_focus_index(self.project_id, ws_dir=ws_dir, custom_memory=custom_mem)
             deep_focus_prompt = format_deep_focus_for_prompt(deep_focus)
 
+            # 3. Gather Currently Loaded / Uploaded Files
+            from syte.database import list_project_uploaded_files
+            ups = await list_project_uploaded_files(self.project_id)
+            uploaded_files_prompt = ""
+            if ups:
+                up_lines = [
+                    "\n--- CURRENTLY LOADED / UPLOADED PROJECT FILES ---",
+                    "The user has loaded the following files into the workspace uploads directory (workspace/uploads/):",
+                ]
+                for u in ups[:12]:
+                    up_lines.append(f"- **`{u['file_path']}`** ({u['extension'] or 'file'}, {u['file_size']} bytes): {u['summary'] or u['filename']}")
+                    if u.get("parsed_content") and len(u["parsed_content"]) < 1200:
+                        up_lines.append(f"  *Preview*:\n```\n{u['parsed_content']}\n```")
+                up_lines.append("You have full autonomous access to inspect these files with `syte_read_file` or use their data directly.")
+                up_lines.append("--------------------------------------------------\n")
+                uploaded_files_prompt = "\n".join(up_lines)
+
+            # 4. Gather Active Skills by Responsibility
+            from syte.ai.skills import format_project_skills_for_prompt
+            skills_prompt = await format_project_skills_for_prompt(self.project_id)
+
             context_prompt = (
                 f"\n\n--- ACTIVE SYTE PROJECT CONTEXT ---\n"
                 f"- Project ID: {project.get('id')}\n"
@@ -203,6 +228,8 @@ class AIAgentEngine:
                 f"- Logged-in Git / GitHub Account: {github_info}\n"
                 f"- VM Workspace Directory: {str(ws_dir)}\n"
                 f"{deep_focus_prompt}\n"
+                f"{uploaded_files_prompt}\n"
+                f"{skills_prompt}\n"
                 f"Capabilities: You have full autonomous tools to manage this project workspace on the host VM: read/write/edit/move/delete/search files, execute shell bash commands, stage and commit git changes, push/pull branches, query the logged-in GitHub account, view real-time router/deployment logs, and trigger zero-downtime deployments.\n"
                 f"------------------------------------\n"
             )
@@ -263,12 +290,19 @@ class AIAgentEngine:
             "- **Component Library**: Use shadcn/ui style components (Cards, Pills, Action Buttons, Badges, Hero banners, Feature grids, Responsive navbar with mobile sheet) and Lucide icons.\n"
             "- **Zero-Placeholder Guarantee**: ALWAYS write complete, production-ready code. Never leave `// TODO`, `/* implement later */`, or incomplete functions.\n"
             "- **Responsive**: Mobile-first fluid layouts (`grid-cols-1 md:grid-cols-2 lg:grid-cols-3`), touch targets >= 44px, zero horizontal overflow.\n\n"
-            "## 3. PRAGMATIC EXECUTION WORKFLOW\n"
-            "1. **Analyze User Request**: Directly address what the user requested. If attachments or uploaded files (Excel, Word, Zip, CSV, code) are provided in context, analyze their content thoroughly.\n"
-            "2. **Inspect or Use Deep Focus**: Check Deep Focus (or workspace files when needed) to pinpoint exact changes.\n"
-            "3. **Write/Edit Files**: Generate complete, high-quality code files (`syte_write_file`, `syte_edit_file`).\n"
-            "4. **Verify & Test**: Scan AST syntax and safety (`syte_security_lint_scan`) and verify preview servers (`syte_start_preview`).\n"
-            "5. **Deliver**: Provide a clear, concise summary of the answer or changes directly to the user.\n"
+            "## 3. STRICT PHASE PROGRESSION: PLAN -> BUILD -> VERIFY\n"
+            "1. **PLAN PHASE (Mandatory for non-trivial changes)**:\n"
+            "   - Before executing code edits, file creation, or package installs, formulate an explicit implementation plan using `syte_create_plan`.\n"
+            "   - When planning, consult the active skills by responsibility (Designing, Integrating, Building).\n"
+            "   - If requirements, design decisions, or choices are ambiguous, use `syte_ask_question` to ask the user clarifying questions.\n"
+            "2. **BUILD PHASE**:\n"
+            "   - Follow the plan step-by-step, updating plan step status with `syte_update_plan_step`.\n"
+            "   - Strictly follow the user's active skills for Designing, Integrating, and Building.\n"
+            "   - If files are uploaded in `uploads/`, inspect and incorporate their contents (`syte_read_file`).\n"
+            "3. **VERIFY PHASE**:\n"
+            "   - Run AST security/syntax check (`syte_security_lint_scan`) and verify the dev server.\n"
+            "4. **DELIVER**:\n"
+            "   - Provide a clear, concise summary of the answer or changes directly to the user.\n"
             "------------------------------------------------------------------------\n"
         )
         full_system_prompt = f"{base_prompt}\n{autonomous_instructions}\n{context_prompt}"
@@ -308,6 +342,7 @@ class AIAgentEngine:
             yield {"event": "is_working", "is_working": True, "activity": f"Thinking with {client.model}…", "turn": current_turn, "request_id": request_id}
 
             stream_error = None
+            thinking_closed = False
             async for chunk in client.stream_chat(
                 formatted_messages,
                 tools=tools_schema,
@@ -319,10 +354,28 @@ class AIAgentEngine:
                     turn_thoughts += content
                     yield {"event": "thought_delta", "delta": content, "request_id": request_id, "turn": current_turn}
                 elif chunk_type == "token":
+                    if turn_thoughts and not thinking_closed:
+                        thinking_closed = True
+                        yield {
+                            "event": "thinking_finished",
+                            "thought": turn_thoughts,
+                            "turn": current_turn,
+                            "request_id": request_id,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        }
                     content = chunk.get("content", "")
                     turn_tokens += content
                     yield {"event": "token_delta", "delta": content, "request_id": request_id, "turn": current_turn}
                 elif chunk_type == "tool_call":
+                    if turn_thoughts and not thinking_closed:
+                        thinking_closed = True
+                        yield {
+                            "event": "thinking_finished",
+                            "thought": turn_thoughts,
+                            "turn": current_turn,
+                            "request_id": request_id,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        }
                     turn_tool_calls.append(chunk)
                 elif chunk_type == "error":
                     err_msg = chunk.get("content", "LLM communication error")
@@ -494,7 +547,7 @@ class AIAgentEngine:
 
                 # Execute tool
                 tool_exec_started = time.monotonic()
-                tool_result = await execute_syte_tool(self.project_id, tool_name, args)
+                tool_result = await execute_syte_tool(self.project_id, tool_name, args, session=self.session, credentials=credentials)
                 tool_duration_ms = int((time.monotonic() - tool_exec_started) * 1000)
 
                 # Check if tool requires interactive user response (questions / env secrets)
@@ -511,11 +564,43 @@ class AIAgentEngine:
                         "turn": current_turn,
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     }
+                    q_id = f"q_{uuid.uuid4().hex[:8]}"
+                    q_prompt = tool_result.get("question") or tool_result.get("prompt") or status_msg
+                    q_options = tool_result.get("options") or []
+                    q_type = "choice" if q_options else tool_result.get("type", "input")
+                    q_obj = {
+                        "id": q_id,
+                        "question_id": q_id,
+                        "prompt": q_prompt,
+                        "question": q_prompt,
+                        "options": q_options,
+                        "question_type": q_type,
+                        "allow_custom": tool_result.get("allow_custom", True),
+                        "tool_name": tool_name,
+                        "tool_call_id": call_id,
+                    }
+                    yield {
+                        "event": "question",
+                        "event_type": "question",
+                        "question": q_obj,
+                        "question_id": q_id,
+                        "prompt": q_prompt,
+                        "options": q_options,
+                        "question_type": q_type,
+                        "allow_custom": tool_result.get("allow_custom", True),
+                        "tool_name": tool_name,
+                        "tool_call_id": call_id,
+                        "turn": current_turn,
+                        "request_id": request_id,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
                     yield {
                         "event": "ask_question",
-                        "question": tool_result.get("question") or tool_result.get("prompt") or status_msg,
-                        "options": tool_result.get("options") or [],
-                        "question_type": tool_result.get("type", "input"),
+                        "question": q_obj,
+                        "question_id": q_id,
+                        "prompt": q_prompt,
+                        "options": q_options,
+                        "question_type": q_type,
                         "tool_name": tool_name,
                         "tool_call_id": call_id,
                         "turn": current_turn,
@@ -524,6 +609,18 @@ class AIAgentEngine:
                     }
                     user_resp = await self.session.wait_for_user_answer(tool_result)
                     tool_result = {**tool_result, "user_response": user_resp}
+                    user_ans_val = user_resp.get("answer") if isinstance(user_resp, dict) else user_resp
+                    yield {
+                        "event": "question_answered",
+                        "event_type": "question_answered",
+                        "question": {**q_obj, "answer": user_ans_val, "status": "answered"},
+                        "question_id": q_id,
+                        "answer": user_ans_val,
+                        "tool_call_id": call_id,
+                        "turn": current_turn,
+                        "request_id": request_id,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
                     yield {
                         "event": "user_input_received",
                         "tool_call_id": call_id,
