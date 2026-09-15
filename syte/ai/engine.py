@@ -12,7 +12,7 @@ import re
 import time
 import uuid
 from datetime import datetime, timezone
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional, Union
 
 from syte.ai.providers import UnifiedAIClient
 from syte.ai.tools import execute_syte_tool, get_ai_tools_schema, _get_project_workspace_dir
@@ -142,7 +142,7 @@ class AIAgentEngine:
         user_message: str,
         settings_override: Optional[Dict[str, Any]] = None,
         request_id: Optional[str] = None,
-        credentials: Optional[List[Dict[str, Any]]] = None,
+        credentials: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """Execute a full autonomous agent turn with streaming output and tool execution."""
         # One request id per turn ties every event (deltas, tool calls,

@@ -348,3 +348,19 @@ async def test_api_endpoints_skills_files_questions():
         assert del_res.status_code == 200
         assert del_res.json().get("ok") is True
 
+        # 9. POST /api/agent_change with dictionary credentials
+        change_res = client.post(
+            "/api/agent_change",
+            json={
+                "uuid": project_id,
+                "message": "Update git repo",
+                "credentials": {
+                    "git_name": "Dávid Márton",
+                    "git_email": "dmarton336@gmail.com",
+                    "github_token": "ghp_test123",
+                },
+            },
+        )
+        assert change_res.status_code == 200
+        assert change_res.json().get("ok") is True
+

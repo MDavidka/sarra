@@ -26,7 +26,7 @@ import asyncio
 import logging
 import time
 from collections import deque
-from typing import Any, AsyncIterator, Deque, Dict, List, Optional, Tuple
+from typing import Any, AsyncIterator, Deque, Dict, List, Optional, Tuple, Union
 
 from syte.database import get_project, update_project
 from syte.sse_core import (
@@ -69,7 +69,7 @@ class ProjectAISession:
         self.active_plan: Optional[Dict[str, Any]] = None
         self.pending_question: Optional[Dict[str, Any]] = None
         self.answer_queue: asyncio.Queue = asyncio.Queue()
-        self.credentials: List[Dict[str, Any]] = []
+        self.credentials: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None
         self.last_activity = time.time()
         self.lock = asyncio.Lock()
 
@@ -361,7 +361,7 @@ class AIAgentSessionManager:
         user_message: str,
         settings_override: Optional[Dict[str, Any]] = None,
         request_id: Optional[str] = None,
-        credentials: Optional[List[Dict[str, Any]]] = None,
+        credentials: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
     ) -> str:
         """Spawn or run the autonomous agent turn in a background task."""
         import uuid as _uuid

@@ -108,7 +108,7 @@ class AgentCommunicateRequest(BaseModel):
     improve_from_screenshot: bool = False
     visual_analysis_id: str | None = None
     api_key: str | None = None
-    credentials: list[dict[str, Any]] = Field(default_factory=list)
+    credentials: dict[str, Any] | list[dict[str, Any]] | None = None
 
 
 class AgentChangeRequest(BaseModel):
@@ -124,7 +124,7 @@ class AgentChangeRequest(BaseModel):
     visual_analysis_id: str | None = None
     idempotency_key: str | None = None
     api_key: str | None = None
-    credentials: list[dict[str, Any]] = Field(default_factory=list)
+    credentials: dict[str, Any] | list[dict[str, Any]] | None = None
 
 
 class AgentQuestionAnswerBody(BaseModel):

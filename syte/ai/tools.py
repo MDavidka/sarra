@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 import re
 import shutil
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 import uuid
 
 from syte.ai.skills import (
@@ -1055,40 +1055,58 @@ async def _get_git_auth_options(
     project_id: Any,
     project: dict[str, Any],
     session: Optional[Any] = None,
-    credentials: Optional[dict[str, Any]] = None,
+    credentials: Optional[Union[dict[str, Any], list[dict[str, Any]]]] = None,
 ) -> dict[str, Any]:
     """Resolve user git credentials and build git configuration arguments and environment."""
     token = ""
     user_name = ""
     user_email = ""
 
-    if credentials and isinstance(credentials, dict):
+    # Normalize credentials if passed as list of dicts
+    cred_dict: dict[str, Any] = {}
+    if isinstance(credentials, list):
+        for item in credentials:
+            if isinstance(item, dict):
+                cred_dict.update(item)
+    elif isinstance(credentials, dict):
+        cred_dict = credentials
+
+    if cred_dict:
         token = str(
-            credentials.get("github_token")
-            or credentials.get("GITHUB_TOKEN")
-            or credentials.get("token")
-            or credentials.get("git_token")
-            or credentials.get("GH_TOKEN")
-            or credentials.get("accessToken")
+            cred_dict.get("github_token")
+            or cred_dict.get("GITHUB_TOKEN")
+            or cred_dict.get("token")
+            or cred_dict.get("git_token")
+            or cred_dict.get("GH_TOKEN")
+            or cred_dict.get("accessToken")
             or ""
         ).strip()
-        user_name = str(credentials.get("git_name") or credentials.get("author_name") or credentials.get("owner") or credentials.get("user_name") or credentials.get("username") or "").strip()
-        user_email = str(credentials.get("git_email") or credentials.get("author_email") or credentials.get("email") or "").strip()
+        user_name = str(cred_dict.get("git_name") or cred_dict.get("author_name") or cred_dict.get("owner") or cred_dict.get("user_name") or cred_dict.get("username") or "").strip()
+        user_email = str(cred_dict.get("git_email") or cred_dict.get("author_email") or cred_dict.get("email") or "").strip()
 
-    if not token and session and hasattr(session, "credentials") and isinstance(session.credentials, dict):
+    sess_creds = getattr(session, "credentials", None) if session else None
+    sess_dict: dict[str, Any] = {}
+    if isinstance(sess_creds, list):
+        for item in sess_creds:
+            if isinstance(item, dict):
+                sess_dict.update(item)
+    elif isinstance(sess_creds, dict):
+        sess_dict = sess_creds
+
+    if not token and sess_dict:
         token = str(
-            session.credentials.get("github_token")
-            or session.credentials.get("GITHUB_TOKEN")
-            or session.credentials.get("token")
-            or session.credentials.get("git_token")
-            or session.credentials.get("GH_TOKEN")
-            or session.credentials.get("accessToken")
+            sess_dict.get("github_token")
+            or sess_dict.get("GITHUB_TOKEN")
+            or sess_dict.get("token")
+            or sess_dict.get("git_token")
+            or sess_dict.get("GH_TOKEN")
+            or sess_dict.get("accessToken")
             or ""
         ).strip()
         if not user_name:
-            user_name = str(session.credentials.get("git_name") or session.credentials.get("author_name") or session.credentials.get("owner") or session.credentials.get("user_name") or session.credentials.get("username") or "").strip()
+            user_name = str(sess_dict.get("git_name") or sess_dict.get("author_name") or sess_dict.get("owner") or sess_dict.get("user_name") or sess_dict.get("username") or "").strip()
         if not user_email:
-            user_email = str(session.credentials.get("git_email") or session.credentials.get("author_email") or session.credentials.get("email") or "").strip()
+            user_email = str(sess_dict.get("git_email") or sess_dict.get("author_email") or sess_dict.get("email") or "").strip()
 
 
     env_vars = project.get("env_vars") or {}
@@ -1156,7 +1174,7 @@ async def execute_syte_tool(
     tool_name: str,
     arguments: dict[str, Any],
     session: Optional[Any] = None,
-    credentials: Optional[dict[str, Any]] = None,
+    credentials: Optional[Union[dict[str, Any], list[dict[str, Any]]]] = None,
 ) -> dict[str, Any]:
     """Execute a tool requested by the AI Builder agent against the Syte framework and VM."""
     if isinstance(project_id, dict):
