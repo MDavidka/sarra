@@ -11,6 +11,7 @@ from pathlib import Path
 import re
 import shutil
 from typing import Any, Dict, List, Optional
+import uuid
 
 from syte.ai.skills import (
     discover_skills_catalog,
@@ -793,6 +794,34 @@ def get_ai_tools_schema() -> List[Dict[str, Any]]:
                         },
                     },
                     "required": ["tool"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "syte_list_uploaded_files",
+                "description": "List all files uploaded by the user to the project workspace with summaries and metadata.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "syte_read_uploaded_file",
+                "description": "Read the contents and extracted summary of a user-uploaded file.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "filename": {
+                            "type": "string",
+                            "description": "Filename or path of the uploaded file to read (e.g. 'schema.prisma', 'data.csv').",
+                        },
+                    },
+                    "required": ["filename"],
                 },
             },
         },
@@ -1829,8 +1858,11 @@ async def execute_syte_tool(
             question = str(arguments.get("question") or "").strip()
             options = arguments.get("options") or []
             allow_custom = bool(arguments.get("allow_custom", True))
+            q_id = str(arguments.get("question_id") or f"q_{uuid.uuid4().hex[:8]}")
             return {
                 "ok": True,
+                "question_id": q_id,
+                "id": q_id,
                 "question": question,
                 "options": options,
                 "allow_custom": allow_custom,
@@ -1948,6 +1980,26 @@ async def execute_syte_tool(
                 else:
                     contents[p_clean] = None
             return {"ok": True, "files": contents}
+
+        elif tool_name in ("syte_list_uploaded_files", "list_uploaded_files"):
+            from syte.database import list_project_uploaded_files
+            files = await list_project_uploaded_files(project_id)
+            return {"ok": True, "files": files, "count": len(files)}
+
+        elif tool_name in ("syte_read_uploaded_file", "read_uploaded_file"):
+            filename = str(arguments.get("filename") or arguments.get("path") or "").strip()
+            from syte.database import list_project_uploaded_files
+            files = await list_project_uploaded_files(project_id)
+            match = next((f for f in files if f["filename"] == filename or f["file_path"] == filename or f["id"] == filename), None)
+            if not match:
+                up_p = ws_dir / "uploads" / filename
+                if up_p.exists() and up_p.is_file():
+                    return {"ok": True, "filename": filename, "content": up_p.read_text(encoding="utf-8", errors="replace")}
+                return {"ok": False, "error": f"Uploaded file '{filename}' not found."}
+            target_path = ws_dir / match["file_path"]
+            if target_path.exists() and target_path.is_file():
+                return {"ok": True, "filename": match["filename"], "summary": match.get("summary"), "content": target_path.read_text(encoding="utf-8", errors="replace")}
+            return {"ok": True, "filename": match["filename"], "summary": match.get("summary"), "content": match.get("parsed_content", "")}
 
         elif tool_name == "syte_install_package":
             pkg = str(arguments.get("package_name") or arguments.get("package") or arguments.get("name") or "").strip()
