@@ -26,7 +26,7 @@ import asyncio
 import logging
 import time
 from collections import deque
-from typing import Any, AsyncIterator, Deque, Dict, List, Optional, Tuple
+from typing import Any, AsyncIterator, Deque, Dict, List, Optional, Tuple, Union
 
 from syte.database import get_project, update_project
 from syte.sse_core import (
@@ -69,6 +69,7 @@ class ProjectAISession:
         self.active_plan: Optional[Dict[str, Any]] = None
         self.pending_question: Optional[Dict[str, Any]] = None
         self.answer_queue: asyncio.Queue = asyncio.Queue()
+        self.credentials: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None
         self.last_activity = time.time()
         self.lock = asyncio.Lock()
 
@@ -359,15 +360,21 @@ class AIAgentSessionManager:
         project_id: str,
         user_message: str,
         settings_override: Optional[Dict[str, Any]] = None,
-    ) -> None:
+        request_id: Optional[str] = None,
+        credentials: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
+    ) -> str:
         """Spawn or run the autonomous agent turn in a background task."""
+        import uuid as _uuid
         from syte.ai.engine import AIAgentEngine
 
         session = self.get_or_create_session(project_id)
+        if credentials:
+            session.credentials = credentials
+        req_id = request_id or f"req-{_uuid.uuid4().hex[:12]}"
         async with session.lock:
             if session.is_running and session.active_task and not session.active_task.done():
                 logger.info(f"Agent already running for project '{project_id}'. Attaching message to queue.")
-                return
+                return req_id
 
             session.is_running = True
             session.current_turn += 1
@@ -388,18 +395,21 @@ class AIAgentSessionManager:
                     async for event in engine.run_agent_turn(
                         user_message=user_message,
                         settings_override=settings_override,
+                        request_id=req_id,
+                        credentials=credentials,
                     ):
                         session.add_event(event)
                 except asyncio.CancelledError:
-                    session.add_event({"event": "cancelled", "message": "Agent task was cancelled by user."})
+                    session.add_event({"event": "cancelled", "message": "Agent task was cancelled by user.", "request_id": req_id})
                 except Exception as exc:
                     logger.exception(f"Error in background AI turn for '{project_id}': {exc}")
-                    session.add_event({"event": "error", "error": str(exc)})
+                    session.add_event({"event": "error", "error": str(exc), "request_id": req_id})
                 finally:
                     session.is_running = False
-                    session.add_event({"event": "session_idle"})
+                    session.add_event({"event": "session_idle", "request_id": req_id})
 
             session.active_task = asyncio.create_task(_run_background_loop())
+            return req_id
 
     async def subscribe(
         self,

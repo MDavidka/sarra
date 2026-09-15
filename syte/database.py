@@ -323,6 +323,33 @@ CREATE TABLE IF NOT EXISTS project_deep_focus (
     updated_at TEXT NOT NULL,
     FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS project_skills (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    responsibility TEXT NOT NULL DEFAULT 'general',
+    description TEXT DEFAULT '',
+    content TEXT NOT NULL,
+    parameters TEXT DEFAULT '{}',
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_project_skills_pid ON project_skills(project_id);
+
+CREATE TABLE IF NOT EXISTS project_uploaded_files (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    file_size INTEGER NOT NULL DEFAULT 0,
+    extension TEXT NOT NULL DEFAULT '',
+    summary TEXT DEFAULT '',
+    parsed_content TEXT DEFAULT '',
+    uploaded_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_project_uploaded_files_pid ON project_uploaded_files(project_id);
 """
 
 # Preserve saved provider credentials while moving runtime configuration to the
@@ -446,6 +473,35 @@ async def _migrate(db: aiosqlite.Connection) -> None:
             "SELECT ?, value FROM system_settings WHERE key = ?",
             (new_key, old_key),
         )
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS project_skills (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            responsibility TEXT NOT NULL DEFAULT 'general',
+            description TEXT DEFAULT '',
+            content TEXT NOT NULL,
+            parameters TEXT DEFAULT '{}',
+            active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_project_skills_pid ON project_skills(project_id)")
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS project_uploaded_files (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            filename TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            file_size INTEGER NOT NULL DEFAULT 0,
+            extension TEXT NOT NULL DEFAULT '',
+            summary TEXT DEFAULT '',
+            parsed_content TEXT DEFAULT '',
+            uploaded_at TEXT NOT NULL
+        )
+    """)
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_project_uploaded_files_pid ON project_uploaded_files(project_id)")
 
 
 async def get_setting(key: str, default: str = "") -> str:
@@ -505,7 +561,7 @@ async def create_project(data: dict[str, Any]) -> dict[str, Any]:
                 data["name"],
                 data.get("git_url"),
                 data.get("branch", "main"),
-                data["port"],
+                data.get("port", 0),
                 data.get("domain"),
                 data.get("start_command", ""),
                 json.dumps(data.get("env_vars", {})),
@@ -1645,4 +1701,194 @@ async def save_project_deep_focus(
 # Aliases for Project Memory
 get_project_memory = get_project_deep_focus
 save_project_memory = save_project_deep_focus
+
+
+# -----------------------------------------------------------------------------
+# Project Skills (by Responsibility)
+# -----------------------------------------------------------------------------
+
+async def list_project_skills(project_id: str, active_only: bool = False) -> list[dict[str, Any]]:
+    """List custom skills configured for a project, optionally filtering by active state."""
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        query = "SELECT id, project_id, name, responsibility, description, content, parameters, active, created_at, updated_at FROM project_skills WHERE project_id = ?"
+        params: list[Any] = [project_id]
+        if active_only:
+            query += " AND active = 1"
+        query += " ORDER BY updated_at DESC"
+        async with db.execute(query, params) as cur:
+            rows = await cur.fetchall()
+            results = []
+            for r in rows:
+                results.append({
+                    "id": r[0],
+                    "project_id": r[1],
+                    "name": r[2],
+                    "responsibility": r[3] or "general",
+                    "description": r[4] or "",
+                    "content": r[5] or "",
+                    "parameters": json.loads(r[6]) if r[6] else {},
+                    "active": bool(r[7]),
+                    "created_at": r[8],
+                    "updated_at": r[9],
+                })
+            return results
+
+
+async def get_project_skill(project_id: str, skill_id: str) -> dict[str, Any] | None:
+    """Get single project skill by ID."""
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        async with db.execute(
+            "SELECT id, project_id, name, responsibility, description, content, parameters, active, created_at, updated_at "
+            "FROM project_skills WHERE project_id = ? AND id = ?",
+            (project_id, skill_id),
+        ) as cur:
+            row = await cur.fetchone()
+            if not row:
+                return None
+            return {
+                "id": row[0],
+                "project_id": row[1],
+                "name": row[2],
+                "responsibility": row[3] or "general",
+                "description": row[4] or "",
+                "content": row[5] or "",
+                "parameters": json.loads(row[6]) if row[6] else {},
+                "active": bool(row[7]),
+                "created_at": row[8],
+                "updated_at": row[9],
+            }
+
+
+async def save_project_skill(
+    project_id: str,
+    skill_id: str,
+    name: str,
+    content: str,
+    responsibility: str = "general",
+    description: str = "",
+    parameters: dict[str, Any] | None = None,
+    active: bool = True,
+) -> dict[str, Any]:
+    """Create or update a custom skill for a project."""
+    now = datetime.now(timezone.utc).isoformat()
+    params_json = json.dumps(parameters or {})
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        await db.execute(
+            "INSERT INTO project_skills (id, project_id, name, responsibility, description, content, parameters, active, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(id) DO UPDATE SET "
+            "project_id = excluded.project_id, "
+            "name = excluded.name, "
+            "responsibility = excluded.responsibility, "
+            "description = excluded.description, "
+            "content = excluded.content, "
+            "parameters = excluded.parameters, "
+            "active = excluded.active, "
+            "updated_at = excluded.updated_at",
+            (skill_id, project_id, name, responsibility, description, content, params_json, 1 if active else 0, now, now),
+        )
+        await db.commit()
+    return (await get_project_skill(project_id, skill_id)) or {}
+
+
+async def set_project_skill_active(project_id: str, skill_id: str, active: bool) -> bool:
+    """Toggle a project skill on or off."""
+    now = datetime.now(timezone.utc).isoformat()
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        res = await db.execute(
+            "UPDATE project_skills SET active = ?, updated_at = ? WHERE project_id = ? AND id = ?",
+            (1 if active else 0, now, project_id, skill_id),
+        )
+        await db.commit()
+        return res.rowcount > 0
+
+
+async def delete_project_skill(project_id: str, skill_id: str) -> bool:
+    """Delete a custom project skill."""
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        res = await db.execute(
+            "DELETE FROM project_skills WHERE project_id = ? AND id = ?",
+            (project_id, skill_id),
+        )
+        await db.commit()
+        return res.rowcount > 0
+
+
+# -----------------------------------------------------------------------------
+# Project Uploaded Files (Persistent Context & Tracking)
+# -----------------------------------------------------------------------------
+
+async def save_project_uploaded_file(
+    project_id: str,
+    filename: str,
+    file_path: str,
+    file_size: int = 0,
+    extension: str = "",
+    summary: str = "",
+    parsed_content: str = "",
+) -> dict[str, Any]:
+    """Record an uploaded file in the project workspace catalog."""
+    import uuid
+    file_id = f"up_{uuid.uuid4().hex[:10]}"
+    now = datetime.now(timezone.utc).isoformat()
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        await db.execute(
+            "INSERT INTO project_uploaded_files (id, project_id, filename, file_path, file_size, extension, summary, parsed_content, uploaded_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(id) DO UPDATE SET "
+            "file_size = excluded.file_size, "
+            "summary = excluded.summary, "
+            "parsed_content = excluded.parsed_content, "
+            "uploaded_at = excluded.uploaded_at",
+            (file_id, project_id, filename, file_path, file_size, extension, summary, parsed_content, now),
+        )
+        await db.commit()
+    return {
+        "id": file_id,
+        "project_id": project_id,
+        "filename": filename,
+        "file_path": file_path,
+        "file_size": file_size,
+        "extension": extension,
+        "summary": summary,
+        "parsed_content": parsed_content,
+        "uploaded_at": now,
+    }
+
+
+async def list_project_uploaded_files(project_id: str) -> list[dict[str, Any]]:
+    """List all user-uploaded files for a project."""
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        async with db.execute(
+            "SELECT id, project_id, filename, file_path, file_size, extension, summary, parsed_content, uploaded_at "
+            "FROM project_uploaded_files WHERE project_id = ? ORDER BY uploaded_at DESC",
+            (project_id,),
+        ) as cur:
+            rows = await cur.fetchall()
+            return [
+                {
+                    "id": r[0],
+                    "project_id": r[1],
+                    "filename": r[2],
+                    "file_path": r[3],
+                    "file_size": r[4],
+                    "extension": r[5],
+                    "summary": r[6] or "",
+                    "parsed_content": r[7] or "",
+                    "uploaded_at": r[8],
+                }
+                for r in rows
+            ]
+
+
+async def delete_project_uploaded_file(project_id: str, file_id: str) -> bool:
+    """Delete record of an uploaded file."""
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        res = await db.execute(
+            "DELETE FROM project_uploaded_files WHERE project_id = ? AND id = ?",
+            (project_id, file_id),
+        )
+        await db.commit()
+        return res.rowcount > 0
+
 
