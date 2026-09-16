@@ -62,6 +62,145 @@ def _brief_arguments(arguments: Dict[str, Any]) -> Dict[str, Any]:
     return brief
 
 
+def _determine_action_mark(tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
+    """Classify tool execution into high-fidelity action marks for the UI feed."""
+    t_lower = (tool_name or "").lower()
+    cmd = str(args.get("command") or args.get("cmd") or "").strip()
+    path = str(args.get("path") or args.get("file_path") or args.get("file") or args.get("filename") or "").strip()
+    url = str(args.get("url") or args.get("query") or args.get("route") or "").strip()
+
+    # 1. Security risk check
+    risk_patterns = ["rm -rf /", "chmod 777", "curl | bash", "wget | bash", "mkfs", "> /dev/sda", ":(){ :|:& };:"]
+    if any(p in cmd for p in risk_patterns):
+        return {
+            "kind": "security_risk",
+            "label": "security risk!",
+            "detail": f"Dangerous command flagged: {cmd[:40]}",
+            "badge": None,
+            "status": "warning",
+            "is_risk": True,
+        }
+
+    # 2. Connecting to github
+    if "git" in t_lower or "github" in t_lower or cmd.startswith("git ") or any(k in cmd for k in ["git clone", "git push", "git commit", "git pull", "git status", "git diff", "git log"]):
+        return {
+            "kind": "github",
+            "label": "connecting to github",
+            "detail": cmd if cmd.startswith("git") else (f"branch: {args.get('branch', 'main')}" if args.get("branch") else "GitHub repository sync"),
+            "badge": "github",
+            "status": "running",
+            "is_risk": False,
+        }
+
+    # 3. Starting server
+    if "start_preview" in t_lower or "start_server" in t_lower or any(p in cmd for p in ["npm run dev", "pnpm dev", "yarn dev", "bun dev", "next dev", "npm start", "python main.py", "uvicorn"]):
+        return {
+            "kind": "server",
+            "label": "starting server",
+            "detail": cmd or "Hot-reloading local preview",
+            "badge": "starting",
+            "status": "running",
+            "is_risk": False,
+        }
+
+    # 4. Using browser
+    if "preview" in t_lower or "screenshot" in t_lower or "browser" in t_lower:
+        return {
+            "kind": "browser",
+            "label": "using browser",
+            "detail": url or path or "preview viewport",
+            "badge": "browser",
+            "status": "running",
+            "is_risk": False,
+        }
+
+    # 5. Using cloud servers
+    if "deploy" in t_lower or "cloud" in t_lower or "service" in t_lower or "mcp" in t_lower:
+        return {
+            "kind": "cloud",
+            "label": "using cloud servers",
+            "detail": str(args.get("addon") or args.get("service") or "sycord cloud cluster"),
+            "badge": "cloud",
+            "status": "running",
+            "is_risk": False,
+        }
+
+    # 6. Scraping web
+    if "search" in t_lower or "fetch" in t_lower or "scrape" in t_lower or "curl " in cmd or "wget " in cmd:
+        domain = "web.app"
+        if url.startswith("http://") or url.startswith("https://"):
+            try:
+                from urllib.parse import urlparse
+                parsed = urlparse(url)
+                if parsed.hostname:
+                    domain = parsed.hostname.replace("www.", "")
+            except Exception:
+                pass
+        elif "." in url and " " not in url:
+            domain = url
+        return {
+            "kind": "scrape",
+            "label": "scraping web",
+            "detail": url or "querying web search",
+            "badge": domain,
+            "status": "running",
+            "is_risk": False,
+        }
+
+    # 7. Type checking
+    if "check_types" in t_lower or "typecheck" in t_lower or "lint" in t_lower or "tsc" in cmd or "eslint" in cmd:
+        return {
+            "kind": "typecheck",
+            "label": "type checking",
+            "detail": path or "TypeScript & AST verification",
+            "badge": "tsc",
+            "status": "running",
+            "is_risk": False,
+        }
+
+    # 8. Opening file
+    if "read" in t_lower or "list" in t_lower:
+        return {
+            "kind": "file",
+            "label": "opening file",
+            "detail": path or (f"{len(args.get('files', []))} files" if args.get("files") else "workspace files"),
+            "badge": path.split("/")[-1] if path else None,
+            "status": "running",
+            "is_risk": False,
+        }
+
+    # 9. Running command
+    if cmd or "command" in t_lower or "bash" in t_lower or "shell" in t_lower:
+        return {
+            "kind": "command",
+            "label": "running command",
+            "detail": cmd,
+            "badge": None,
+            "status": "running",
+            "is_risk": False,
+        }
+
+    # Default file or edit action
+    if path or "write" in t_lower or "edit" in t_lower or "file" in t_lower:
+        return {
+            "kind": "file",
+            "label": "opening file" if "read" in t_lower else "editing file",
+            "detail": path,
+            "badge": path.split("/")[-1] if path else None,
+            "status": "running",
+            "is_risk": False,
+        }
+
+    return {
+        "kind": "command",
+        "label": "running command",
+        "detail": tool_name.replace("syte_", "").replace("_", " "),
+        "badge": None,
+        "status": "running",
+        "is_risk": False,
+    }
+
+
 def extract_text_tool_calls(text: str) -> List[Dict[str, Any]]:
     """Extract tool calls from model text output when native function calling chunk is omitted."""
     tool_calls = []
@@ -280,29 +419,44 @@ class AIAgentEngine:
         autonomous_instructions = (
             "\n\n--- SYTE AUTONOMOUS AGENT CORE ARCHITECTURE & EXECUTION STANDARDS ---\n"
             "You are the Syte Autonomous AI Builder & Principal Site Architect — an elite autonomous AI engineer embedded directly in the Syte platform, operating at the quality bar of v0, Google Cloud Code, and Antigravity.\n\n"
-            "## 1. USER-FIRST DIRECT EXECUTION (PRIMARY DIRECTIVE)\n"
-            "- Focus directly and immediately on what the user asks in their message. Answer their questions, solve their problems, and make their requested changes promptly.\n"
-            "- Do not get distracted by rigid memory steps or unnecessary planning ceremonies for straightforward tasks.\n"
-            "- Use Deep Focus (Project Memory) for instant project awareness (stack, architecture, key files, database) without wasting high token budgets repeatedly reading basic files.\n\n"
-            "## 2. PROFESSIONAL DESIGN & UI/UX STANDARDS (v0 / Antigravity Standard)\n"
+            "## 1. USER INTENT CLASSIFICATION & SCOPE DISCIPLINE (PRIMARY DIRECTIVE)\n"
+            "- **CRITICAL RULE: ONLY DO WHAT THE USER ASKS YOU TO DO.**\n"
+            "- **INSPECTION & CHECK REQUESTS (e.g., 'check integration', 'inspect auth', 'how does database connect?', 'status', 'test', 'review code')**:\n"
+            "  - The user is asking for an evaluation, diagnosis, or explanation — NOT an unprompted rewrite.\n"
+            "  - Inspect the codebase thoroughly using read and search tools (`syte_read_file`, `syte_search_files`, `syte_git_status`, `syte_mcp_list`, `syte_list_uploaded_files`).\n"
+            "  - Deliver a direct, factual explanation and status report of the findings.\n"
+            "  - **DO NOT** edit files, do NOT create files, do NOT scaffold new code, and do NOT install packages unless the user explicitly asked to change or build something.\n"
+            "- **BUILD & CHANGE REQUESTS (e.g., 'build a new feature', 'add page', 'fix bug', 'integrate Stripe', 'refactor')**:\n"
+            "  - Follow the strict PLAN -> BUILD -> VERIFY discipline.\n"
+            "  - Formulate an implementation plan, follow the active skills for Designing, Integrating, and Building, and verify before delivering.\n\n"
+            "## 2. ENVIRONMENT & TOOL MASTERY\n"
+            "You have complete command of the workspace environment (`/var/lib/syte/workspaces/<uuid>/app`):\n"
+            "- **File Inspection**: `syte_read_file` (view file contents), `syte_read_file_lines` (slice lines), `syte_search_files` (grep pattern), `syte_list_files` (directory tree).\n"
+            "- **Uploaded Context**: `syte_list_uploaded_files` and `syte_read_uploaded_file` inspect user-uploaded blueprints, schemas, and documents.\n"
+            "- **Code Modification**: `syte_write_file` (create/overwrite complete production code), `syte_edit_file` (surgical string replacement), `syte_delete_file`, `syte_rename_file`.\n"
+            "- **Terminal & Packages**: `syte_run_command` (bash execution), `syte_install_package` (npm/pip dependency installation).\n"
+            "- **Git & GitHub**: `syte_git_status`, `syte_git_diff`, `syte_git_commit`, `syte_git_log`, `syte_git_clone`. Your user's GitHub credentials, author name, and author email are injected automatically into git commands.\n"
+            "- **Interactive User Alignment**: `syte_ask_question` presents interactive question cards (single-choice, multi-choice, or free text). Use this when user preferences, design trade-offs, or secret keys are needed. The agent will pause and wait for the user's answer.\n"
+            "- **MCP Ecosystem**: `syte_mcp_list` and `syte_mcp_call` interact with registered MCP servers and external connections.\n"
+            "- **Quality & Verification**: `syte_security_lint_scan` (AST security and syntax check), `syte_check_types` (TypeScript verification), `syte_start_preview` (dev preview server).\n\n"
+            "## 3. PROFESSIONAL DESIGN & UI/UX STANDARDS (v0 / Antigravity Standard)\n"
             "- **Typography**: Modern font stack (Inter, Geist Sans, system UI). Strict hierarchy: Display H1 (tight tracking `-0.03em`), Section H2, Card H3, muted lead copy, and crisp caption badges.\n"
             "- **Color & Styling**: Tailwind CSS / modern CSS. Zinc/Slate neutral scale, glassmorphism (`backdrop-blur-md bg-white/80 border border-zinc-200/60`), vibrant accent colors (Indigo `#6366f1`, Sky `#0284c7`, Emerald `#10b981`).\n"
-            "- **Component Library**: Use shadcn/ui style components (Cards, Pills, Action Buttons, Badges, Hero banners, Feature grids, Responsive navbar with mobile sheet) and Lucide icons.\n"
-            "- **Zero-Placeholder Guarantee**: ALWAYS write complete, production-ready code. Never leave `// TODO`, `/* implement later */`, or incomplete functions.\n"
+            "- **Component Library**: Use modern styled components (Cards, Pills, Action Buttons, Badges, Hero banners, Feature grids, Responsive navbar with mobile sheet) and clean icons.\n"
+            "- **Zero-Placeholder Guarantee**: When modifying code, ALWAYS write complete, production-ready code. Never leave `// TODO`, `/* implement later */`, or truncated mock functions.\n"
             "- **Responsive**: Mobile-first fluid layouts (`grid-cols-1 md:grid-cols-2 lg:grid-cols-3`), touch targets >= 44px, zero horizontal overflow.\n\n"
-            "## 3. STRICT PHASE PROGRESSION: PLAN -> BUILD -> VERIFY\n"
+            "## 4. STRICT PHASE PROGRESSION: PLAN -> BUILD -> VERIFY (FOR BUILD REQUESTS)\n"
             "1. **PLAN PHASE (Mandatory for non-trivial changes)**:\n"
-            "   - Before executing code edits, file creation, or package installs, formulate an explicit implementation plan using `syte_create_plan`.\n"
-            "   - When planning, consult the active skills by responsibility (Designing, Integrating, Building).\n"
-            "   - If requirements, design decisions, or choices are ambiguous, use `syte_ask_question` to ask the user clarifying questions.\n"
+            "   - Before executing code edits, formulate an explicit implementation plan using `syte_create_plan`.\n"
+            "   - Consult active skills by responsibility (Designing, Integrating, Building).\n"
+            "   - If requirements or choices are ambiguous, call `syte_ask_question` to align with the user.\n"
             "2. **BUILD PHASE**:\n"
             "   - Follow the plan step-by-step, updating plan step status with `syte_update_plan_step`.\n"
-            "   - Strictly follow the user's active skills for Designing, Integrating, and Building.\n"
-            "   - If files are uploaded in `uploads/`, inspect and incorporate their contents (`syte_read_file`).\n"
+            "   - Incorporate any uploaded files in `uploads/` (`syte_read_file`).\n"
             "3. **VERIFY PHASE**:\n"
             "   - Run AST security/syntax check (`syte_security_lint_scan`) and verify the dev server.\n"
             "4. **DELIVER**:\n"
-            "   - Provide a clear, concise summary of the answer or changes directly to the user.\n"
+            "   - Return a concise, direct, professional summary of the answer or changes directly to the user.\n"
             "------------------------------------------------------------------------\n"
         )
         full_system_prompt = f"{base_prompt}\n{autonomous_instructions}\n{context_prompt}"
@@ -352,7 +506,13 @@ class AIAgentEngine:
                 if chunk_type == "thought":
                     content = chunk.get("content", "")
                     turn_thoughts += content
-                    yield {"event": "thought_delta", "delta": content, "request_id": request_id, "turn": current_turn}
+                    yield {
+                        "event": "thought_delta",
+                        "delta": content,
+                        "request_id": request_id,
+                        "turn": current_turn,
+                        "is_new_thinking": current_turn > 1,
+                    }
                 elif chunk_type == "token":
                     if turn_thoughts and not thinking_closed:
                         thinking_closed = True
@@ -360,6 +520,7 @@ class AIAgentEngine:
                             "event": "thinking_finished",
                             "thought": turn_thoughts,
                             "turn": current_turn,
+                            "is_new_thinking": current_turn > 1,
                             "request_id": request_id,
                             "timestamp": datetime.now(timezone.utc).isoformat(),
                         }
@@ -373,6 +534,7 @@ class AIAgentEngine:
                             "event": "thinking_finished",
                             "thought": turn_thoughts,
                             "turn": current_turn,
+                            "is_new_thinking": current_turn > 1,
                             "request_id": request_id,
                             "timestamp": datetime.now(timezone.utc).isoformat(),
                         }
@@ -501,6 +663,19 @@ class AIAgentEngine:
                 elif tool_name == "syte_update_plan_step":
                     status_msg = f"Updating plan step {args.get('step_id', '')} -> {args.get('status', '')}…"
 
+                mark = _determine_action_mark(tool_name, args)
+                yield {
+                    "event": "action_mark",
+                    "action_mark": mark,
+                    "tool_name": tool_name,
+                    "arguments": _brief_arguments(args),
+                    "file_path": file_target,
+                    "command": cmd_target,
+                    "request_id": request_id,
+                    "turn": current_turn,
+                    "timestamp": now_stamp,
+                }
+
                 yield {
                     "event": "status",
                     "message": status_msg,
@@ -550,6 +725,25 @@ class AIAgentEngine:
                 tool_result = await execute_syte_tool(self.project_id, tool_name, args, session=self.session, credentials=credentials)
                 tool_duration_ms = int((time.monotonic() - tool_exec_started) * 1000)
 
+                # Check if tool flagged a security risk
+                if tool_result.get("security_risk") or (not mark.get("is_risk") and "security risk" in str(tool_result.get("error", "")).lower()):
+                    risk_mark = {
+                        "kind": "security_risk",
+                        "label": "security risk!",
+                        "detail": str(tool_result.get("security_risk") or tool_result.get("error") or "Security violation flagged"),
+                        "badge": None,
+                        "status": "warning",
+                        "is_risk": True,
+                    }
+                    yield {
+                        "event": "action_mark",
+                        "action_mark": risk_mark,
+                        "tool_name": tool_name,
+                        "turn": current_turn,
+                        "request_id": request_id,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+
                 # Check if tool requires interactive user response (questions / env secrets)
                 if tool_result.get("requires_user_input") and self.session:
                     yield {
@@ -564,7 +758,7 @@ class AIAgentEngine:
                         "turn": current_turn,
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     }
-                    q_id = f"q_{uuid.uuid4().hex[:8]}"
+                    q_id = str(tool_result.get("question_id") or tool_result.get("id") or f"q_{uuid.uuid4().hex[:8]}")
                     q_prompt = tool_result.get("question") or tool_result.get("prompt") or status_msg
                     q_options = tool_result.get("options") or []
                     q_type = "choice" if q_options else tool_result.get("type", "input")
@@ -607,8 +801,16 @@ class AIAgentEngine:
                         "request_id": request_id,
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     }
-                    user_resp = await self.session.wait_for_user_answer(tool_result)
-                    tool_result = {**tool_result, "user_response": user_resp}
+                    yield {
+                        "event": "waiting_for_user_input",
+                        "question_id": q_id,
+                        "question": q_obj,
+                        "turn": current_turn,
+                        "request_id": request_id,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+                    user_resp = await self.session.wait_for_user_answer(q_obj)
+                    tool_result = {**tool_result, "user_response": user_resp, "status": "answered"}
                     user_ans_val = user_resp.get("answer") if isinstance(user_resp, dict) else user_resp
                     yield {
                         "event": "question_answered",

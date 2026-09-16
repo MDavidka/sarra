@@ -252,9 +252,10 @@ class ProjectAISession:
     # Interactive question gate
     # ------------------------------------------------------------------
 
-    async def wait_for_user_answer(self, question_data: Dict[str, Any], timeout: float = 300.0) -> Dict[str, Any]:
+    async def wait_for_user_answer(self, question_data: Dict[str, Any], timeout: float = 600.0) -> Dict[str, Any]:
         """Pause agent turn until the user provides an answer or secret from the UI."""
         self.pending_question = question_data
+        q_id = str(question_data.get("id") or question_data.get("question_id") or "")
 
         # Clear any stale answers
         while not self.answer_queue.empty():
@@ -266,12 +267,24 @@ class ProjectAISession:
         self.add_event({
             "event": "user_input_required",
             "question_data": question_data,
+            "question": question_data,
+            "question_id": q_id,
         })
 
+        start_time = time.monotonic()
         try:
-            answer = await asyncio.wait_for(self.answer_queue.get(), timeout=timeout)
-            return answer
-        except asyncio.TimeoutError:
+            while time.monotonic() - start_time < timeout:
+                try:
+                    answer = await asyncio.wait_for(self.answer_queue.get(), timeout=4.0)
+                    return answer
+                except asyncio.TimeoutError:
+                    # Keep SSE subscriber connections alive and informed
+                    self.add_event({
+                        "event": "waiting_for_user_input",
+                        "question_id": q_id,
+                        "question": question_data,
+                        "elapsed_seconds": int(time.monotonic() - start_time),
+                    })
             return {"timeout": True, "answer": "No response received within timeout. Proceeding with best defaults."}
         finally:
             self.pending_question = None
@@ -281,6 +294,12 @@ class ProjectAISession:
         self.pending_question = None
         try:
             self.answer_queue.put_nowait(answer_payload)
+            self.add_event({
+                "event": "question_answered",
+                "question_id": str(answer_payload.get("question_id") or ""),
+                "answer": answer_payload.get("answer"),
+                "status": "answered",
+            })
             return True
         except Exception:
             return False
