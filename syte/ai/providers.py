@@ -385,13 +385,13 @@ def _normalize_google_model(model: str, is_vertex: bool = False) -> str:
     return model_map.get(m, m)
 
 
-def _normalize_base_url(provider: str, base_url: str) -> str:
+def _normalize_base_url(provider: str, base_url: str, gcp_project: str = "", gcp_location: str = "") -> str:
     p = _clean_string(provider or "openai").lower()
     url = _clean_string(base_url)
     if not url:
         if p == "vertex":
-            project = VertexAuthManager.resolve_gcp_project()
-            location = VertexAuthManager.resolve_gcp_location()
+            project = VertexAuthManager.resolve_gcp_project(explicit_project=gcp_project)
+            location = VertexAuthManager.resolve_gcp_location(explicit_location=gcp_location)
             if project:
                 return f"https://{location}-aiplatform.googleapis.com/v1/projects/{project}/locations/{location}/publishers/google"
             return "https://us-central1-aiplatform.googleapis.com/v1/publishers/google"
@@ -403,8 +403,8 @@ def _normalize_base_url(provider: str, base_url: str) -> str:
         url = url[:-len("/messages")].rstrip("/")
 
     if p == "vertex" or "aiplatform.googleapis.com" in url:
-        project = VertexAuthManager.resolve_gcp_project()
-        location = VertexAuthManager.resolve_gcp_location()
+        project = VertexAuthManager.resolve_gcp_project(explicit_project=gcp_project)
+        location = VertexAuthManager.resolve_gcp_location(explicit_location=gcp_location)
         if "{PROJECT}" in url or "{project}" in url:
             if project:
                 url = url.replace("{PROJECT}", project).replace("{project}", project)
@@ -501,21 +501,35 @@ def sanitize_openai_messages(messages: List[Dict[str, Any]], system_prompt: Opti
                         },
                     })
                     pending_tool_ids.add(t_id)
+                    pending_tool_ids.add(tc_id)
 
-                if valid_tcs:
-                    m["tool_calls"] = valid_tcs
-            sanitized.append(m)
+                cleaned_msg = {
+                    "role": "assistant",
+                    "content": m.get("content") or "",
+                    "tool_calls": valid_calls,
+                }
+                sanitized.append(cleaned_msg)
+            else:
+                sanitized.append({
+                    "role": "assistant",
+                    "content": m.get("content") or "",
+                })
 
         elif role == "tool":
-            t_id = msg.get("tool_call_id") or ""
-            t_name = msg.get("name") or "syte_tool"
-            tool_content = content if isinstance(content, str) else json.dumps(content)
-            m["tool_call_id"] = t_id
-            m["name"] = t_name
-            m["content"] = tool_content
-            if t_id in pending_tool_ids:
+            t_id = m.get("tool_call_id") or ""
+            if t_id and t_id in pending_tool_ids:
                 pending_tool_ids.remove(t_id)
-            sanitized.append(m)
+                sanitized.append(m)
+            elif not pending_tool_ids:
+                # Orphan tool message - drop to prevent 400 Bad Request
+                continue
+            else:
+                # Match to next expected tool ID if ID mismatch
+                expected_id = next(iter(pending_tool_ids))
+                pending_tool_ids.remove(expected_id)
+                fixed_m = dict(m)
+                fixed_m["tool_call_id"] = expected_id
+                sanitized.append(fixed_m)
 
         elif role in ("user", "system"):
             sanitized.append(m)
@@ -529,12 +543,9 @@ def sanitize_openai_messages(messages: List[Dict[str, Any]], system_prompt: Opti
             "content": json.dumps({"ok": True, "message": "Command executed successfully."}),
         })
 
-    # Ensure the conversation does not begin with an orphan tool message
-    start_idx = 0
-    if sanitized and sanitized[0]["role"] == "system":
-        start_idx = 1
-    while start_idx < len(sanitized) and sanitized[start_idx]["role"] == "tool":
-        sanitized.pop(start_idx)
+    # Ensure conversation does not start with an orphan tool message
+    while sanitized and sanitized[0]["role"] == "tool":
+        sanitized.pop(0)
 
     return sanitized
 
@@ -551,11 +562,20 @@ class UnifiedAIClient:
         temperature: float = 0.7,
         max_tokens: int = 4096,
         thinking_level: str = "medium",
+        gcp_project: str = "",
+        gcp_location: str = "us-central1",
     ):
         self.provider = _clean_string(provider or "openai").lower()
         self.model = _clean_string(model or "gpt-4o")
         self.api_key = _resolve_api_key(self.provider, api_key)
-        self.base_url = _normalize_base_url(self.provider, _clean_string(base_url))
+        self.gcp_project = _clean_string(gcp_project)
+        self.gcp_location = _clean_string(gcp_location or "us-central1")
+        self.base_url = _normalize_base_url(
+            self.provider,
+            _clean_string(base_url),
+            gcp_project=self.gcp_project,
+            gcp_location=self.gcp_location,
+        )
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.thinking_level = thinking_level
@@ -622,8 +642,8 @@ class UnifiedAIClient:
         elif self.api_key.startswith("ya29."):
             vertex_access_token = self.api_key
 
-        project = VertexAuthManager.resolve_gcp_project(sa_info=sa_info)
-        location = VertexAuthManager.resolve_gcp_location()
+        project = VertexAuthManager.resolve_gcp_project(explicit_project=self.gcp_project, sa_info=sa_info)
+        location = VertexAuthManager.resolve_gcp_location(explicit_location=self.gcp_location)
 
         if not project:
             yield {

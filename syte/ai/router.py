@@ -202,17 +202,26 @@ async def test_ai_provider_connection(
     model = _clean_string(body.model)
     api_key = _clean_string(body.api_key or "")
     base_url = _clean_string(body.base_url or "")
+    gcp_project = _clean_string(body.gcp_project or "")
+    gcp_location = _clean_string(body.gcp_location or "us-central1")
 
-    if not api_key:
-        # Load saved key if not supplied in test payload
+    if not api_key or not gcp_project:
+        # Load saved settings if not supplied in test payload
         current = await get_ai_builder_settings(project_id)
-        api_key = _clean_string(current.get("api_key") or "")
+        if not api_key:
+            api_key = _clean_string(current.get("api_key") or "")
+        if not gcp_project:
+            gcp_project = _clean_string(current.get("gcp_project") or "")
+        if not gcp_location or gcp_location == "us-central1":
+            gcp_location = _clean_string(current.get("gcp_location") or "us-central1")
 
     client = UnifiedAIClient(
         provider=provider,
         model=model,
         api_key=api_key,
         base_url=base_url,
+        gcp_project=gcp_project,
+        gcp_location=gcp_location,
     )
     result = await client.test_connection()
     return result

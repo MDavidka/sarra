@@ -412,6 +412,8 @@ class AIAgentEngine:
             temperature=float(ai_settings.get("temperature", 0.7)),
             max_tokens=int(ai_settings.get("max_tokens", 4096)),
             thinking_level=ai_settings.get("thinking_level", "medium"),
+            gcp_project=ai_settings.get("gcp_project", ""),
+            gcp_location=ai_settings.get("gcp_location", "us-central1"),
         )
 
         # 4. Assemble system prompt with live project context & workflow rules
