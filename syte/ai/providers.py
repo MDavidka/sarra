@@ -1,7 +1,7 @@
 """Unified multi-provider AI client for Syte Autonomous AI Builder.
 
-Supports Google Cloud Vertex AI, Google Gemini (AI Studio), OpenAI, Anthropic Claude,
-DeepSeek, OpenRouter, and Local Ollama/vLLM endpoints.
+Supports Google Cloud Vertex AI (aiplatform.googleapis.com), Google Gemini (AI Studio),
+OpenAI, Anthropic Claude, DeepSeek, OpenRouter, and Local Ollama/vLLM endpoints.
 
 Streaming uses a shared pooled ``httpx.AsyncClient`` (HTTP/2 + keep-alive) so
 provider tokens are consumed directly on the event loop.
@@ -24,7 +24,7 @@ import httpx
 logger = logging.getLogger("syte.ai.providers")
 
 DEFAULT_BASE_URLS = {
-    "vertex": "https://{LOCATION}-aiplatform.googleapis.com/v1beta1/projects/{PROJECT}/locations/{LOCATION}/endpoints/openapi",
+    "vertex": "https://{LOCATION}-aiplatform.googleapis.com/v1/projects/{PROJECT}/locations/{LOCATION}/publishers/google",
     "gemini": "https://generativelanguage.googleapis.com/v1beta/openai",
     "openai": "https://api.openai.com/v1",
     "anthropic": "https://api.anthropic.com/v1",
@@ -77,13 +77,13 @@ def _clean_api_key(key: str) -> str:
 
 
 def extract_error_message(err_code: int, err_body: str, provider: str = "AI") -> str:
-    """Extract descriptive error message from provider JSON array, dict, or raw HTML response."""
+    """Extract descriptive error message from provider JSON array, dict, or raw response."""
     prov_name = (provider or "AI").upper()
     err_msg = f"{prov_name} HTTP {err_code}"
     if err_body:
         try:
             parsed = json.loads(err_body)
-            # Handle Google Generative Language returning error as a list: [{"error": {...}}]
+            # Handle Google API error returned as a list: [{"error": {...}}]
             if isinstance(parsed, list) and len(parsed) > 0 and isinstance(parsed[0], dict):
                 parsed = parsed[0]
             if isinstance(parsed, dict):
@@ -96,9 +96,9 @@ def extract_error_message(err_code: int, err_body: str, provider: str = "AI") ->
         except Exception:
             err_msg = f"{prov_name} HTTP {err_code}: {err_body[:300]}"
     if err_code in (401, 403):
-        err_msg = f"{err_msg} — Please verify your API key, permissions (e.g. Vertex AI User role), and billing status in AI Settings."
+        err_msg = f"{err_msg} — Please verify your Google Cloud IAM permissions (Vertex AI User role / roles/aiplatform.user) and billing status."
     elif err_code == 429:
-        err_msg = f"{err_msg} — Rate limit or spend cap reached. Please check your billing spend caps or quota limits."
+        err_msg = f"{err_msg} — Rate limit or quota reached. Please check your project billing and quota limits."
     return err_msg
 
 
@@ -247,10 +247,91 @@ class VertexAuthManager:
             return "", f"Failed to authenticate GCP Service Account: {exc}"
 
 
+def format_vertex_contents(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Convert OpenAI-style messages list to Vertex AI contents array."""
+    contents: List[Dict[str, Any]] = []
+    for msg in messages:
+        role = msg.get("role")
+        content = msg.get("content") or ""
+        tool_calls = msg.get("tool_calls") or []
+
+        if role == "system":
+            # Handled separately via systemInstruction
+            continue
+        elif role == "user":
+            contents.append({
+                "role": "user",
+                "parts": [{"text": str(content)}],
+            })
+        elif role == "assistant":
+            parts = []
+            if content:
+                parts.append({"text": str(content)})
+            for tc in tool_calls:
+                func = tc.get("function") or {}
+                name = func.get("name") or tc.get("name") or "tool"
+                args = func.get("arguments") if "arguments" in func else tc.get("arguments")
+                if isinstance(args, str):
+                    try:
+                        args = json.loads(args)
+                    except Exception:
+                        args = {}
+                parts.append({
+                    "functionCall": {
+                        "name": name,
+                        "args": args if isinstance(args, dict) else {},
+                    }
+                })
+            if parts:
+                contents.append({
+                    "role": "model",
+                    "parts": parts,
+                })
+        elif role == "tool":
+            t_name = msg.get("name") or "tool"
+            t_content = content
+            if isinstance(t_content, str):
+                try:
+                    t_content = json.loads(t_content)
+                except Exception:
+                    t_content = {"output": t_content}
+            contents.append({
+                "role": "user",
+                "parts": [
+                    {
+                        "functionResponse": {
+                            "name": t_name,
+                            "response": {"name": t_name, "content": t_content},
+                        }
+                    }
+                ],
+            })
+    return contents
+
+
+def format_vertex_tools(tools: Optional[List[Dict[str, Any]]]) -> Optional[List[Dict[str, Any]]]:
+    """Convert OpenAI tool schema declarations to Vertex AI functionDeclarations."""
+    if not tools:
+        return None
+    declarations = []
+    for t in tools:
+        if t.get("type") == "function" and "function" in t:
+            f = t["function"]
+            decl = {
+                "name": f.get("name"),
+                "description": f.get("description", ""),
+                "parameters": f.get("parameters", {}),
+            }
+            declarations.append(decl)
+        elif "name" in t:
+            declarations.append(t)
+    if declarations:
+        return [{"functionDeclarations": declarations}]
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Shared pooled HTTP client (HTTP/2 + keep-alive) for provider SSE streams.
-# Reusing TLS connections across turns removes a full handshake (~50-300 ms)
-# from every token stream start.
 # ---------------------------------------------------------------------------
 
 _STREAM_TIMEOUT = httpx.Timeout(None, connect=10.0, read=120.0, write=30.0, pool=10.0)
@@ -296,7 +377,6 @@ def _resolve_api_key(provider: str, explicit_key: str = "") -> str:
 
 def _normalize_google_model(model: str, is_vertex: bool = False) -> str:
     m = _clean_string(model)
-    # Maintain standard model names without downgrading current generation
     model_map = {
         "gemini-2.0-flash-001": "gemini-2.0-flash",
         "gemini-1.5-pro-002": "gemini-1.5-pro-002" if is_vertex else "gemini-1.5-pro",
@@ -313,39 +393,25 @@ def _normalize_base_url(provider: str, base_url: str) -> str:
             project = VertexAuthManager.resolve_gcp_project()
             location = VertexAuthManager.resolve_gcp_location()
             if project:
-                return f"https://{location}-aiplatform.googleapis.com/v1beta1/projects/{project}/locations/{location}/endpoints/openapi"
-            return "https://generativelanguage.googleapis.com/v1beta/openai"
+                return f"https://{location}-aiplatform.googleapis.com/v1/projects/{project}/locations/{location}/publishers/google"
+            return "https://us-central1-aiplatform.googleapis.com/v1/publishers/google"
         return DEFAULT_BASE_URLS.get(p, "https://api.openai.com/v1").rstrip("/")
     url = url.rstrip("/")
-    # Automatically strip redundant endpoint suffixes if entered/pasted by the user
     if url.endswith("/chat/completions"):
         url = url[:-len("/chat/completions")].rstrip("/")
     elif url.endswith("/messages") and p == "anthropic":
         url = url[:-len("/messages")].rstrip("/")
 
-    if p in ("vertex", "gemini") or "aiplatform.googleapis.com" in url or "generativelanguage.googleapis.com" in url:
+    if p == "vertex" or "aiplatform.googleapis.com" in url:
         project = VertexAuthManager.resolve_gcp_project()
         location = VertexAuthManager.resolve_gcp_location()
         if "{PROJECT}" in url or "{project}" in url:
             if project:
                 url = url.replace("{PROJECT}", project).replace("{project}", project)
-            else:
-                return "https://generativelanguage.googleapis.com/v1beta/openai"
         if "{LOCATION}" in url or "{location}" in url:
             url = url.replace("{LOCATION}", location).replace("{location}", location)
-
-        # If user entered an AI Studio project (gen-lang-client-...) or locations/global, route to generativelanguage
-        if "gen-lang-client-" in url or "locations/global" in url:
-            return "https://generativelanguage.googleapis.com/v1beta/openai"
-
-        # If user entered an aiplatform URL without /endpoints/openapi, format it properly
-        if "aiplatform.googleapis.com" in url and not url.endswith("/endpoints/openapi"):
-            if "/v1/" in url:
-                url = url.replace("/v1/", "/v1beta1/")
-            if not url.endswith("/endpoints/openapi"):
-                url = f"{url}/endpoints/openapi"
-
-        if "generativelanguage.googleapis.com" in url and not url.endswith("/openai"):
+    elif p == "gemini" or "generativelanguage.googleapis.com" in url:
+        if not url.endswith("/openai"):
             if not url.endswith("/v1beta"):
                 url = f"{url}/v1beta/openai"
             else:
@@ -365,11 +431,9 @@ def repair_json_string(raw_str: str) -> str:
     except Exception:
         pass
 
-    # Strip trailing backslash
     if s.endswith("\\"):
         s = s[:-1]
 
-    # Iteratively attempt closing open string literals and brackets
     for suffix in ["\"}", "\"}]}", "\"}]", "}", "}]", "\"}]}}", "\"}}}"]:
         candidate = s + suffix
         try:
@@ -378,7 +442,6 @@ def repair_json_string(raw_str: str) -> str:
         except Exception:
             pass
 
-    # If simple suffix fails, trim trailing characters back to the last valid token
     for cut in range(1, min(len(s), 300)):
         sub = s[:-cut].rstrip().rstrip("\\")
         for suffix in ["\"}", "}", "\"]}", "\"]"]:
@@ -503,7 +566,7 @@ class UnifiedAIClient:
         if not self.api_key and not has_sa and self.provider not in ("ollama", "custom"):
             return {
                 "ok": False,
-                "error": f"Missing API key or credentials for {self.provider.upper()}. Please enter your API key or Service Account JSON in AI Settings.",
+                "error": f"Missing credentials for {self.provider.upper()}. Please enter your API key or Service Account JSON in AI Settings.",
                 "model": self.model,
                 "provider": self.provider,
             }
@@ -527,12 +590,231 @@ class UnifiedAIClient:
         system_prompt: Optional[str] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """Stream assistant response with real-time SSE chunks across providers."""
-        if self.provider == "anthropic":
+        if self.provider == "vertex":
+            async for chunk in self._stream_vertex(messages, tools=tools, system_prompt=system_prompt):
+                yield chunk
+        elif self.provider == "anthropic":
             async for chunk in self._stream_anthropic(messages, tools=tools, system_prompt=system_prompt):
                 yield chunk
         else:
             async for chunk in self._stream_openai_compatible(messages, tools=tools, system_prompt=system_prompt):
                 yield chunk
+
+    async def _stream_vertex(
+        self,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]] = None,
+        system_prompt: Optional[str] = None,
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """Direct stream with Google Cloud Vertex AI (aiplatform.googleapis.com) using GCP IAM / Service Accounts."""
+        sa_info = VertexAuthManager.parse_service_account(self.api_key)
+        vertex_access_token = ""
+
+        if sa_info:
+            token, err = await VertexAuthManager.get_access_token_from_service_account(sa_info)
+            if err or not token:
+                yield {
+                    "type": "error",
+                    "content": f"Google Cloud Vertex AI authentication failed: {err or 'Unable to generate access token from Service Account'}",
+                }
+                return
+            vertex_access_token = token
+        elif self.api_key.startswith("ya29."):
+            vertex_access_token = self.api_key
+
+        project = VertexAuthManager.resolve_gcp_project(sa_info=sa_info)
+        location = VertexAuthManager.resolve_gcp_location()
+
+        if not project:
+            yield {
+                "type": "error",
+                "content": (
+                    "Google Cloud Vertex AI Error: Missing GCP Project ID. "
+                    "Please provide a Service Account JSON with 'project_id' or set GOOGLE_CLOUD_PROJECT in environment."
+                ),
+            }
+            return
+
+        effective_model = _normalize_google_model(self.model, is_vertex=True)
+
+        # Check if Claude model on Vertex AI
+        is_claude_on_vertex = "claude" in effective_model.lower()
+
+        if is_claude_on_vertex:
+            url = f"https://{location}-aiplatform.googleapis.com/v1/projects/{project}/locations/{location}/publishers/anthropic/models/{effective_model}:streamRawPredict"
+            headers = {
+                "Content-Type": "application/json",
+                "Accept": "text/event-stream",
+                "anthropic-version": "vertex-2023-10-16",
+            }
+            if vertex_access_token:
+                headers["Authorization"] = f"Bearer {vertex_access_token}"
+            elif self.api_key:
+                headers["Authorization"] = f"Bearer {self.api_key}"
+                headers["x-goog-api-key"] = self.api_key
+
+            anthropic_messages = []
+            for msg in messages:
+                role = "assistant" if msg.get("role") == "assistant" else "user"
+                anthropic_messages.append({"role": role, "content": msg.get("content") or ""})
+
+            payload: dict[str, Any] = {
+                "anthropic_version": "vertex-2023-10-16",
+                "messages": anthropic_messages,
+                "max_tokens": self.max_tokens,
+                "temperature": self.temperature,
+                "stream": True,
+            }
+            if system_prompt:
+                payload["system"] = system_prompt
+
+            client = _get_http_client()
+            try:
+                response = await client.send(
+                    client.build_request("POST", url, json=payload, headers=headers),
+                    stream=True,
+                )
+            except Exception as exc:
+                yield {"type": "error", "content": f"Vertex AI Claude connection failed: {exc}"}
+                return
+
+            if response.status_code >= 400:
+                err_body = (await response.aread()).decode("utf-8", errors="replace")
+                await response.aclose()
+                yield {"type": "error", "content": extract_error_message(response.status_code, err_body, provider="vertex")}
+                return
+
+            try:
+                async for line in response.aiter_lines():
+                    line = line.strip()
+                    if not line.startswith("data:"):
+                        continue
+                    try:
+                        data = json.loads(line[5:])
+                    except json.JSONDecodeError:
+                        continue
+                    event_type = data.get("type")
+                    if event_type == "content_block_delta":
+                        delta = data.get("delta") or {}
+                        if delta.get("type") == "text_delta" and delta.get("text"):
+                            yield {"type": "token", "content": delta["text"]}
+                    elif event_type == "message_stop":
+                        break
+            finally:
+                await response.aclose()
+            return
+
+        # Native Google Gemini on Vertex AI
+        if self.base_url and "aiplatform.googleapis.com" not in self.base_url:
+            url = f"{self.base_url.rstrip('/')}/models/{effective_model}:streamGenerateContent?alt=sse"
+        else:
+            url = f"https://{location}-aiplatform.googleapis.com/v1/projects/{project}/locations/{location}/publishers/google/models/{effective_model}:streamGenerateContent?alt=sse"
+
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+            "X-Goog-Api-Client": "syte-vertex-agent/1.0",
+        }
+        if vertex_access_token:
+            headers["Authorization"] = f"Bearer {vertex_access_token}"
+        elif self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+            headers["x-goog-api-key"] = self.api_key
+
+        vertex_contents = format_vertex_contents(messages)
+        vertex_tools = format_vertex_tools(tools)
+
+        payload: dict[str, Any] = {
+            "contents": vertex_contents,
+            "generationConfig": {
+                "temperature": self.temperature,
+                "maxOutputTokens": self.max_tokens,
+            },
+        }
+        if system_prompt:
+            payload["systemInstruction"] = {
+                "parts": [{"text": system_prompt}]
+            }
+        if vertex_tools:
+            payload["tools"] = vertex_tools
+
+        client = _get_http_client()
+        response: Optional[httpx.Response] = None
+        last_err_msg = "Unknown Vertex AI error"
+
+        for attempt in range(3):
+            try:
+                response = await client.send(
+                    client.build_request("POST", url, json=payload, headers=headers),
+                    stream=True,
+                )
+            except httpx.HTTPError as exc:
+                last_err_msg = f"Vertex AI connection failed: {exc}"
+                if attempt < 2:
+                    await asyncio.sleep(1.5 * (attempt + 1))
+                    continue
+                break
+            except Exception as exc:
+                last_err_msg = f"Vertex AI connection failed: {exc}"
+                break
+
+            if response.status_code < 400:
+                break
+
+            err_body = (await response.aread()).decode("utf-8", errors="replace")
+            err_code = response.status_code
+            await response.aclose()
+            response = None
+            last_err_msg = extract_error_message(err_code, err_body, provider="vertex")
+            if err_code in (429, 502, 503, 504) and attempt < 2:
+                await asyncio.sleep(1.5 * (attempt + 1))
+                continue
+            break
+
+        if response is None:
+            yield {"type": "error", "content": last_err_msg}
+            return
+
+        tool_calls_count = 0
+        try:
+            async for line in response.aiter_lines():
+                line_str = line.strip()
+                if not line_str or line_str.startswith(":"):
+                    continue
+                if line_str == "data: [DONE]":
+                    break
+                if not line_str.startswith("data: "):
+                    continue
+                try:
+                    chunk_data = json.loads(line_str[6:])
+                except json.JSONDecodeError:
+                    continue
+
+                candidates = chunk_data.get("candidates") or []
+                for cand in candidates:
+                    content_obj = cand.get("content") or {}
+                    parts = content_obj.get("parts") or []
+                    for part in parts:
+                        if not isinstance(part, dict):
+                            continue
+                        if "thought" in part and part["thought"]:
+                            yield {"type": "thought", "content": part["thought"]}
+                        if "text" in part and part["text"]:
+                            yield {"type": "token", "content": part["text"]}
+                        if "functionCall" in part:
+                            fc = part["functionCall"]
+                            f_name = fc.get("name") or "syte_tool"
+                            f_args = fc.get("args") or {}
+                            args_str = json.dumps(f_args) if isinstance(f_args, dict) else str(f_args)
+                            tool_calls_count += 1
+                            yield {
+                                "type": "tool_call",
+                                "id": f"call_{tool_calls_count}",
+                                "name": f_name,
+                                "arguments": args_str,
+                            }
+        finally:
+            await response.aclose()
 
     async def _stream_openai_compatible(
         self,
@@ -540,53 +822,18 @@ class UnifiedAIClient:
         tools: Optional[List[Dict[str, Any]]] = None,
         system_prompt: Optional[str] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
-        # Handle Vertex AI explicit credentials and token resolution
-        is_vertex = self.provider == "vertex"
-        sa_info = None
-        vertex_access_token = ""
-
-        if is_vertex:
-            sa_info = VertexAuthManager.parse_service_account(self.api_key)
-            if sa_info:
-                token, err = await VertexAuthManager.get_access_token_from_service_account(sa_info)
-                if err or not token:
-                    yield {
-                        "type": "error",
-                        "content": f"Vertex AI Service Account authentication failed: {err or 'Unable to generate access token'}",
-                    }
-                    return
-                vertex_access_token = token
-            elif self.api_key.startswith("ya29."):
-                vertex_access_token = self.api_key
-
-        if not self.api_key and not vertex_access_token and self.provider not in ("ollama", "custom"):
+        if not self.api_key and self.provider not in ("ollama", "custom"):
             yield {
                 "type": "error",
-                "content": f"Missing API key or credentials for {self.provider.upper()}. Please configure your API key or Service Account in AI Settings.",
+                "content": f"Missing API key for {self.provider.upper()}. Please configure your API key in AI Settings.",
             }
             return
 
         effective_model = self.model
-        if self.provider in ("vertex", "gemini") or "generativelanguage.googleapis.com" in (self.base_url or ""):
-            effective_model = _normalize_google_model(self.model, is_vertex=is_vertex)
+        if self.provider == "gemini" or "generativelanguage.googleapis.com" in (self.base_url or ""):
+            effective_model = _normalize_google_model(self.model, is_vertex=False)
 
-        # Build dynamic base url for Vertex AI if needed
-        base_url = self.base_url or ""
-        if is_vertex and (not base_url or "aiplatform.googleapis.com" in base_url):
-            project = VertexAuthManager.resolve_gcp_project(sa_info=sa_info)
-            location = VertexAuthManager.resolve_gcp_location()
-            if not project and not self.api_key.startswith("AIza") and not self.api_key.startswith("AQ."):
-                yield {
-                    "type": "error",
-                    "content": "Missing Google Cloud Project ID for Vertex AI. Please configure GOOGLE_CLOUD_PROJECT in environment or provide a GCP Service Account JSON with project_id.",
-                }
-                return
-            if project:
-                base_url = f"https://{location}-aiplatform.googleapis.com/v1beta1/projects/{project}/locations/{location}/endpoints/openapi"
-            else:
-                base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
-
-        url = f"{(base_url or '').rstrip('/')}/chat/completions"
+        url = f"{(self.base_url or '').rstrip('/')}/chat/completions"
         headers = {
             "Content-Type": "application/json",
             "Accept": "text/event-stream",
@@ -595,11 +842,9 @@ class UnifiedAIClient:
             "User-Agent": "Syte-Autonomous-Agent/1.0",
         }
 
-        if vertex_access_token:
-            headers["Authorization"] = f"Bearer {vertex_access_token}"
-        elif self.api_key:
+        if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
-            if self.provider in ("gemini", "vertex") or self.api_key.startswith("AIza") or self.api_key.startswith("AQ."):
+            if self.provider == "gemini" or self.api_key.startswith("AIza") or self.api_key.startswith("AQ."):
                 headers["x-goog-api-key"] = self.api_key
 
         formatted_messages = sanitize_openai_messages(messages, system_prompt=system_prompt)
@@ -618,7 +863,6 @@ class UnifiedAIClient:
         client = _get_http_client()
 
         async def _open_stream(request_url: str, request_payload: dict) -> tuple[Optional[httpx.Response], str, int]:
-            """POST the stream request; return (response, error_message, error_status)."""
             try:
                 response = await client.send(
                     client.build_request("POST", request_url, json=request_payload, headers=headers),
@@ -642,18 +886,6 @@ class UnifiedAIClient:
             response, last_err_msg, err_code = await _open_stream(url, payload)
             if response is not None:
                 break
-            # If 404, 401, or 400 on custom/default Vertex endpoint, seamless fallback to Google Generative Language if using API key
-            if err_code in (404, 401, 400) and (
-                self.provider in ("vertex", "gemini") or "googleapis.com" in (url or "")
-            ):
-                fallback_url = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
-                if fallback_url != url:
-                    fallback_payload = dict(payload)
-                    fallback_payload["model"] = _normalize_google_model(self.model, is_vertex=False)
-                    response, fb_err, fb_code = await _open_stream(fallback_url, fallback_payload)
-                    if response is not None:
-                        break
-                    last_err_msg = fb_err or last_err_msg
             if err_code in (429, 502, 503, 504) and attempt < 2:
                 await asyncio.sleep(1.5 * (attempt + 1))
                 continue
@@ -666,7 +898,6 @@ class UnifiedAIClient:
             yield {"type": "error", "content": last_err_msg}
             return
 
-        # Consume the provider SSE stream directly on the event loop
         tool_calls_acc: dict[int, dict[str, Any]] = {}
 
         try:
@@ -688,17 +919,14 @@ class UnifiedAIClient:
                     continue
                 delta = choices[0].get("delta") or {}
 
-                # Thought / Reasoning delta
                 thought = delta.get("reasoning_content") or delta.get("reasoning") or delta.get("thought")
                 if thought:
                     yield {"type": "thought", "content": thought}
 
-                # Text token delta
                 content = delta.get("content")
                 if content:
                     yield {"type": "token", "content": content}
 
-                # Tool call deltas
                 raw_tool_calls = delta.get("tool_calls")
                 if raw_tool_calls:
                     for tc in raw_tool_calls:
@@ -736,7 +964,6 @@ class UnifiedAIClient:
         finally:
             await response.aclose()
 
-        # Yield any accumulated tool calls with repaired JSON arguments
         if tool_calls_acc:
             for idx, tc in sorted(tool_calls_acc.items(), key=lambda x: x[0]):
                 func_name = tc["function"]["name"].strip()

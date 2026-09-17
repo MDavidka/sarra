@@ -88,7 +88,7 @@ def test_normalize_base_url_vertex(monkeypatch):
     monkeypatch.setenv("VERTEX_LOCATION", "us-central1")
 
     url = _normalize_base_url("vertex", "")
-    assert "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/demo-proj/locations/us-central1/endpoints/openapi" in url
+    assert "https://us-central1-aiplatform.googleapis.com/v1/projects/demo-proj/locations/us-central1/publishers/google" in url
 
     gemini_url = _normalize_base_url("gemini", "")
     assert gemini_url == "https://generativelanguage.googleapis.com/v1beta/openai"
@@ -103,4 +103,49 @@ async def test_vertex_missing_credentials():
     )
     res = await client.test_connection()
     assert res["ok"] is False
-    assert "Missing API key or credentials" in res["error"]
+    assert "Missing credentials" in res["error"]
+
+
+def test_format_vertex_contents_and_tools():
+    from syte.ai.providers import format_vertex_contents, format_vertex_tools
+
+    messages = [
+        {"role": "system", "content": "System instruction"},
+        {"role": "user", "content": "Read the main file"},
+        {
+            "role": "assistant",
+            "content": "Reading...",
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "function": {"name": "syte_read_file", "arguments": '{"path": "main.py"}'},
+                }
+            ],
+        },
+        {"role": "tool", "name": "syte_read_file", "content": '{"ok": true, "content": "print(1)"}'},
+    ]
+
+    contents = format_vertex_contents(messages)
+    assert len(contents) == 3
+    assert contents[0]["role"] == "user"
+    assert contents[0]["parts"][0]["text"] == "Read the main file"
+    assert contents[1]["role"] == "model"
+    assert "functionCall" in contents[1]["parts"][1]
+    assert contents[2]["role"] == "user"
+    assert "functionResponse" in contents[2]["parts"][0]
+
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "syte_read_file",
+                "description": "Read file contents",
+                "parameters": {"type": "object", "properties": {"path": {"type": "string"}}},
+            },
+        }
+    ]
+    formatted_tools = format_vertex_tools(tools)
+    assert formatted_tools is not None
+    assert "functionDeclarations" in formatted_tools[0]
+    assert formatted_tools[0]["functionDeclarations"][0]["name"] == "syte_read_file"
+
