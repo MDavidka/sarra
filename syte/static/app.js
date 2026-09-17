@@ -11696,11 +11696,12 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
   if (testBtn) {
     testBtn.onclick = async () => {
       hideAlert();
-      const selectedProvider = providerSel?.value || 'vertex';
-      let enteredKey = apiKeyInput?.value?.trim() || '';
+      const cleanStr = (s) => (s || '').replace(/[\u2060\u200B\u200C\u200D\uFEFF\u00A0]/g, '').trim();
+      const selectedProvider = cleanStr(providerSel?.value) || 'vertex';
+      let enteredKey = cleanStr(apiKeyInput?.value) || '';
       if (!enteredKey) {
         const matchingSaved = savedProvidersListState.find(p => p.provider === selectedProvider && p.api_key);
-        if (matchingSaved) enteredKey = matchingSaved.api_key;
+        if (matchingSaved) enteredKey = cleanStr(matchingSaved.api_key);
       }
       const hasExistingKey = currentLoadedSettings?.has_api_key && (currentLoadedSettings.provider === selectedProvider || !enteredKey);
       if (!enteredKey && !hasExistingKey && selectedProvider !== 'ollama' && selectedProvider !== 'custom') {
@@ -11715,7 +11716,7 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
       try {
         const cleanBaseUrl = (u) => {
           if (!u) return '';
-          let cleaned = u.trim().replace(/\/+$/, '');
+          let cleaned = cleanStr(u).replace(/\/+$/, '');
           if (cleaned.endsWith('/chat/completions')) {
             cleaned = cleaned.slice(0, -'/chat/completions'.length).replace(/\/+$/, '');
           }
@@ -11723,7 +11724,7 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
         };
         const payload = {
           provider: selectedProvider,
-          model: modelInput?.value?.trim() || 'gemini-2.0-flash',
+          model: cleanStr(modelInput?.value) || 'gemini-2.5-flash',
           api_key: enteredKey,
           base_url: cleanBaseUrl(baseUrlInput?.value || ''),
         };
@@ -11759,27 +11760,28 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
   const handleSave = async () => {
     hideAlert();
     try {
+      const cleanStr = (s) => (s || '').replace(/[\u2060\u200B\u200C\u200D\uFEFF\u00A0]/g, '').trim();
       const cleanBaseUrl = (u) => {
         if (!u) return '';
-        let cleaned = u.trim().replace(/\/+$/, '');
+        let cleaned = cleanStr(u).replace(/\/+$/, '');
         if (cleaned.endsWith('/chat/completions')) {
           cleaned = cleaned.slice(0, -'/chat/completions'.length).replace(/\/+$/, '');
         }
         return cleaned;
       };
 
-      const selectedProvider = providerSel?.value || 'vertex';
-      const selectedModel = modelInput?.value?.trim() || 'gemini-2.0-flash';
-      let enteredKey = apiKeyInput?.value?.trim() || '';
+      const selectedProvider = cleanStr(providerSel?.value) || 'vertex';
+      const selectedModel = cleanStr(modelInput?.value) || 'gemini-2.5-flash';
+      let enteredKey = cleanStr(apiKeyInput?.value) || '';
       const enteredBaseUrl = cleanBaseUrl(baseUrlInput?.value || '');
 
       // Multi-model fix: if key was not re-entered, inherit from matching saved provider or active settings
       if (!enteredKey) {
         const matchingSaved = savedProvidersListState.find(p => p.provider === selectedProvider && p.api_key);
         if (matchingSaved) {
-          enteredKey = matchingSaved.api_key;
+          enteredKey = cleanStr(matchingSaved.api_key);
         } else if (currentLoadedSettings?.has_api_key && currentLoadedSettings.provider === selectedProvider) {
-          enteredKey = currentLoadedSettings.api_key || '';
+          enteredKey = cleanStr(currentLoadedSettings.api_key || '');
         }
       }
 

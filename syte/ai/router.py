@@ -92,6 +92,11 @@ async def update_project_ai_settings(
             raise HTTPException(404, "Project not found")
 
     data = body.model_dump(exclude_none=True)
+    from syte.ai.providers import _clean_string
+    for str_key in ("provider", "model", "api_key", "base_url", "system_prompt", "tools_enabled", "custom_models"):
+        if str_key in data and isinstance(data[str_key], str):
+            data[str_key] = _clean_string(data[str_key])
+
     saved = await save_ai_builder_settings(project_id, data)
     return {"ok": True, "settings": saved}
 
@@ -192,17 +197,22 @@ async def test_ai_provider_connection(
     body: AITestConnectionRequest,
 ):
     """Test connectivity to an LLM provider and model."""
-    api_key = (body.api_key or "").strip()
+    from syte.ai.providers import _clean_string
+    provider = _clean_string(body.provider)
+    model = _clean_string(body.model)
+    api_key = _clean_string(body.api_key or "")
+    base_url = _clean_string(body.base_url or "")
+
     if not api_key:
         # Load saved key if not supplied in test payload
         current = await get_ai_builder_settings(project_id)
-        api_key = current.get("api_key") or ""
+        api_key = _clean_string(current.get("api_key") or "")
 
     client = UnifiedAIClient(
-        provider=body.provider,
-        model=body.model,
+        provider=provider,
+        model=model,
         api_key=api_key,
-        base_url=body.base_url or "",
+        base_url=base_url,
     )
     result = await client.test_connection()
     return result

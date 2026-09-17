@@ -76,7 +76,8 @@ def test_service_account_parsing(tmp_path):
 
 
 def test_normalize_google_model():
-    assert _normalize_google_model("gemini-2.5-flash", is_vertex=True) == "gemini-2.0-flash"
+    assert _normalize_google_model("gemini-2.5-flash", is_vertex=True) == "gemini-2.5-flash"
+    assert _normalize_google_model("gemini-2.5-flash-lite\u2060", is_vertex=True) == "gemini-2.5-flash-lite"
     assert _normalize_google_model("gemini-2.0-flash", is_vertex=True) == "gemini-2.0-flash"
     assert _normalize_google_model("gemini-1.5-pro-002", is_vertex=True) == "gemini-1.5-pro-002"
     assert _normalize_google_model("gemini-1.5-pro-002", is_vertex=False) == "gemini-1.5-pro"

@@ -50,11 +50,56 @@ ENV_KEY_MAP = {
 }
 
 
+def _clean_string(s: str) -> str:
+    """Strip zero-width spaces, word joiners, and surrounding quotes/whitespace from user inputs."""
+    if not s:
+        return ""
+    return (
+        str(s)
+        .replace("\u2060", "")  # word joiner
+        .replace("\u200b", "")  # zero-width space
+        .replace("\u200c", "")  # zero-width non-joiner
+        .replace("\u200d", "")  # zero-width joiner
+        .replace("\ufeff", "")  # byte order mark
+        .replace("\u00a0", " ")  # non-breaking space
+        .strip()
+        .strip('"')
+        .strip("'")
+        .strip()
+    )
+
+
 def _clean_api_key(key: str) -> str:
-    k = (key or "").strip().strip('"').strip("'").strip()
+    k = _clean_string(key)
     if k.lower().startswith("bearer "):
         k = k[7:].strip()
     return k
+
+
+def extract_error_message(err_code: int, err_body: str, provider: str = "AI") -> str:
+    """Extract descriptive error message from provider JSON array, dict, or raw HTML response."""
+    prov_name = (provider or "AI").upper()
+    err_msg = f"{prov_name} HTTP {err_code}"
+    if err_body:
+        try:
+            parsed = json.loads(err_body)
+            # Handle Google Generative Language returning error as a list: [{"error": {...}}]
+            if isinstance(parsed, list) and len(parsed) > 0 and isinstance(parsed[0], dict):
+                parsed = parsed[0]
+            if isinstance(parsed, dict):
+                err_val = parsed.get("error") or parsed.get("detail") or parsed
+                if isinstance(err_val, dict):
+                    msg = err_val.get("message") or err_val.get("detail") or str(err_val)
+                    err_msg = f"{prov_name} Error (HTTP {err_code}): {msg}"
+                elif isinstance(err_val, str):
+                    err_msg = f"{prov_name} Error (HTTP {err_code}): {err_val}"
+        except Exception:
+            err_msg = f"{prov_name} HTTP {err_code}: {err_body[:300]}"
+    if err_code in (401, 403):
+        err_msg = f"{err_msg} — Please verify your API key, permissions (e.g. Vertex AI User role), and billing status in AI Settings."
+    elif err_code == 429:
+        err_msg = f"{err_msg} — Rate limit or spend cap reached. Please check your billing spend caps or quota limits."
+    return err_msg
 
 
 class VertexAuthManager:
@@ -64,10 +109,10 @@ class VertexAuthManager:
 
     @classmethod
     def resolve_gcp_project(cls, explicit_project: str = "", sa_info: Optional[dict] = None) -> str:
-        if explicit_project and explicit_project.strip():
-            return explicit_project.strip()
+        if explicit_project and _clean_string(explicit_project):
+            return _clean_string(explicit_project)
         if sa_info and sa_info.get("project_id"):
-            return str(sa_info["project_id"]).strip()
+            return _clean_string(sa_info["project_id"])
         for env_var in (
             "VERTEX_PROJECT_ID",
             "GOOGLE_CLOUD_PROJECT",
@@ -75,22 +120,22 @@ class VertexAuthManager:
             "PROJECT_ID",
             "CLOUDSDK_CORE_PROJECT",
         ):
-            val = os.environ.get(env_var, "").strip()
+            val = _clean_string(os.environ.get(env_var, ""))
             if val:
                 return val
         return ""
 
     @classmethod
     def resolve_gcp_location(cls, explicit_location: str = "") -> str:
-        if explicit_location and explicit_location.strip():
-            return explicit_location.strip()
+        if explicit_location and _clean_string(explicit_location):
+            return _clean_string(explicit_location)
         for env_var in (
             "VERTEX_LOCATION",
             "GOOGLE_CLOUD_REGION",
             "GCP_REGION",
             "CLOUDSDK_COMPUTE_REGION",
         ):
-            val = os.environ.get(env_var, "").strip()
+            val = _clean_string(os.environ.get(env_var, ""))
             if val:
                 return val
         return "us-central1"
@@ -99,7 +144,7 @@ class VertexAuthManager:
     def parse_service_account(cls, credential_str: str) -> Optional[dict]:
         """Check if credential_str is raw JSON or a path to a service account JSON file."""
         if not credential_str:
-            gac = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
+            gac = _clean_string(os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", ""))
             if gac and os.path.isfile(gac):
                 try:
                     with open(gac, "r", encoding="utf-8") as f:
@@ -110,10 +155,11 @@ class VertexAuthManager:
                     pass
             return None
 
+        clean_cred = _clean_string(credential_str)
         # Check if credential_str is a file path
-        if os.path.isfile(credential_str):
+        if os.path.isfile(clean_cred):
             try:
-                with open(credential_str, "r", encoding="utf-8") as f:
+                with open(clean_cred, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     if isinstance(data, dict) and data.get("type") == "service_account":
                         return data
@@ -121,10 +167,9 @@ class VertexAuthManager:
                 pass
 
         # Check if credential_str is raw JSON
-        trimmed = credential_str.strip()
-        if trimmed.startswith("{") and trimmed.endswith("}"):
+        if clean_cred.startswith("{") and clean_cred.endswith("}"):
             try:
-                data = json.loads(trimmed)
+                data = json.loads(clean_cred)
                 if isinstance(data, dict) and data.get("type") == "service_account":
                     return data
             except Exception:
@@ -240,7 +285,7 @@ def _resolve_api_key(provider: str, explicit_key: str = "") -> str:
     k = _clean_api_key(explicit_key)
     if k:
         return k
-    p = (provider or "openai").lower().strip()
+    p = _clean_string(provider or "openai").lower()
     env_vars = ENV_KEY_MAP.get(p, [])
     for var in env_vars:
         val = _clean_api_key(os.environ.get(var, ""))
@@ -250,12 +295,9 @@ def _resolve_api_key(provider: str, explicit_key: str = "") -> str:
 
 
 def _normalize_google_model(model: str, is_vertex: bool = False) -> str:
-    m = (model or "").strip()
-    # Map common aliases or version typos for Google Gemini endpoints
+    m = _clean_string(model)
+    # Maintain standard model names without downgrading current generation
     model_map = {
-        "gemini-2.5-flash-lite": "gemini-2.0-flash-lite",
-        "gemini-2.5-flash": "gemini-2.0-flash",
-        "gemini-2.5-pro": "gemini-1.5-pro",
         "gemini-2.0-flash-001": "gemini-2.0-flash",
         "gemini-1.5-pro-002": "gemini-1.5-pro-002" if is_vertex else "gemini-1.5-pro",
         "gemini-1.5-flash-002": "gemini-1.5-flash-002" if is_vertex else "gemini-1.5-flash",
@@ -264,8 +306,8 @@ def _normalize_google_model(model: str, is_vertex: bool = False) -> str:
 
 
 def _normalize_base_url(provider: str, base_url: str) -> str:
-    p = (provider or "openai").lower().strip()
-    url = (base_url or "").strip()
+    p = _clean_string(provider or "openai").lower()
+    url = _clean_string(base_url)
     if not url:
         if p == "vertex":
             project = VertexAuthManager.resolve_gcp_project()
@@ -447,10 +489,10 @@ class UnifiedAIClient:
         max_tokens: int = 4096,
         thinking_level: str = "medium",
     ):
-        self.provider = (provider or "openai").lower().strip()
-        self.model = (model or "gpt-4o").strip()
+        self.provider = _clean_string(provider or "openai").lower()
+        self.model = _clean_string(model or "gpt-4o")
         self.api_key = _resolve_api_key(self.provider, api_key)
-        self.base_url = _normalize_base_url(self.provider, base_url)
+        self.base_url = _normalize_base_url(self.provider, _clean_string(base_url))
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.thinking_level = thinking_level
@@ -591,20 +633,7 @@ class UnifiedAIClient:
             err_body = (await response.aread()).decode("utf-8", errors="replace")
             err_code = response.status_code
             await response.aclose()
-            err_msg = f"HTTP {err_code}: {response.reason_phrase or ''}"
-            if err_body:
-                try:
-                    parsed = json.loads(err_body)
-                    if isinstance(parsed, dict) and "error" in parsed:
-                        err_val = parsed["error"]
-                        if isinstance(err_val, dict) and "message" in err_val:
-                            err_msg = f"{self.provider.upper()} Error (HTTP {err_code}): {err_val['message']}"
-                        elif isinstance(err_val, str):
-                            err_msg = f"{self.provider.upper()} Error (HTTP {err_code}): {err_val}"
-                except Exception:
-                    err_msg = f"HTTP {err_code}: {err_body}"
-            if err_code in (401, 403):
-                err_msg = f"{err_msg} — Please verify your API key, permissions (Vertex AI User role), and billing status in AI Settings."
+            err_msg = extract_error_message(err_code, err_body, provider=self.provider)
             return None, err_msg, err_code
 
         response: Optional[httpx.Response] = None
@@ -613,15 +642,15 @@ class UnifiedAIClient:
             response, last_err_msg, err_code = await _open_stream(url, payload)
             if response is not None:
                 break
-            # If 404 or 400 on custom Vertex endpoint, seamless fallback to Google Generative Language
-            if err_code in (404, 400) and (
+            # If 404, 401, or 400 on custom/default Vertex endpoint, seamless fallback to Google Generative Language if using API key
+            if err_code in (404, 401, 400) and (
                 self.provider in ("vertex", "gemini") or "googleapis.com" in (url or "")
             ):
                 fallback_url = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
                 if fallback_url != url:
                     fallback_payload = dict(payload)
                     fallback_payload["model"] = _normalize_google_model(self.model, is_vertex=False)
-                    response, fb_err, _fb_code = await _open_stream(fallback_url, fallback_payload)
+                    response, fb_err, fb_code = await _open_stream(fallback_url, fallback_payload)
                     if response is not None:
                         break
                     last_err_msg = fb_err or last_err_msg
@@ -758,21 +787,6 @@ class UnifiedAIClient:
         if system_prompt:
             payload["system"] = system_prompt
 
-        def _map_anthropic_error(err_code: int, err_body: str) -> str:
-            err_msg = f"Anthropic HTTP {err_code}"
-            if err_body:
-                try:
-                    parsed = json.loads(err_body)
-                    if isinstance(parsed, dict) and "error" in parsed:
-                        err_val = parsed["error"]
-                        if isinstance(err_val, dict) and "message" in err_val:
-                            err_msg = f"Anthropic Error (HTTP {err_code}): {err_val['message']}"
-                        elif isinstance(err_val, str):
-                            err_msg = f"Anthropic Error (HTTP {err_code}): {err_val}"
-                except Exception:
-                    err_msg = f"Anthropic HTTP {err_code}: {err_body}"
-            return err_msg
-
         client = _get_http_client()
         response: Optional[httpx.Response] = None
         last_err_msg = "Unknown error"
@@ -797,7 +811,7 @@ class UnifiedAIClient:
             err_code = response.status_code
             await response.aclose()
             response = None
-            last_err_msg = _map_anthropic_error(err_code, err_body)
+            last_err_msg = extract_error_message(err_code, err_body, provider="anthropic")
             if err_code in (429, 502, 503, 504) and attempt < 2:
                 await asyncio.sleep(1.5 * (attempt + 1))
                 continue
