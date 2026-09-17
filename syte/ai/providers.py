@@ -1,43 +1,52 @@
 """Unified multi-provider AI client for Syte Autonomous AI Builder.
 
-Supports OpenAI, Anthropic, Google Gemini, DeepSeek, OpenRouter, and Local Ollama/vLLM endpoints.
+Supports Google Cloud Vertex AI, Google Gemini (AI Studio), OpenAI, Anthropic Claude,
+DeepSeek, OpenRouter, and Local Ollama/vLLM endpoints.
 
 Streaming uses a shared pooled ``httpx.AsyncClient`` (HTTP/2 + keep-alive) so
-provider tokens are consumed directly on the event loop. The previous
-``urllib`` implementation hopped to a worker thread for **every SSE line**,
-adding per-token scheduling latency and preventing connection reuse between
-turns — the dominant cost on the chat hot path.
+provider tokens are consumed directly on the event loop.
 """
 
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import os
-from typing import Any, AsyncGenerator, Dict, List, Optional
+import time
+from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
 
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding
 import httpx
 
 logger = logging.getLogger("syte.ai.providers")
 
 DEFAULT_BASE_URLS = {
+    "vertex": "https://{LOCATION}-aiplatform.googleapis.com/v1beta1/projects/{PROJECT}/locations/{LOCATION}/endpoints/openapi",
+    "gemini": "https://generativelanguage.googleapis.com/v1beta/openai",
     "openai": "https://api.openai.com/v1",
     "anthropic": "https://api.anthropic.com/v1",
-    "gemini": "https://generativelanguage.googleapis.com/v1beta/openai",
-    "vertex": "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/{PROJECT}/locations/us-central1/endpoints/openapi",
     "deepseek": "https://api.deepseek.com/v1",
     "openrouter": "https://openrouter.ai/api/v1",
     "ollama": "http://localhost:11434/v1",
 }
 
 ENV_KEY_MAP = {
-    "openrouter": ["OPENROUTER_API_KEY", "OPENROUTER_KEY", "OPEN_ROUTER_API_KEY"],
+    "vertex": [
+        "VERTEX_API_KEY",
+        "VERTEXAI_API_KEY",
+        "GOOGLE_APPLICATION_CREDENTIALS",
+        "GCP_API_KEY",
+        "GOOGLE_CLOUD_API_KEY",
+        "VERTEX_SERVICE_ACCOUNT_JSON",
+    ],
+    "gemini": ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
     "openai": ["OPENAI_API_KEY"],
     "anthropic": ["ANTHROPIC_API_KEY", "CLAUDE_API_KEY"],
-    "gemini": ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
-    "vertex": ["VERTEX_API_KEY", "VERTEXAI_API_KEY", "GOOGLE_APPLICATION_CREDENTIALS", "GCP_API_KEY"],
     "deepseek": ["DEEPSEEK_API_KEY"],
+    "openrouter": ["OPENROUTER_API_KEY", "OPENROUTER_KEY", "OPEN_ROUTER_API_KEY"],
 }
 
 
@@ -46,6 +55,151 @@ def _clean_api_key(key: str) -> str:
     if k.lower().startswith("bearer "):
         k = k[7:].strip()
     return k
+
+
+class VertexAuthManager:
+    """Manages GCP Service Account OAuth2 tokens, Vertex Express mode API keys, and Project/Location resolution."""
+
+    _token_cache: Dict[str, Tuple[str, float]] = {}  # cache_key -> (access_token, expiry_timestamp)
+
+    @classmethod
+    def resolve_gcp_project(cls, explicit_project: str = "", sa_info: Optional[dict] = None) -> str:
+        if explicit_project and explicit_project.strip():
+            return explicit_project.strip()
+        if sa_info and sa_info.get("project_id"):
+            return str(sa_info["project_id"]).strip()
+        for env_var in (
+            "VERTEX_PROJECT_ID",
+            "GOOGLE_CLOUD_PROJECT",
+            "GCP_PROJECT",
+            "PROJECT_ID",
+            "CLOUDSDK_CORE_PROJECT",
+        ):
+            val = os.environ.get(env_var, "").strip()
+            if val:
+                return val
+        return ""
+
+    @classmethod
+    def resolve_gcp_location(cls, explicit_location: str = "") -> str:
+        if explicit_location and explicit_location.strip():
+            return explicit_location.strip()
+        for env_var in (
+            "VERTEX_LOCATION",
+            "GOOGLE_CLOUD_REGION",
+            "GCP_REGION",
+            "CLOUDSDK_COMPUTE_REGION",
+        ):
+            val = os.environ.get(env_var, "").strip()
+            if val:
+                return val
+        return "us-central1"
+
+    @classmethod
+    def parse_service_account(cls, credential_str: str) -> Optional[dict]:
+        """Check if credential_str is raw JSON or a path to a service account JSON file."""
+        if not credential_str:
+            gac = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
+            if gac and os.path.isfile(gac):
+                try:
+                    with open(gac, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        if isinstance(data, dict) and data.get("type") == "service_account":
+                            return data
+                except Exception:
+                    pass
+            return None
+
+        # Check if credential_str is a file path
+        if os.path.isfile(credential_str):
+            try:
+                with open(credential_str, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, dict) and data.get("type") == "service_account":
+                        return data
+            except Exception:
+                pass
+
+        # Check if credential_str is raw JSON
+        trimmed = credential_str.strip()
+        if trimmed.startswith("{") and trimmed.endswith("}"):
+            try:
+                data = json.loads(trimmed)
+                if isinstance(data, dict) and data.get("type") == "service_account":
+                    return data
+            except Exception:
+                pass
+
+        return None
+
+    @classmethod
+    async def get_access_token_from_service_account(cls, sa_info: dict) -> Tuple[str, Optional[str]]:
+        """Mint a Google OAuth2 access token from service account RSA private key."""
+        client_email = sa_info.get("client_email")
+        private_key_pem = sa_info.get("private_key")
+        token_uri = sa_info.get("token_uri") or "https://oauth2.googleapis.com/token"
+
+        if not client_email or not private_key_pem:
+            return "", "Service account JSON is missing 'client_email' or 'private_key'."
+
+        cache_key = f"{client_email}:{sa_info.get('project_id', '')}"
+        now = time.time()
+        cached = cls._token_cache.get(cache_key)
+        if cached and cached[1] > now + 60:
+            return cached[0], None
+
+        try:
+            header = {"alg": "RS256", "typ": "JWT"}
+            claims = {
+                "iss": client_email,
+                "scope": "https://www.googleapis.com/auth/cloud-platform",
+                "aud": token_uri,
+                "exp": int(now) + 3600,
+                "iat": int(now),
+            }
+
+            def _b64url(data: bytes) -> str:
+                return base64.urlsafe_b64encode(data).decode("utf-8").rstrip("=")
+
+            header_b64 = _b64url(json.dumps(header).encode("utf-8"))
+            claims_b64 = _b64url(json.dumps(claims).encode("utf-8"))
+            signing_input = f"{header_b64}.{claims_b64}".encode("utf-8")
+
+            private_key = serialization.load_pem_private_key(
+                private_key_pem.encode("utf-8"),
+                password=None,
+            )
+            signature = private_key.sign(
+                signing_input,
+                padding.PKCS1v15(),
+                hashes.SHA256(),
+            )
+            jwt_assertion = f"{header_b64}.{claims_b64}.{_b64url(signature)}"
+
+            client = _get_http_client()
+            resp = await client.post(
+                token_uri,
+                data={
+                    "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+                    "assertion": jwt_assertion,
+                },
+                timeout=15.0,
+            )
+            if resp.status_code >= 400:
+                err_text = resp.text
+                return "", f"GCP OAuth2 Token Error (HTTP {resp.status_code}): {err_text}"
+
+            token_data = resp.json()
+            access_token = token_data.get("access_token", "")
+            expires_in = int(token_data.get("expires_in", 3600))
+            if not access_token:
+                return "", "No access_token returned by Google OAuth2 token endpoint."
+
+            cls._token_cache[cache_key] = (access_token, now + expires_in)
+            return access_token, None
+        except Exception as exc:
+            logger.exception("Failed to mint Vertex AI access token from Service Account")
+            return "", f"Failed to authenticate GCP Service Account: {exc}"
 
 
 # ---------------------------------------------------------------------------
@@ -95,7 +249,7 @@ def _resolve_api_key(provider: str, explicit_key: str = "") -> str:
     return ""
 
 
-def _normalize_google_model(model: str) -> str:
+def _normalize_google_model(model: str, is_vertex: bool = False) -> str:
     m = (model or "").strip()
     # Map common aliases or version typos for Google Gemini endpoints
     model_map = {
@@ -103,8 +257,8 @@ def _normalize_google_model(model: str) -> str:
         "gemini-2.5-flash": "gemini-2.0-flash",
         "gemini-2.5-pro": "gemini-1.5-pro",
         "gemini-2.0-flash-001": "gemini-2.0-flash",
-        "gemini-1.5-pro-002": "gemini-1.5-pro",
-        "gemini-1.5-flash-002": "gemini-1.5-flash",
+        "gemini-1.5-pro-002": "gemini-1.5-pro-002" if is_vertex else "gemini-1.5-pro",
+        "gemini-1.5-flash-002": "gemini-1.5-flash-002" if is_vertex else "gemini-1.5-flash",
     }
     return model_map.get(m, m)
 
@@ -114,9 +268,10 @@ def _normalize_base_url(provider: str, base_url: str) -> str:
     url = (base_url or "").strip()
     if not url:
         if p == "vertex":
-            project = os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("GCP_PROJECT") or os.environ.get("PROJECT_ID") or ""
+            project = VertexAuthManager.resolve_gcp_project()
+            location = VertexAuthManager.resolve_gcp_location()
             if project:
-                return f"https://us-central1-aiplatform.googleapis.com/v1beta1/projects/{project}/locations/us-central1/endpoints/openapi"
+                return f"https://{location}-aiplatform.googleapis.com/v1beta1/projects/{project}/locations/{location}/endpoints/openapi"
             return "https://generativelanguage.googleapis.com/v1beta/openai"
         return DEFAULT_BASE_URLS.get(p, "https://api.openai.com/v1").rstrip("/")
     url = url.rstrip("/")
@@ -127,12 +282,15 @@ def _normalize_base_url(provider: str, base_url: str) -> str:
         url = url[:-len("/messages")].rstrip("/")
 
     if p in ("vertex", "gemini") or "aiplatform.googleapis.com" in url or "generativelanguage.googleapis.com" in url:
+        project = VertexAuthManager.resolve_gcp_project()
+        location = VertexAuthManager.resolve_gcp_location()
         if "{PROJECT}" in url or "{project}" in url:
-            project = os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("GCP_PROJECT") or os.environ.get("PROJECT_ID") or ""
             if project:
                 url = url.replace("{PROJECT}", project).replace("{project}", project)
             else:
                 return "https://generativelanguage.googleapis.com/v1beta/openai"
+        if "{LOCATION}" in url or "{location}" in url:
+            url = url.replace("{LOCATION}", location).replace("{location}", location)
 
         # If user entered an AI Studio project (gen-lang-client-...) or locations/global, route to generativelanguage
         if "gen-lang-client-" in url or "locations/global" in url:
@@ -276,7 +434,6 @@ def sanitize_openai_messages(messages: List[Dict[str, Any]], system_prompt: Opti
     return sanitized
 
 
-
 class UnifiedAIClient:
     """Dispatches completions and tool calls to any supported LLM provider."""
 
@@ -300,10 +457,11 @@ class UnifiedAIClient:
 
     async def test_connection(self) -> dict[str, Any]:
         """Test API connectivity and model availability."""
-        if not self.api_key and self.provider not in ("ollama", "custom"):
+        has_sa = self.provider == "vertex" and VertexAuthManager.parse_service_account(self.api_key) is not None
+        if not self.api_key and not has_sa and self.provider not in ("ollama", "custom"):
             return {
                 "ok": False,
-                "error": f"Missing API key for {self.provider.upper()}. Please enter your API key in AI Settings.",
+                "error": f"Missing API key or credentials for {self.provider.upper()}. Please enter your API key or Service Account JSON in AI Settings.",
                 "model": self.model,
                 "provider": self.provider,
             }
@@ -315,7 +473,7 @@ class UnifiedAIClient:
                 if chunk.get("type") == "token":
                     full_reply += chunk.get("content", "")
                 elif chunk.get("type") == "error":
-                    return {"ok": False, "error": chunk.get("content", "Connection error")}
+                    return {"ok": False, "error": chunk.get("content", "Connection error"), "model": self.model, "provider": self.provider}
             return {"ok": True, "reply": full_reply.strip() or "OK", "model": self.model, "provider": self.provider}
         except Exception as exc:
             return {"ok": False, "error": str(exc), "model": self.model, "provider": self.provider}
@@ -340,18 +498,53 @@ class UnifiedAIClient:
         tools: Optional[List[Dict[str, Any]]] = None,
         system_prompt: Optional[str] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
-        if not self.api_key and self.provider not in ("ollama", "custom"):
+        # Handle Vertex AI explicit credentials and token resolution
+        is_vertex = self.provider == "vertex"
+        sa_info = None
+        vertex_access_token = ""
+
+        if is_vertex:
+            sa_info = VertexAuthManager.parse_service_account(self.api_key)
+            if sa_info:
+                token, err = await VertexAuthManager.get_access_token_from_service_account(sa_info)
+                if err or not token:
+                    yield {
+                        "type": "error",
+                        "content": f"Vertex AI Service Account authentication failed: {err or 'Unable to generate access token'}",
+                    }
+                    return
+                vertex_access_token = token
+            elif self.api_key.startswith("ya29."):
+                vertex_access_token = self.api_key
+
+        if not self.api_key and not vertex_access_token and self.provider not in ("ollama", "custom"):
             yield {
                 "type": "error",
-                "content": f"Missing API key for {self.provider.upper()}. Please configure your API key in AI Settings.",
+                "content": f"Missing API key or credentials for {self.provider.upper()}. Please configure your API key or Service Account in AI Settings.",
             }
             return
 
         effective_model = self.model
         if self.provider in ("vertex", "gemini") or "generativelanguage.googleapis.com" in (self.base_url or ""):
-            effective_model = _normalize_google_model(self.model)
+            effective_model = _normalize_google_model(self.model, is_vertex=is_vertex)
 
-        url = f"{(self.base_url or '').rstrip('/')}/chat/completions"
+        # Build dynamic base url for Vertex AI if needed
+        base_url = self.base_url or ""
+        if is_vertex and (not base_url or "aiplatform.googleapis.com" in base_url):
+            project = VertexAuthManager.resolve_gcp_project(sa_info=sa_info)
+            location = VertexAuthManager.resolve_gcp_location()
+            if not project and not self.api_key.startswith("AIza") and not self.api_key.startswith("AQ."):
+                yield {
+                    "type": "error",
+                    "content": "Missing Google Cloud Project ID for Vertex AI. Please configure GOOGLE_CLOUD_PROJECT in environment or provide a GCP Service Account JSON with project_id.",
+                }
+                return
+            if project:
+                base_url = f"https://{location}-aiplatform.googleapis.com/v1beta1/projects/{project}/locations/{location}/endpoints/openapi"
+            else:
+                base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
+
+        url = f"{(base_url or '').rstrip('/')}/chat/completions"
         headers = {
             "Content-Type": "application/json",
             "Accept": "text/event-stream",
@@ -359,7 +552,10 @@ class UnifiedAIClient:
             "X-Title": "Syte AI Builder",
             "User-Agent": "Syte-Autonomous-Agent/1.0",
         }
-        if self.api_key:
+
+        if vertex_access_token:
+            headers["Authorization"] = f"Bearer {vertex_access_token}"
+        elif self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
             if self.provider in ("gemini", "vertex") or self.api_key.startswith("AIza") or self.api_key.startswith("AQ."):
                 headers["x-goog-api-key"] = self.api_key
@@ -388,7 +584,7 @@ class UnifiedAIClient:
                 )
             except httpx.HTTPError as exc:
                 return None, f"Connection failed: {exc}", 0
-            except Exception as exc:  # payload/serialization or transport surprises
+            except Exception as exc:
                 return None, f"Connection failed: {exc}", 0
             if response.status_code < 400:
                 return response, "", 0
@@ -408,7 +604,7 @@ class UnifiedAIClient:
                 except Exception:
                     err_msg = f"HTTP {err_code}: {err_body}"
             if err_code in (401, 403):
-                err_msg = f"{err_msg} — Please verify your API key and permissions in AI Settings."
+                err_msg = f"{err_msg} — Please verify your API key, permissions (Vertex AI User role), and billing status in AI Settings."
             return None, err_msg, err_code
 
         response: Optional[httpx.Response] = None
@@ -424,7 +620,7 @@ class UnifiedAIClient:
                 fallback_url = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
                 if fallback_url != url:
                     fallback_payload = dict(payload)
-                    fallback_payload["model"] = _normalize_google_model(self.model)
+                    fallback_payload["model"] = _normalize_google_model(self.model, is_vertex=False)
                     response, fb_err, _fb_code = await _open_stream(fallback_url, fallback_payload)
                     if response is not None:
                         break
@@ -441,9 +637,7 @@ class UnifiedAIClient:
             yield {"type": "error", "content": last_err_msg}
             return
 
-        # Consume the provider SSE stream directly on the event loop — no
-        # thread hop per line, so each token reaches the client as soon as
-        # the provider flushes it.
+        # Consume the provider SSE stream directly on the event loop
         tool_calls_acc: dict[int, dict[str, Any]] = {}
 
         try:

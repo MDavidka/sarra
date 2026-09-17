@@ -14519,6 +14519,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 }
 
 .svc-ai-dropdown-prov-badge.vertex { background: #fee2e2; color: #dc2626; }
+.svc-ai-dropdown-prov-badge.gemini { background: #dbeafe; color: #2563eb; }
 .svc-ai-dropdown-prov-badge.openai { background: #dcfce7; color: #16a34a; }
 .svc-ai-dropdown-prov-badge.anthropic { background: #ffedd5; color: #ea580c; }
 .svc-ai-dropdown-prov-badge.deepseek { background: #e0e7ff; color: #4f46e5; }

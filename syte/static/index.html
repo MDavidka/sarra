@@ -2736,10 +2736,18 @@
               <legend><i data-lucide="cpu"></i><span>Step 1: Choose Provider Type</span></legend>
               <div class="svc-ai-provider-tiles-grid" id="svc-ai-provider-tiles">
                 <div class="svc-ai-provider-tile active" data-provider="vertex">
+                  <div class="svc-ai-tile-icon-wrap google"><i data-lucide="cloud"></i></div>
+                  <div class="svc-ai-tile-info">
+                    <strong>Google Cloud Vertex AI</strong>
+                    <small>Gemini 2.5/2.0, Claude, Llama on GCP</small>
+                  </div>
+                  <i data-lucide="check" class="svc-ai-tile-check"></i>
+                </div>
+                <div class="svc-ai-provider-tile" data-provider="gemini">
                   <div class="svc-ai-tile-icon-wrap google"><i data-lucide="sparkles"></i></div>
                   <div class="svc-ai-tile-info">
-                    <strong>Google Vertex AI / Gemini</strong>
-                    <small>Gemini 2.0 Flash, Flash-Lite, Pro</small>
+                    <strong>Google Gemini (AI Studio)</strong>
+                    <small>Gemini 2.5 Flash, 2.0 Flash, 1.5 Pro</small>
                   </div>
                   <i data-lucide="check" class="svc-ai-tile-check"></i>
                 </div>
@@ -2802,9 +2810,14 @@
                 <label for="svc-ai-setting-model">Selected Model ID</label>
                 <input id="svc-ai-setting-model" placeholder="Enter or select model" list="svc-ai-preset-models" autocomplete="off" required value="gemini-2.0-flash">
                 <datalist id="svc-ai-preset-models">
+                  <option value="gemini-2.5-flash">
+                  <option value="gemini-2.5-pro">
                   <option value="gemini-2.0-flash">
                   <option value="gemini-2.0-flash-lite">
-                  <option value="gemini-1.5-pro">
+                  <option value="gemini-1.5-pro-002">
+                  <option value="gemini-1.5-flash-002">
+                  <option value="claude-3-7-sonnet@20250219">
+                  <option value="claude-3-5-sonnet@20241022">
                   <option value="gpt-4o">
                   <option value="gpt-4o-mini">
                   <option value="o3-mini">

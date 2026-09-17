@@ -11419,11 +11419,23 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
 
   const PRESET_MODELS = {
     vertex: [
+      'gemini-2.5-flash',
+      'gemini-2.5-pro',
       'gemini-2.0-flash',
       'gemini-2.0-flash-lite',
       'gemini-1.5-pro-002',
+      'gemini-1.5-flash-002',
+      'claude-3-7-sonnet@20250219',
       'claude-3-5-sonnet@20241022',
       'meta/llama-3.3-70b-instruct-maas',
+    ],
+    gemini: [
+      'gemini-2.5-flash',
+      'gemini-2.5-pro',
+      'gemini-2.0-flash',
+      'gemini-2.0-flash-lite',
+      'gemini-1.5-pro',
+      'gemini-1.5-flash',
     ],
     openai: [
       'gpt-4o',
@@ -11492,9 +11504,14 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
 
       // Update placeholders and hints
       if (prov === 'vertex') {
-        if (modelInput) modelInput.value = 'gemini-2.0-flash';
-        if (baseUrlInput) { baseUrlInput.placeholder = 'https://generativelanguage.googleapis.com/v1beta'; }
-        if (baseUrlHint) { baseUrlHint.textContent = 'Standard Google Vertex / Gemini endpoint.'; }
+        if (modelInput) modelInput.value = 'gemini-2.5-flash';
+        if (baseUrlInput) { baseUrlInput.placeholder = 'Optional: custom Vertex endpoint URL'; }
+        if (baseUrlHint) { baseUrlHint.textContent = 'Google Cloud Vertex AI endpoint. Auto-resolves project & region from env or SA credentials.'; }
+        if (apiKeyInput) { apiKeyInput.placeholder = 'Service Account JSON, OAuth2 token, or Vertex API Key'; }
+      } else if (prov === 'gemini') {
+        if (modelInput) modelInput.value = 'gemini-2.5-flash';
+        if (baseUrlInput) { baseUrlInput.placeholder = 'https://generativelanguage.googleapis.com/v1beta/openai'; }
+        if (baseUrlHint) { baseUrlHint.textContent = 'Standard Google AI Studio Gemini API endpoint.'; }
         if (apiKeyInput) { apiKeyInput.placeholder = 'AIzaSy... (Gemini API Key)'; }
       } else if (prov === 'openai') {
         if (modelInput) modelInput.value = 'gpt-4o';
