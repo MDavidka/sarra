@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import datetime
 import json
 import logging
 import os
@@ -183,6 +184,29 @@ class VertexAuthManager:
 
         return None
 
+    _server_time_offset: float = 0.0
+    _last_time_sync: float = 0.0
+
+    @classmethod
+    async def _get_accurate_time(cls) -> float:
+        """Get network-synchronized epoch timestamp to compensate for VM clock drift."""
+        now = time.time()
+        if cls._last_time_sync > 0 and (now - cls._last_time_sync) < 300:
+            return now + cls._server_time_offset
+        try:
+            client = _get_http_client()
+            resp = await client.head("https://www.google.com", timeout=5.0)
+            date_header = resp.headers.get("date")
+            if date_header:
+                server_dt = datetime.datetime.strptime(date_header, "%a, %d %b %Y %H:%M:%S GMT").replace(tzinfo=datetime.timezone.utc)
+                server_epoch = server_dt.timestamp()
+                cls._server_time_offset = server_epoch - now
+                cls._last_time_sync = now
+                return server_epoch
+        except Exception:
+            pass
+        return now
+
     @classmethod
     async def get_access_token_from_service_account(cls, sa_info: dict) -> Tuple[str, Optional[str]]:
         """Mint a Google OAuth2 access token from service account RSA private key."""
@@ -194,7 +218,7 @@ class VertexAuthManager:
             return "", "Service account JSON is missing 'client_email' or 'private_key'."
 
         cache_key = f"{client_email}:{sa_info.get('project_id', '')}"
-        now = time.time()
+        now = await cls._get_accurate_time()
         cached = cls._token_cache.get(cache_key)
         if cached and cached[1] > now + 60:
             return cached[0], None
@@ -206,7 +230,7 @@ class VertexAuthManager:
                 "scope": "https://www.googleapis.com/auth/cloud-platform",
                 "aud": token_uri,
                 "exp": int(now) + 3600,
-                "iat": int(now),
+                "iat": int(now) - 30,
             }
 
             def _b64url(data: bytes) -> str:
@@ -350,7 +374,7 @@ def _get_http_client() -> httpx.AsyncClient:
     loop_id = id(asyncio.get_running_loop())
     if _http_client is None or _http_client.is_closed or _http_client_loop_id != loop_id:
         _http_client = httpx.AsyncClient(
-            http2=True,
+            http2=False,
             timeout=_STREAM_TIMEOUT,
             limits=httpx.Limits(max_connections=100, max_keepalive_connections=20, keepalive_expiry=60.0),
             follow_redirects=True,
