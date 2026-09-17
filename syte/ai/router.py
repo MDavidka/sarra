@@ -20,9 +20,16 @@ from syte.sse_core import SSE_HEADERS
 from syte.database import (
     clear_ai_chat_history,
     get_ai_builder_settings,
+    get_omni_model,
     get_project,
+    get_user_credits,
     list_ai_chat_messages,
+    list_ai_usage_records,
+    list_custom_providers,
+    list_omni_models,
     save_ai_builder_settings,
+    sync_handshake_providers,
+    upsert_omni_model,
 )
 
 router = APIRouter(tags=["AI Builder"])
@@ -801,5 +808,174 @@ async def rebuild_project_deep_focus_endpoint(
         "deep_focus": fresh_df,
         "project_memory": fresh_df,
     }
+
+
+# ============================================================================
+# Sycord Omni AI Router: Model Catalog, SWE Benchmark, Credits, & Handshake
+# ============================================================================
+
+class OmniSelectModelRequest(BaseModel):
+    project_id: str = "global"
+    model_id: str
+    provider: Optional[str] = None
+
+
+class HandshakeSyncRequest(BaseModel):
+    token: Optional[str] = None
+    providers: List[Dict[str, Any]] = []
+    models: List[Dict[str, Any]] = []
+
+
+@router.get("/api/ai/omni/models")
+async def get_omni_models_catalog(
+    search: Optional[str] = "",
+    provider: Optional[str] = "",
+    tag: Optional[str] = "",
+    project_id: Optional[str] = "global",
+):
+    """Return the Omni AI Router models library with SWE benchmarks, pricing, and active status."""
+    models = await list_omni_models(search=search or "", provider=provider or "", tag=tag or "")
+    all_models = await list_omni_models()
+    top_models = [m for m in all_models if m.get("is_top")][:6]
+    if not top_models:
+        top_models = sorted(all_models, key=lambda x: x.get("swe_score", 0), reverse=True)[:5]
+
+    current_settings = await get_ai_builder_settings(project_id or "global")
+    active_model = current_settings.get("model", "gemini-2.5-flash")
+    active_provider = current_settings.get("provider", "vertex")
+
+    # Mark active model in list
+    for m in models:
+        m["is_active"] = (m["id"] == active_model or (m["id"].endswith(active_model) and m["provider"] in (active_provider, "google" if active_provider == "vertex" else active_provider)))
+
+    credits_data = await get_user_credits("default_user")
+
+    return {
+        "ok": True,
+        "models": models,
+        "top_swe_models": top_models,
+        "top_models": top_models,
+        "total_count": len(models),
+        "active_model": active_model,
+        "active_provider": active_provider,
+        "credits": credits_data,
+        "user_credits": credits_data,
+    }
+
+
+@router.post("/api/ai/omni/select-model")
+async def select_omni_model(body: OmniSelectModelRequest):
+    """Set active model and provider for the project from the Omni Model Library."""
+    target_project_id = body.project_id or "global"
+    model_info = await get_omni_model(body.model_id)
+
+    inferred_provider = body.provider
+    if not inferred_provider:
+        if model_info:
+            p = model_info.get("provider", "google").lower()
+            inferred_provider = "vertex" if p in ("google", "vertex") else p
+        else:
+            inferred_provider = "vertex" if "gemini" in body.model_id.lower() else "openai"
+
+    current = await get_ai_builder_settings(target_project_id)
+    saved_providers = current.get("saved_providers") or []
+
+    # Update or insert into saved_providers
+    existing_idx = next((i for i, p in enumerate(saved_providers) if p.get("provider") == inferred_provider and p.get("model") == body.model_id), -1)
+    if existing_idx >= 0:
+        pass
+    else:
+        # Check if matching provider entry exists to inherit credentials
+        matching = next((p for p in saved_providers if p.get("provider") == inferred_provider), None)
+        saved_providers.insert(0, {
+            "id": f"omni_{int(time.time())}",
+            "name": f"{inferred_provider.upper()} ({body.model_id})",
+            "provider": inferred_provider,
+            "model": body.model_id,
+            "models_list": [body.model_id],
+            "api_key": matching.get("api_key") if matching else current.get("api_key", ""),
+            "base_url": matching.get("base_url") if matching else current.get("base_url", ""),
+            "gcp_project": matching.get("gcp_project") if matching else current.get("gcp_project", ""),
+            "gcp_location": matching.get("gcp_location") if matching else current.get("gcp_location", "us-central1"),
+        })
+
+    updated = await save_ai_builder_settings(
+        target_project_id,
+        {
+            "provider": inferred_provider,
+            "model": body.model_id,
+            "saved_providers": saved_providers,
+        },
+    )
+
+    return {
+        "ok": True,
+        "message": f"Active model switched to {body.model_id} ({inferred_provider})",
+        "settings": updated,
+        "active_model": body.model_id,
+        "model": body.model_id,
+        "provider": inferred_provider,
+    }
+
+
+@router.get("/api/ai/user/credits")
+async def get_user_credits_endpoint(user_id: str = "default_user"):
+    """Get user starting credit ($5.00), current balance, and recent token usage records."""
+    credits_data = await get_user_credits(user_id)
+    history = await list_ai_usage_records(user_id=user_id, limit=25)
+    return {
+        "ok": True,
+        "credits": credits_data,
+        "history": history,
+        "records": history,
+    }
+
+
+@router.post("/api/ai/handshake/sync-providers")
+async def sync_providers_handshake(body: HandshakeSyncRequest):
+    """Secure handshake endpoint to transfer custom & global providers to this VM instance."""
+    result = await sync_handshake_providers({
+        "providers": body.providers,
+        "models": body.models,
+    })
+    total_custom = len(await list_custom_providers())
+    total_models = len(await list_omni_models())
+    return {
+        "ok": True,
+        "message": "Handshake synchronization completed successfully.",
+        "synced_providers_count": result.get("imported_providers") or total_custom,
+        "synced_models_count": result.get("imported_models") or total_models,
+        "timestamp": int(time.time()),
+        **result,
+    }
+
+
+@router.get("/api/ai/handshake/status")
+async def get_handshake_status():
+    """Check connectivity and list synced custom providers on this VM."""
+    custom_provs = await list_custom_providers()
+    omni_models = await list_omni_models()
+    return {
+        "ok": True,
+        "status": "connected",
+        "vm_status": "connected",
+        "vm_id": "syte-local-vm",
+        "custom_providers_count": len(custom_provs),
+        "custom_providers": custom_provs,
+        "total_omni_models": len(omni_models),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@router.post("/api/ai/admin/models")
+async def admin_upsert_model(model_data: Dict[str, Any]):
+    """Admin endpoint to add or update models and SWE benchmark scores in the catalog."""
+    saved = await upsert_omni_model(model_data)
+    return {
+        "ok": True,
+        "message": f"Model {saved.get('id')} saved successfully.",
+        "model": saved,
+    }
+
 
 

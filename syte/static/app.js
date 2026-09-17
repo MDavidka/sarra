@@ -5728,7 +5728,11 @@ document.addEventListener('DOMContentLoaded', () => {
     loginWithBootstrapKey(input.value);
   });
   if (tabApi) tabApi.addEventListener('click', () => switchLoginTab('api'));
-  if (tabKey) tabKey.addEventListener('click', () => switchLoginTab('key'));
+  const headerCreditsBtn = document.getElementById('svc-ai-credits-pill-btn');
+  if (headerCreditsBtn) {
+    headerCreditsBtn.addEventListener('click', () => openCreditsModal());
+    void refreshUserCreditsBadge();
+  }
   document.addEventListener('keydown', (e) => {
     const screen = document.getElementById('login-screen');
     if (e.key === 'Escape' && screen && !screen.classList.contains('hidden')) hideLoginScreen();
@@ -9854,6 +9858,19 @@ function processAIServerEvent(data, project, messagesList, state) {
     messagesList.appendChild(stopEl);
     refreshIcons();
     smartScrollToBottom(messagesList);
+  } else if (eventType === 'credits_update') {
+    const balance = Number(data.balance);
+    const balanceText = isNaN(balance) ? '$5.00' : `$${balance.toFixed(2)}`;
+    const badgeVal = document.getElementById('svc-ai-credits-badge-val');
+    if (badgeVal) badgeVal.textContent = balanceText;
+    const omniVal = document.getElementById('svc-ai-omni-credit-val');
+    if (omniVal) omniVal.textContent = balanceText;
+    const summaryBal = document.getElementById('svc-ai-credits-summary-balance');
+    if (summaryBal) summaryBal.textContent = balanceText;
+    const summaryUsed = document.getElementById('svc-ai-credits-summary-used');
+    if (summaryUsed && data.total_used !== undefined) {
+      summaryUsed.textContent = `$${Number(data.total_used).toFixed(2)}`;
+    }
   } else if (eventType === 'done' || eventType === 'session_idle') {
     clearLiveMarkers();
     setAIChatSendingState(false, project);
@@ -11102,144 +11119,551 @@ async function renderAIChatWorkspace(project) {
     settingsBtn.onclick = () => openAISettingsModal(selectedAIProject || currentProject, 'saved');
   }
   if (modelSelectorBtn) {
-    modelSelectorBtn.onclick = () => openModelSelectorDropdown(selectedAIProject || currentProject, modelSelectorBtn);
+    modelSelectorBtn.onclick = () => openOmniRouterModal(selectedAIProject || currentProject);
   }
+
+  const creditsPillBtn = document.getElementById('svc-ai-credits-pill-btn');
+  if (creditsPillBtn) {
+    creditsPillBtn.onclick = () => openCreditsModal();
+  }
+  void refreshUserCreditsBadge();
 
   refreshIcons();
 }
 
-async function openModelSelectorDropdown(project, triggerBtn) {
-  const currentProject = project || selectedAIProject || { id: 'global', name: 'Global Platform' };
+function getSvglIcon(brandOrModel, size = 18) {
+  const key = String(brandOrModel || '').toLowerCase();
   
-  // Remove any existing dropdown
-  const oldMenu = document.getElementById('svc-ai-model-quick-dropdown');
-  if (oldMenu) {
-    oldMenu.remove();
-    return;
+  if (key.includes('google') || key.includes('gemini') || key.includes('vertex') || key.includes('gemma')) {
+    return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" class="svgl-icon svgl-google" style="display:inline-block; vertical-align:middle;">
+      <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"/>
+      <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z"/>
+      <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.99 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/>
+      <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+    </svg>`;
   }
+  if (key.includes('anthropic') || key.includes('claude') || key.includes('sonnet') || key.includes('opus') || key.includes('haiku')) {
+    return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="#D97706" class="svgl-icon svgl-anthropic" style="display:inline-block; vertical-align:middle;">
+      <path d="M17.472 3.667h-3.874L20.89 20.333h3.874L17.472 3.667zm-10.944 0L0 20.333h3.874l1.658-4.482h6.988l1.658 4.482h3.874L11.528 3.667H6.528zm.972 9.074l2.028-5.482 2.028 5.482H7.5z"/>
+    </svg>`;
+  }
+  if (key.includes('openai') || key.includes('gpt') || key.includes('o3') || key.includes('o1')) {
+    return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="#10B981" class="svgl-icon svgl-openai" style="display:inline-block; vertical-align:middle;">
+      <path d="M22.282 9.821a5.985 5.985 0 0 0-.516-4.91 6.046 6.046 0 0 0-6.51-2.9A6.065 6.065 0 0 0 4.981 4.18a5.985 5.985 0 0 0-3.998 2.9 6.046 6.046 0 0 0 .743 7.097 5.98 5.98 0 0 0 .51 4.911 6.051 6.051 0 0 0 6.515 2.9A5.985 5.985 0 0 0 13.26 24a6.056 6.056 0 0 0 5.772-4.206 5.99 5.99 0 0 0 3.997-2.9 6.056 6.056 0 0 0-.747-7.073zM13.26 22.43a4.476 4.476 0 0 1-2.876-1.04l.141-.081 4.779-2.758a.795.795 0 0 0 .392-.681v-6.737l2.02 1.168a.071.071 0 0 1 .038.052v5.583a4.504 4.504 0 0 1-4.494 4.494zM3.6 18.304a4.47 4.47 0 0 1-.535-3.014l.142.085 4.783 2.759a.771.771 0 0 0 .78 0l5.843-3.369v2.332a.08.08 0 0 1-.033.062L9.74 19.95a4.5 4.5 0 0 1-6.14-1.646zM2.34 7.896a4.485 4.485 0 0 1 2.366-1.973V11.6a.766.766 0 0 0 .388.676l5.815 3.355-2.02 1.168a.076.076 0 0 1-.071 0l-4.83-2.786A4.504 4.504 0 0 1 2.34 7.872zm16.597 3.855l-5.833-3.387L15.119 7.2a.076.076 0 0 1 .071 0l4.83 2.791a4.494 4.494 0 0 1-.676 8.105v-5.678a.79.79 0 0 0-.407-.667zm2.01-3.023l-.141-.085-4.774-2.782a.776.776 0 0 0-.785 0L9.409 9.23V6.897a.066.066 0 0 1 .028-.061l4.83-2.787a4.5 4.5 0 0 1 6.68 4.66zM8.307 15.356l-2.02-1.164a.08.08 0 0 1-.038-.057V8.552a4.5 4.5 0 0 1 7.37-3.454l-.142.08-4.778 2.758a.795.795 0 0 0-.392.681zm1.092-2.58l2.6-1.5 2.6 1.5v3l-2.6 1.5-2.6-1.5z"/>
+    </svg>`;
+  }
+  if (key.includes('deepseek')) {
+    return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="#3B82F6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svgl-icon svgl-deepseek" style="display:inline-block; vertical-align:middle;">
+      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 14.93V18c0 .55-.45 1-1 1s-1-.45-1-1v-1.07c-2.83-.48-5-2.94-5-5.93 0-.55.45-1 1-1s1 .45 1 1c0 2.21 1.79 4 4 4s4-1.79 4-4c0-.55.45-1 1-1s1 .45 1 1c0 2.99-2.17 5.45-5 5.93zM12 6c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3z"/>
+    </svg>`;
+  }
+  if (key.includes('meta') || key.includes('llama')) {
+    return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="#0284C7" class="svgl-icon svgl-meta" style="display:inline-block; vertical-align:middle;">
+      <path d="M12 16.5c-2.4 0-4.4-1.8-4.9-4.2.5-2.4 2.5-4.3 4.9-4.3s4.4 1.9 4.9 4.3c-.5 2.4-2.5 4.2-4.9 4.2zm9.9-4.5C21.4 6.7 17.1 2.8 12 2.8S2.6 6.7 2.1 12c.5 5.3 4.8 9.2 9.9 9.2s9.4-3.9 9.9-9.2zm-2.1 0c-.5 4.2-4.1 7.3-8.8 7.3s-8.3-3.1-8.8-7.3c.5-4.2 4.1-7.3 8.8-7.3s8.3 3.1 8.8 7.3z"/>
+    </svg>`;
+  }
+  if (key.includes('mistral')) {
+    return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="#F97316" class="svgl-icon svgl-mistral" style="display:inline-block; vertical-align:middle;">
+      <path d="M3 3h4v4H3zm14 0h4v4h-4zM3 10h4v4H3zm7 0h4v4h-4zm7 0h4v4h-4zm-7 7h4v4h-4zM3 17h4v4H3zm14 0h4v4h-4z"/>
+    </svg>`;
+  }
+  if (key.includes('qwen') || key.includes('alibaba')) {
+    return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="#8B5CF6" class="svgl-icon svgl-qwen" style="display:inline-block; vertical-align:middle;">
+      <path d="M12 2L2 7l10 5 10-5-10-5zm0 9.5L4.5 7.75 12 4l7.5 3.75L12 11.5zM2 17l10 5 10-5v-3l-10 5-10-5v3zm0-5l10 5 10-5V9l-10 5-10-5v3z"/>
+    </svg>`;
+  }
+  if (key.includes('glm') || key.includes('zhipu')) {
+    return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="#EC4899" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svgl-icon svgl-glm" style="display:inline-block; vertical-align:middle;">
+      <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+      <polyline points="2 17 12 22 22 17"></polyline>
+      <polyline points="2 12 12 17 22 12"></polyline>
+    </svg>`;
+  }
+  if (key.includes('minimax')) {
+    return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="#06B6D4" stroke-width="2" class="svgl-icon svgl-minimax" style="display:inline-block; vertical-align:middle;">
+      <rect x="2" y="4" width="20" height="16" rx="4"></rect>
+      <path d="M7 15V9l5 4 5-4v6"></path>
+    </svg>`;
+  }
+  return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="#A1A1AA" stroke-width="2" class="svgl-icon svgl-cpu" style="display:inline-block; vertical-align:middle;">
+    <rect x="4" y="4" width="16" height="16" rx="2"></rect>
+    <rect x="9" y="9" width="6" height="6"></rect>
+    <path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"></path>
+  </svg>`;
+}
 
-  // Fetch settings to get saved_providers and active model
-  let savedProviders = [];
-  let currentModel = 'gpt-4o';
-  let currentProvider = 'openai';
+async function refreshUserCreditsBadge() {
   try {
-    const res = await api(`/projects/${encodeURIComponent(currentProject.id)}/ai/settings`);
-    if (res.ok && res.settings) {
-      savedProviders = res.settings.saved_providers || [];
-      currentModel = res.settings.model || 'gpt-4o';
-      currentProvider = res.settings.provider || 'openai';
+    const res = await api('/ai/user/credits');
+    if (res && res.ok && res.credits) {
+      const bal = Number(res.credits.balance);
+      const str = isNaN(bal) ? '$5.00' : `$${bal.toFixed(2)}`;
+      const badgeVal = document.getElementById('svc-ai-credits-badge-val');
+      if (badgeVal) badgeVal.textContent = str;
+      const omniVal = document.getElementById('svc-ai-omni-credit-val');
+      if (omniVal) omniVal.textContent = str;
+      const summaryBal = document.getElementById('svc-ai-credits-summary-balance');
+      if (summaryBal) summaryBal.textContent = str;
+      const summaryGranted = document.getElementById('svc-ai-credits-summary-granted');
+      if (summaryGranted) summaryGranted.textContent = `$${Number(res.credits.total_granted || 5).toFixed(2)}`;
+      const summaryUsed = document.getElementById('svc-ai-credits-summary-used');
+      if (summaryUsed) summaryUsed.textContent = `$${Number(res.credits.total_used || 0).toFixed(2)}`;
     }
   } catch (_) {}
+}
 
-  const dropdown = document.createElement('div');
-  dropdown.id = 'svc-ai-model-quick-dropdown';
-  dropdown.className = 'svc-ai-model-quick-dropdown';
+let omniCatalogData = null;
+let omniActiveFilter = 'all';
+let omniSearchQuery = '';
 
-  let itemsHtml = '';
-  if (!savedProviders.length) {
-    itemsHtml = `
-      <div class="svc-ai-dropdown-item active" data-provider="${escapeHtml(currentProvider)}" data-model="${escapeHtml(currentModel)}">
-        <div class="svc-ai-dropdown-item-left">
-          <div class="svc-ai-dropdown-prov-badge ${escapeHtml(currentProvider)}">${escapeHtml(currentProvider)}</div>
-          <div class="svc-ai-dropdown-model-name">${escapeHtml(currentModel)}</div>
-        </div>
-        <i data-lucide="check" class="svc-ai-dropdown-check"></i>
-      </div>
-    `;
-  } else {
-    itemsHtml = savedProviders.map(p => {
-      const isActive = (p.model === currentModel && (p.provider === currentProvider || !p.provider));
-      const prov = p.provider || 'openai';
+async function openOmniRouterModal(project) {
+  const currentProject = project || selectedAIProject || { id: 'global', name: 'Global Platform' };
+  const modal = document.getElementById('svc-ai-omni-router-modal');
+  const backdrop = document.getElementById('svc-ai-omni-backdrop');
+  const closeBtn = document.getElementById('svc-ai-omni-close-btn');
+  const creditChip = document.getElementById('svc-ai-omni-credit-chip');
+  const searchInput = document.getElementById('svc-ai-omni-search-input');
+  const filterChipsWrap = document.getElementById('svc-ai-omni-filter-chips');
+  const listEl = document.getElementById('svc-ai-omni-models-list');
+  const handshakeBtn = document.getElementById('svc-ai-omni-open-handshake-btn');
+
+  if (!modal) return;
+  modal.classList.remove('hidden');
+
+  const closeModal = () => {
+    modal.classList.add('hidden');
+  };
+
+  if (backdrop) backdrop.onclick = closeModal;
+  if (closeBtn) closeBtn.onclick = closeModal;
+  if (creditChip) creditChip.onclick = () => { closeModal(); openCreditsModal(); };
+  if (handshakeBtn) {
+    handshakeBtn.onclick = () => {
+      closeModal();
+      openAISettingsModal(currentProject, 'providers');
+    };
+  }
+
+  // Fetch Omni Models & Credits from API
+  try {
+    if (listEl) listEl.innerHTML = '<div style="padding:24px; text-align:center; color:#71717a;">Loading Omni Model Library…</div>';
+    const res = await api(`/ai/omni/models?project_id=${encodeURIComponent(currentProject.id)}`);
+    if (res && res.ok) {
+      omniCatalogData = res;
+      if (res.credits && res.credits.balance !== undefined) {
+        const balStr = `$${Number(res.credits.balance).toFixed(2)}`;
+        const omniVal = document.getElementById('svc-ai-omni-credit-val');
+        if (omniVal) omniVal.textContent = balStr;
+        const badgeVal = document.getElementById('svc-ai-credits-badge-val');
+        if (badgeVal) badgeVal.textContent = balStr;
+      }
+      renderOmniUI(currentProject);
+    } else {
+      if (listEl) listEl.innerHTML = `<div style="padding:24px; text-align:center; color:#ef4444;">Failed to load models: ${escapeHtml(res?.error || 'Unknown error')}</div>`;
+    }
+  } catch (err) {
+    if (listEl) listEl.innerHTML = `<div style="padding:24px; text-align:center; color:#ef4444;">Error loading models: ${escapeHtml(err.message)}</div>`;
+  }
+
+  if (searchInput && !searchInput.dataset.bound) {
+    searchInput.dataset.bound = 'true';
+    searchInput.addEventListener('input', () => {
+      omniSearchQuery = searchInput.value.trim().toLowerCase();
+      renderOmniFilteredList(currentProject);
+    });
+  }
+
+  if (filterChipsWrap && !filterChipsWrap.dataset.bound) {
+    filterChipsWrap.dataset.bound = 'true';
+    filterChipsWrap.querySelectorAll('.svc-ai-filter-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        filterChipsWrap.querySelectorAll('.svc-ai-filter-chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        omniActiveFilter = chip.dataset.tag || 'all';
+        renderOmniFilteredList(currentProject);
+      });
+    });
+  }
+}
+
+function renderOmniUI(project) {
+  if (!omniCatalogData) return;
+  const chartEl = document.getElementById('svc-ai-omni-benchmark-chart');
+  const topModels = omniCatalogData.top_swe_models || [];
+  const activeModelId = omniCatalogData.active_model || 'gemini-2.5-flash';
+
+  // Render vertical pill bars SWE benchmark chart
+  if (chartEl) {
+    chartEl.innerHTML = topModels.map(m => {
+      const score = m.swe_bench_score || 0;
+      const pct = Math.max(25, Math.min(100, Math.round((score / 75) * 100)));
+      const isActive = (m.model_id === activeModelId);
       return `
-        <div class="svc-ai-dropdown-item ${isActive ? 'active' : ''}" data-id="${escapeHtml(p.id || '')}" data-provider="${escapeHtml(prov)}" data-model="${escapeHtml(p.model)}">
-          <div class="svc-ai-dropdown-item-left">
-            <div class="svc-ai-dropdown-prov-badge ${escapeHtml(prov)}">${escapeHtml(prov)}</div>
-            <div>
-              <div class="svc-ai-dropdown-model-name">${escapeHtml(p.model)}</div>
-              ${p.name && p.name !== p.model ? `<small class="svc-ai-dropdown-sub">${escapeHtml(p.name)}</small>` : ''}
+        <div class="svc-ai-benchmark-bar-col ${isActive ? 'active' : ''}" data-model-id="${escapeHtml(m.model_id)}" title="Click to activate ${escapeHtml(m.name)} (SWE score: ${score}%)">
+          <div class="svc-ai-benchmark-score-label">${score ? `${score}%` : 'N/A'}</div>
+          <div class="svc-ai-benchmark-pill-track">
+            <div class="svc-ai-benchmark-pill-fill" style="height: ${pct}%;">
+              <div class="svc-ai-benchmark-pill-icon">
+                ${getSvglIcon(m.provider || m.model_id, 18)}
+              </div>
             </div>
           </div>
-          ${isActive ? '<i data-lucide="check" class="svc-ai-dropdown-check"></i>' : ''}
+          <div class="svc-ai-benchmark-model-name">${escapeHtml(m.name)}</div>
+          ${isActive ? '<span class="svc-ai-benchmark-active-dot"></span>' : ''}
         </div>
       `;
     }).join('');
+
+    chartEl.querySelectorAll('.svc-ai-benchmark-bar-col').forEach(col => {
+      col.onclick = async () => {
+        const mid = col.dataset.modelId;
+        await selectOmniModel(mid, project);
+      };
+    });
   }
 
-  dropdown.innerHTML = `
-    <div class="svc-ai-dropdown-header">
-      <span>Switch Model / Provider</span>
-      <button type="button" class="svc-ai-dropdown-close" id="svc-ai-dropdown-close-btn">&times;</button>
+  renderOmniFilteredList(project);
+}
+
+function renderOmniFilteredList(project) {
+  if (!omniCatalogData) return;
+  const listEl = document.getElementById('svc-ai-omni-models-list');
+  const countBadge = document.getElementById('svc-ai-omni-count-badge');
+  const allModels = omniCatalogData.models || [];
+  const activeModelId = omniCatalogData.active_model || 'gemini-2.5-flash';
+
+  const filtered = allModels.filter(m => {
+    // Filter chip matching
+    if (omniActiveFilter === 'top' && (m.swe_bench_score || 0) < 58) return false;
+    if (omniActiveFilter === 'vision' && !m.is_vision) return false;
+    if (omniActiveFilter === 'tools' && !m.is_tools) return false;
+    if (omniActiveFilter === 'cache' && !m.is_cache) return false;
+    if (omniActiveFilter === 'google' && m.provider !== 'google' && m.provider !== 'vertex' && !m.model_id.startsWith('gemini')) return false;
+    if (omniActiveFilter === 'anthropic' && m.provider !== 'anthropic' && !m.model_id.startsWith('claude')) return false;
+    if (omniActiveFilter === 'openai' && m.provider !== 'openai' && !m.model_id.startsWith('gpt') && !m.model_id.startsWith('o1') && !m.model_id.startsWith('o3')) return false;
+    if (omniActiveFilter === 'deepseek' && m.provider !== 'deepseek') return false;
+
+    // Search query matching
+    if (omniSearchQuery) {
+      const hay = `${m.name} ${m.model_id} ${m.provider} ${m.description || ''} ${(m.capabilities || []).join(' ')}`.toLowerCase();
+      if (!hay.includes(omniSearchQuery)) return false;
+    }
+    return true;
+  });
+
+  if (countBadge) {
+    countBadge.textContent = `${filtered.length} results`;
+  }
+
+  if (!listEl) return;
+
+  if (!filtered.length) {
+    listEl.innerHTML = `
+      <div class="svc-ai-omni-empty">
+        <i data-lucide="search-x" style="width:32px; height:32px; color:#71717a; margin-bottom:8px;"></i>
+        <p>No models matching your search filters.</p>
+      </div>
+    `;
+    refreshIcons();
+    return;
+  }
+
+  listEl.innerHTML = filtered.map(m => {
+    const isActive = (m.model_id === activeModelId);
+    const inCost = Number(m.input_cost_per_m || 0).toFixed(2);
+    const outCost = Number(m.output_cost_per_m || 0).toFixed(2);
+    return `
+      <div class="svc-ai-omni-model-card ${isActive ? 'active' : ''}" data-model-id="${escapeHtml(m.model_id)}">
+        <div class="svc-ai-omni-card-left">
+          <div class="svc-ai-omni-card-icon ${escapeHtml(m.provider || 'cloud')}">
+            ${getSvglIcon(m.provider || m.model_id, 22)}
+          </div>
+          <div class="svc-ai-omni-card-main">
+            <div class="svc-ai-omni-card-title-row">
+              <span class="svc-ai-omni-card-name">${escapeHtml(m.name || m.model_id)}</span>
+              <span class="svc-ai-omni-card-prov-tag">${escapeHtml((m.provider || 'cloud').toUpperCase())}</span>
+              ${m.swe_bench_score ? `<span class="svc-ai-omni-swe-pill">SWE ${m.swe_bench_score}%</span>` : ''}
+            </div>
+            <div class="svc-ai-omni-card-badges">
+              ${m.is_vision ? '<span class="svc-ai-cap-tag"><i data-lucide="eye"></i> Vision</span>' : ''}
+              ${m.is_tools ? '<span class="svc-ai-cap-tag"><i data-lucide="wrench"></i> Tools</span>' : ''}
+              ${m.is_cache ? '<span class="svc-ai-cap-tag"><i data-lucide="database"></i> Cache</span>' : ''}
+              <span class="svc-ai-cap-tag">${escapeHtml(m.context_window || '128k ctx')}</span>
+            </div>
+          </div>
+        </div>
+        <div class="svc-ai-omni-card-right">
+          <div class="svc-ai-omni-pricing-col">
+            <span class="svc-ai-omni-price-in">$${inCost} in</span>
+            <span class="svc-ai-omni-price-out">$${outCost} out</span>
+            <span class="svc-ai-omni-price-unit">/ 1M tokens</span>
+          </div>
+          <div class="svc-ai-omni-card-actions">
+            <button type="button" class="btn-pill btn-ghost btn-sm svc-ai-model-profile-btn" data-model-id="${escapeHtml(m.model_id)}" title="View profile attributes & capabilities">
+              <i data-lucide="info"></i><span>Profile</span>
+            </button>
+            ${isActive
+              ? '<span class="svc-ai-omni-selected-badge"><i data-lucide="check"></i> Active</span>'
+              : `<button type="button" class="btn-pill btn-primary btn-sm svc-ai-model-select-btn" data-model-id="${escapeHtml(m.model_id)}">
+                  <i data-lucide="sparkles"></i><span>Select</span>
+                 </button>`
+            }
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  refreshIcons();
+
+  listEl.querySelectorAll('.svc-ai-model-profile-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const mid = btn.dataset.modelId;
+      const targetModel = allModels.find(x => x.model_id === mid);
+      if (targetModel) openModelProfileModal(targetModel, project);
+    };
+  });
+
+  listEl.querySelectorAll('.svc-ai-model-select-btn').forEach(btn => {
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      const mid = btn.dataset.modelId;
+      await selectOmniModel(mid, project);
+    };
+  });
+}
+
+async function selectOmniModel(modelId, project) {
+  const currentProject = project || selectedAIProject || { id: 'global', name: 'Global Platform' };
+  try {
+    const res = await api(`/ai/omni/select-model`, {
+      method: 'POST',
+      body: JSON.stringify({ model_id: modelId, project_id: currentProject.id })
+    });
+    if (res && res.ok) {
+      if (omniCatalogData) omniCatalogData.active_model = modelId;
+      const inputModelLabel = document.getElementById('svc-ai-input-model-label');
+      if (inputModelLabel) inputModelLabel.textContent = modelId;
+      setAICache(currentProject.id, { model: modelId });
+      toast(`Switched active model to ${modelId}`);
+      
+      const modal = document.getElementById('svc-ai-omni-router-modal');
+      if (modal) modal.classList.add('hidden');
+      
+      const profileModal = document.getElementById('svc-ai-model-profile-modal');
+      if (profileModal) profileModal.classList.add('hidden');
+      
+      renderAIChatWorkspace(currentProject);
+    } else {
+      toast(`Failed to select model: ${res?.error || 'Server error'}`);
+    }
+  } catch (err) {
+    toast(`Error selecting model: ${err.message}`);
+  }
+}
+
+function openModelProfileModal(model, project) {
+  const modal = document.getElementById('svc-ai-model-profile-modal');
+  const backdrop = document.getElementById('svc-ai-profile-backdrop');
+  const dialogContent = document.getElementById('svc-ai-profile-dialog-content');
+  if (!modal || !dialogContent || !model) return;
+
+  const currentProject = project || selectedAIProject || { id: 'global', name: 'Global Platform' };
+  const inCost = Number(model.input_cost_per_m || 0).toFixed(2);
+  const outCost = Number(model.output_cost_per_m || 0).toFixed(2);
+  const cacheCost = Number(model.cache_read_cost_per_m || 0).toFixed(2);
+
+  dialogContent.innerHTML = `
+    <div class="svc-ai-profile-header">
+      <div class="svc-ai-profile-brand">
+        <div class="svc-ai-profile-icon">${getSvglIcon(model.provider || model.model_id, 28)}</div>
+        <div>
+          <h3 class="svc-ai-profile-title">${escapeHtml(model.name || model.model_id)}</h3>
+          <span class="svc-ai-profile-prov">${escapeHtml((model.provider || 'cloud').toUpperCase())} • ${escapeHtml(model.model_id)}</span>
+        </div>
+      </div>
+      <button type="button" class="svc-ai-omni-close-btn" id="svc-ai-profile-close-btn"><i data-lucide="x"></i></button>
     </div>
-    <div class="svc-ai-dropdown-list">
-      ${itemsHtml}
+
+    <p class="svc-ai-profile-desc">${escapeHtml(model.description || 'Frontier software engineering and reasoning AI model.')}</p>
+
+    <div class="svc-ai-profile-specs-grid">
+      <div class="svc-ai-profile-spec-item highlight">
+        <span class="spec-label"><i data-lucide="award"></i> SWE-Bench Verified</span>
+        <span class="spec-val">${model.swe_bench_score ? `${model.swe_bench_score}%` : 'Evaluated'}</span>
+        <small class="spec-hint">Autonomous software solve benchmark</small>
+      </div>
+      <div class="svc-ai-profile-spec-item">
+        <span class="spec-label"><i data-lucide="arrow-down-left"></i> Input Pricing</span>
+        <span class="spec-val">$${inCost}</span>
+        <small class="spec-hint">per 1M input tokens</small>
+      </div>
+      <div class="svc-ai-profile-spec-item">
+        <span class="spec-label"><i data-lucide="arrow-up-right"></i> Output Pricing</span>
+        <span class="spec-val">$${outCost}</span>
+        <small class="spec-hint">per 1M output tokens</small>
+      </div>
+      <div class="svc-ai-profile-spec-item">
+        <span class="spec-label"><i data-lucide="database"></i> Prompt Cache Read</span>
+        <span class="spec-val">$${cacheCost}</span>
+        <small class="spec-hint">per 1M cached tokens</small>
+      </div>
+      <div class="svc-ai-profile-spec-item">
+        <span class="spec-label"><i data-lucide="maximize-2"></i> Context Window</span>
+        <span class="spec-val">${escapeHtml(model.context_window || '128k ctx')}</span>
+        <small class="spec-hint">Maximum token capacity</small>
+      </div>
+      <div class="svc-ai-profile-spec-item">
+        <span class="spec-label"><i data-lucide="zap"></i> Latency Tier</span>
+        <span class="spec-val">${(model.swe_bench_score || 0) > 65 ? 'Frontier' : 'Fast'}</span>
+        <small class="spec-hint">Generation speed tier</small>
+      </div>
     </div>
-    <div class="svc-ai-dropdown-footer">
-      <button type="button" class="svc-ai-dropdown-add-btn" id="svc-ai-dropdown-add-btn">
-        <i data-lucide="plus"></i><span>Add / Configure Provider</span>
+
+    <div class="svc-ai-profile-caps-section">
+      <h4 style="font-size:0.85rem; font-weight:700; color:#18181b; margin:0 0 10px;">Capabilities & Modalities</h4>
+      <div class="svc-ai-profile-caps-list">
+        <div class="cap-item ${model.is_vision ? 'supported' : 'unsupported'}">
+          <i data-lucide="${model.is_vision ? 'check-circle-2' : 'x-circle'}"></i>
+          <span>Image & Vision Modality</span>
+        </div>
+        <div class="cap-item ${model.is_tools ? 'supported' : 'unsupported'}">
+          <i data-lucide="${model.is_tools ? 'check-circle-2' : 'x-circle'}"></i>
+          <span>Function & Tool Calling</span>
+        </div>
+        <div class="cap-item ${model.is_cache ? 'supported' : 'unsupported'}">
+          <i data-lucide="${model.is_cache ? 'check-circle-2' : 'x-circle'}"></i>
+          <span>Prompt Caching Acceleration</span>
+        </div>
+        <div class="cap-item ${model.is_reasoning ? 'supported' : 'unsupported'}">
+          <i data-lucide="${model.is_reasoning ? 'check-circle-2' : 'x-circle'}"></i>
+          <span>Deep Reasoning & Extended Thinking</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="svc-ai-profile-footer">
+      <button type="button" class="btn-pill btn-secondary" id="svc-ai-profile-cancel-btn">Close</button>
+      <button type="button" class="btn-pill btn-primary" id="svc-ai-profile-activate-btn">
+        <i data-lucide="sparkles"></i><span>Activate ${escapeHtml(model.name || model.model_id)}</span>
       </button>
     </div>
   `;
 
-  document.body.appendChild(dropdown);
+  modal.classList.remove('hidden');
   refreshIcons();
 
-  // Position near triggerBtn
-  if (triggerBtn) {
-    const rect = triggerBtn.getBoundingClientRect();
-    const dropdownHeight = dropdown.offsetHeight || 220;
-    const top = rect.top - dropdownHeight - 8 > 10 ? rect.top - dropdownHeight - 8 : rect.bottom + 8;
-    dropdown.style.position = 'fixed';
-    dropdown.style.left = `${Math.max(10, Math.min(window.innerWidth - 300, rect.left))}px`;
-    dropdown.style.top = `${Math.max(10, top)}px`;
-    dropdown.style.zIndex = '9999';
-  }
-
-  const closeDropdown = () => {
-    dropdown.remove();
-    document.removeEventListener('click', handleOutsideClick);
+  const closeProfile = () => {
+    modal.classList.add('hidden');
   };
 
-  const handleOutsideClick = (e) => {
-    if (!dropdown.contains(e.target) && (!triggerBtn || !triggerBtn.contains(e.target))) {
-      closeDropdown();
-    }
-  };
-  setTimeout(() => document.addEventListener('click', handleOutsideClick), 10);
+  if (backdrop) backdrop.onclick = closeProfile;
+  const pCloseBtn = document.getElementById('svc-ai-profile-close-btn');
+  const pCancelBtn = document.getElementById('svc-ai-profile-cancel-btn');
+  const pActivateBtn = document.getElementById('svc-ai-profile-activate-btn');
 
-  const closeBtn = dropdown.querySelector('#svc-ai-dropdown-close-btn');
-  if (closeBtn) closeBtn.onclick = closeDropdown;
-
-  const addBtn = dropdown.querySelector('#svc-ai-dropdown-add-btn');
-  if (addBtn) {
-    addBtn.onclick = () => {
-      closeDropdown();
-      openAISettingsModal(currentProject, 'onboard');
+  if (pCloseBtn) pCloseBtn.onclick = closeProfile;
+  if (pCancelBtn) pCancelBtn.onclick = closeProfile;
+  if (pActivateBtn) {
+    pActivateBtn.onclick = async () => {
+      await selectOmniModel(model.model_id, currentProject);
     };
   }
+}
 
-  dropdown.querySelectorAll('.svc-ai-dropdown-item').forEach(item => {
-    item.onclick = async () => {
-      const provId = item.dataset.id;
-      const model = item.dataset.model;
-      const provider = item.dataset.provider;
-      closeDropdown();
-      try {
-        const res = await api(`/projects/${encodeURIComponent(currentProject.id)}/ai/providers/activate`, {
-          method: 'POST',
-          body: JSON.stringify({ provider_id: provId, model: model, provider: provider }),
-        });
-        if (res.ok) {
-          const inputModelLabel = document.getElementById('svc-ai-input-model-label');
-          if (inputModelLabel) inputModelLabel.textContent = model;
-          toast(`Active model switched to: ${model}`);
-        } else {
-          toast(`Failed to switch model: ${res.error || 'Server error'}`);
-        }
-      } catch (err) {
-        toast(`Error switching model: ${err.message}`);
+async function openCreditsModal() {
+  const modal = document.getElementById('svc-ai-credits-modal');
+  const backdrop = document.getElementById('svc-ai-credits-backdrop');
+  const closeBtn = document.getElementById('svc-ai-credits-close-btn');
+  const balEl = document.getElementById('svc-ai-credits-summary-balance');
+  const grantEl = document.getElementById('svc-ai-credits-summary-granted');
+  const usedEl = document.getElementById('svc-ai-credits-summary-used');
+  const listEl = document.getElementById('svc-ai-credits-history-list');
+
+  if (!modal) return;
+  modal.classList.remove('hidden');
+
+  const closeModal = () => modal.classList.add('hidden');
+  if (backdrop) backdrop.onclick = closeModal;
+  if (closeBtn) closeBtn.onclick = closeModal;
+
+  try {
+    if (listEl) listEl.innerHTML = '<div style="padding:16px; text-align:center; color:#71717a;">Loading usage history…</div>';
+    const res = await api('/ai/user/credits');
+    if (res && res.ok && res.credits) {
+      if (balEl) balEl.textContent = `$${Number(res.credits.balance).toFixed(2)}`;
+      if (grantEl) grantEl.textContent = `$${Number(res.credits.total_granted || 5).toFixed(2)}`;
+      if (usedEl) usedEl.textContent = `$${Number(res.credits.total_used || 0).toFixed(2)}`;
+
+      const records = res.records || [];
+      if (!listEl) return;
+      if (!records.length) {
+        listEl.innerHTML = `
+          <div style="padding:24px; text-align:center; color:#71717a;">
+            <p style="margin:0 0 4px; font-weight:600; color:#18181b;">No token generations recorded yet.</p>
+            <p style="margin:0; font-size:0.8rem;">Every AI prompt and completion automatically deducts metered tokens from your $5.00 starting grant.</p>
+          </div>
+        `;
+      } else {
+        listEl.innerHTML = records.map(r => `
+          <div class="svc-ai-credits-record-row" style="display:flex; justify-content:space-between; align-items:center; padding:10px 12px; border-bottom:1px solid #f4f4f5; font-size:0.82rem;">
+            <div>
+              <strong style="color:#18181b; display:block;">${escapeHtml(r.model || 'model')}</strong>
+              <small style="color:#71717a;">${new Date(r.timestamp * 1000).toLocaleString()}</small>
+            </div>
+            <div style="text-align:right;">
+              <span style="font-weight:700; color:#ef4444;">-$${Number(r.cost || 0).toFixed(5)}</span>
+              <div style="font-size:0.72rem; color:#71717a;">${(r.prompt_tokens || 0).toLocaleString()} in / ${(r.completion_tokens || 0).toLocaleString()} out</div>
+            </div>
+          </div>
+        `).join('');
       }
-    };
-  });
+      refreshIcons();
+    }
+  } catch (err) {
+    if (listEl) listEl.innerHTML = `<div style="padding:16px; color:#ef4444;">Error: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+async function triggerHandshakeSync(project) {
+  const currentProject = project || selectedAIProject || { id: 'global', name: 'Global Platform' };
+  const statusEl = document.getElementById('svc-ai-handshake-status-text');
+  if (statusEl) {
+    statusEl.textContent = 'Syncing handshake providers to VM…';
+    statusEl.style.color = '#71717a';
+  }
+  try {
+    const res = await api(`/ai/handshake/sync-providers`, {
+      method: 'POST',
+      body: JSON.stringify({ project_id: currentProject.id })
+    });
+    if (res && res.ok) {
+      toast(`Handshake Sync completed: ${res.synced_providers_count} providers, ${res.synced_models_count} models synced to VM!`);
+      if (statusEl) {
+        statusEl.textContent = `Synced successfully at ${new Date(res.timestamp * 1000).toLocaleTimeString()} (${res.synced_models_count} models available).`;
+        statusEl.style.color = '#16a34a';
+      }
+    } else {
+      const err = res.error || res.detail || 'Handshake failed';
+      toast(`Handshake failed: ${err}`);
+      if (statusEl) {
+        statusEl.textContent = `Sync failed: ${err}`;
+        statusEl.style.color = '#ef4444';
+      }
+    }
+  } catch (err) {
+    toast(`Handshake error: ${err.message}`);
+    if (statusEl) {
+      statusEl.textContent = `Sync error: ${err.message}`;
+      statusEl.style.color = '#ef4444';
+    }
+  }
+}
+
+async function openModelSelectorDropdown(project, triggerBtn) {
+  // Direct to Sycord AI Router Modal
+  openOmniRouterModal(project);
 }
 
 async function openAISettingsModal(project, initialTab = 'providers') {
@@ -11985,12 +12409,32 @@ async function openAISettingsModal(project, initialTab = 'providers') {
         } catch (_) {}
       }
 
+      const activeModelDisplay = document.getElementById('svc-ai-settings-active-model-display');
+      if (activeModelDisplay) activeModelDisplay.textContent = s.model || 'gemini-2.5-flash';
+      const activeProvBadge = document.getElementById('svc-ai-settings-active-prov-badge');
+      if (activeProvBadge) activeProvBadge.textContent = (s.provider || 'vertex').toUpperCase();
+
       savedProvidersListState = s.saved_providers || [];
       renderPresetChips();
       renderSavedProviders(s.provider, s.model);
     }
   } catch (err) {
     showAlert(`Could not load settings for project: ${err.message}`);
+  }
+
+  // Browse Omni Library from Settings
+  const openOmniFromSettingsBtn = document.getElementById('svc-ai-open-omni-from-settings-btn');
+  if (openOmniFromSettingsBtn) {
+    openOmniFromSettingsBtn.onclick = () => {
+      closeModal();
+      openOmniRouterModal(targetProject);
+    };
+  }
+
+  // Handshake Sync button
+  const syncHandshakeBtn = document.getElementById('svc-ai-sync-handshake-btn');
+  if (syncHandshakeBtn) {
+    syncHandshakeBtn.onclick = () => triggerHandshakeSync(targetProject);
   }
 
   // Test Connection

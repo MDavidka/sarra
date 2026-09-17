@@ -17,8 +17,11 @@ from typing import Any, AsyncGenerator, Dict, List, Optional, Union
 from syte.ai.providers import UnifiedAIClient
 from syte.ai.tools import execute_syte_tool, get_ai_tools_schema, _get_project_workspace_dir
 from syte.database import (
+    deduct_user_credits,
     get_ai_builder_settings,
+    get_omni_model,
     get_project,
+    get_user_credits,
     list_ai_chat_messages,
     save_ai_chat_message,
 )
@@ -578,10 +581,40 @@ class AIAgentEngine:
                 if parsed_calls:
                     turn_tool_calls = parsed_calls
 
+            # Calculate tokens and deduct from user credit balance ($5.00 starter)
+            prompt_chars = sum(len(str(m.get("content") or "")) for m in formatted_messages)
+            prompt_tokens_est = max(1, prompt_chars // 4)
+            completion_tokens_est = max(1, len(turn_tokens) // 4)
+
+            # Fetch model pricing from Omni catalog
+            model_info = await get_omni_model(ai_settings.get("model", "gemini-2.5-flash"))
+            in_cost_per_m = model_info["input_cost"] if model_info else 0.15
+            out_cost_per_m = model_info["output_cost"] if model_info else 0.60
+            turn_cost = (prompt_tokens_est * in_cost_per_m / 1_000_000.0) + (completion_tokens_est * out_cost_per_m / 1_000_000.0)
+
+            updated_credits = await deduct_user_credits(
+                user_id="default_user",
+                project_id=self.project_id,
+                provider=ai_settings.get("provider", "google"),
+                model=ai_settings.get("model", "gemini-2.5-flash"),
+                prompt_tokens=prompt_tokens_est,
+                completion_tokens=completion_tokens_est,
+                cost_usd=turn_cost,
+            )
+
             # If no tool calls were requested in this turn: the agent has finished answering the user's message!
             if not turn_tool_calls:
                 # Save final response and emit done
                 await save_ai_chat_message(self.project_id, role="assistant", content=turn_tokens)
+                yield {
+                    "event": "credits_update",
+                    "credits": updated_credits,
+                    "cost_usd": turn_cost,
+                    "prompt_tokens": prompt_tokens_est,
+                    "completion_tokens": completion_tokens_est,
+                    "total_tokens": prompt_tokens_est + completion_tokens_est,
+                    "request_id": request_id,
+                }
                 yield {
                     "event": "done",
                     "reply": turn_tokens,

@@ -338,6 +338,65 @@ CREATE TABLE IF NOT EXISTS project_skills (
 );
 CREATE INDEX IF NOT EXISTS idx_project_skills_pid ON project_skills(project_id);
 
+CREATE TABLE IF NOT EXISTS ai_user_credits (
+    user_id TEXT PRIMARY KEY,
+    balance REAL NOT NULL DEFAULT 5.00,
+    total_granted REAL NOT NULL DEFAULT 5.00,
+    total_used REAL NOT NULL DEFAULT 0.00,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS ai_usage_records (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL DEFAULT 'default_user',
+    project_id TEXT NOT NULL DEFAULT 'global',
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL,
+    prompt_tokens INTEGER NOT NULL DEFAULT 0,
+    completion_tokens INTEGER NOT NULL DEFAULT 0,
+    total_tokens INTEGER NOT NULL DEFAULT 0,
+    cost_usd REAL NOT NULL DEFAULT 0.00,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ai_usage_records_user ON ai_usage_records(user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS ai_omni_models (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    provider_display TEXT NOT NULL,
+    icon TEXT NOT NULL DEFAULT 'cpu',
+    input_cost REAL NOT NULL DEFAULT 0.00,
+    output_cost REAL NOT NULL DEFAULT 0.00,
+    swe_score REAL NOT NULL DEFAULT 0.0,
+    image_support INTEGER NOT NULL DEFAULT 1,
+    tools_support INTEGER NOT NULL DEFAULT 1,
+    cache_support INTEGER NOT NULL DEFAULT 1,
+    context_window INTEGER NOT NULL DEFAULT 128000,
+    is_top INTEGER NOT NULL DEFAULT 0,
+    is_global INTEGER NOT NULL DEFAULT 1,
+    description TEXT DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ai_omni_models_swe ON ai_omni_models(swe_score DESC);
+
+CREATE TABLE IF NOT EXISTS ai_custom_providers (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    provider_type TEXT NOT NULL DEFAULT 'openai',
+    base_url TEXT NOT NULL DEFAULT '',
+    api_key TEXT DEFAULT '',
+    gcp_project TEXT DEFAULT '',
+    gcp_location TEXT DEFAULT 'us-central1',
+    models_json TEXT DEFAULT '[]',
+    is_synced INTEGER NOT NULL DEFAULT 1,
+    synced_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS project_uploaded_files (
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL,
@@ -506,6 +565,44 @@ async def _migrate(db: aiosqlite.Connection) -> None:
         )
     """)
     await db.execute("CREATE INDEX IF NOT EXISTS idx_project_uploaded_files_pid ON project_uploaded_files(project_id)")
+
+    # Seed default user credits ($5.00 starting credit)
+    now_ts = datetime.now(timezone.utc).isoformat()
+    await db.execute("""
+        INSERT OR IGNORE INTO ai_user_credits (user_id, balance, total_granted, total_used, created_at, updated_at)
+        VALUES ('default_user', 5.00, 5.00, 0.00, ?, ?)
+    """, (now_ts, now_ts))
+
+    # Seed default Omni Models catalog if empty
+    async with db.execute("SELECT COUNT(*) FROM ai_omni_models") as cur:
+        count_row = await cur.fetchone()
+        omni_count = count_row[0] if count_row else 0
+
+    if omni_count == 0:
+        DEFAULT_OMNI_MODELS = [
+            ("gemini-2.5-pro", "Gemini 2.5 Pro", "google", "Google Vertex AI", "google", 1.25, 5.00, 63.8, 1, 1, 1, 1000000, 1, 1, "Flagship Google multimodal model with deep reasoning and 1M context window."),
+            ("gemini-2.5-flash", "Gemini 2.5 Flash", "google", "Google Vertex AI", "google", 0.15, 0.60, 56.2, 1, 1, 1, 1000000, 1, 1, "High-frequency low-latency Google model with native multimodal capabilities."),
+            ("gemini-2.5-flash-lite", "Gemini 2.5 Flash Lite", "google", "Google Vertex AI", "google", 0.075, 0.30, 50.4, 1, 1, 1, 1000000, 0, 1, "Ultra-fast lightweight Gemini model for rapid tasks and tools."),
+            ("claude-3-7-sonnet", "Claude 3.7 Sonnet", "anthropic", "Anthropic", "anthropic", 3.00, 15.00, 70.3, 1, 1, 1, 200000, 1, 1, "Top-ranked coding and reasoning model with hybrid thinking architecture."),
+            ("claude-3-5-sonnet-20241022", "Claude 3.5 Sonnet", "anthropic", "Anthropic", "anthropic", 3.00, 15.00, 64.0, 1, 1, 1, 200000, 1, 1, "Industry benchmark for frontend generation, reasoning, and tool execution."),
+            ("gpt-4o", "GPT-4o", "openai", "OpenAI", "openai", 2.50, 10.00, 54.2, 1, 1, 1, 128000, 1, 1, "Omni multimodal flagship from OpenAI with broad reasoning and vision."),
+            ("o3-mini", "o3-mini (Reasoning)", "openai", "OpenAI", "openai", 1.10, 4.40, 61.5, 0, 1, 1, 200000, 1, 1, "High-efficiency specialized STEM and algorithmic coding reasoning model."),
+            ("deepseek-chat", "DeepSeek V3", "deepseek", "DeepSeek", "deepseek", 0.14, 0.28, 49.2, 0, 1, 1, 64000, 1, 1, "State-of-the-art open weights architecture with high speed and low cost."),
+            ("deepseek-reasoner", "DeepSeek R1", "deepseek", "DeepSeek", "deepseek", 0.55, 2.19, 58.6, 0, 1, 1, 64000, 1, 1, "Open reasoning model with transparent chain-of-thought tokens."),
+            ("meta/llama-3.3-70b-instruct-maas", "Llama 3.3 70B", "meta", "Meta Llama", "meta", 0.40, 1.20, 48.0, 0, 1, 0, 128000, 1, 1, "Meta's flagship open weights 70B instruction-tuned model."),
+            ("qwen/qwen-2.5-coder-32b-instruct", "Qwen 2.5 Coder 32B", "qwen", "Alibaba Qwen", "qwen", 0.20, 0.60, 51.6, 0, 1, 0, 128000, 0, 1, "Dedicated code generation model specialized in full-stack refactoring."),
+            ("z-ai/glm-5.2:free", "GLM 5.2 Flash", "openrouter", "Zhipu AI", "glm", 0.00, 0.00, 46.5, 1, 1, 0, 128000, 0, 1, "Fast multimodal GLM architecture with free community tier access."),
+            ("minimax-m2", "MiniMax M2", "custom", "MiniMax", "minimax", 0.20, 0.80, 44.0, 0, 1, 0, 128000, 0, 1, "Long-context language model with high concurrency support."),
+            ("gemma-4", "Gemma 4 / 27B", "google", "Google DeepMind", "google", 0.10, 0.20, 42.5, 0, 1, 0, 8192, 0, 1, "Open weights family from Google DeepMind optimized for lightweight execution.")
+        ]
+        for m in DEFAULT_OMNI_MODELS:
+            await db.execute("""
+                INSERT OR REPLACE INTO ai_omni_models (
+                    id, name, provider, provider_display, icon, input_cost, output_cost,
+                    swe_score, image_support, tools_support, cache_support, context_window,
+                    is_top, is_global, description, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (*m, now_ts, now_ts))
 
 
 async def get_setting(key: str, default: str = "") -> str:
@@ -1910,5 +2007,371 @@ async def delete_project_uploaded_file(project_id: str, file_id: str) -> bool:
         )
         await db.commit()
         return res.rowcount > 0
+
+
+# ============================================================================
+# Sycord Omni AI Router: Credits, Model Catalog, Usage, & Handshake Database Helpers
+# ============================================================================
+
+async def get_user_credits(user_id: str = "default_user") -> dict[str, Any]:
+    """Retrieve user credit balance (starts at $5.00)."""
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT user_id, balance, total_granted, total_used, created_at, updated_at "
+            "FROM ai_user_credits WHERE user_id = ?",
+            (user_id,),
+        ) as cur:
+            row = await cur.fetchone()
+            if row:
+                return {
+                    "user_id": row["user_id"],
+                    "balance": round(float(row["balance"]), 4),
+                    "total_granted": round(float(row["total_granted"]), 4),
+                    "total_used": round(float(row["total_used"]), 4),
+                    "created_at": row["created_at"],
+                    "updated_at": row["updated_at"],
+                }
+
+    # If no record exists, create default $5.00 credit
+    now_ts = datetime.now(timezone.utc).isoformat()
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        await db.execute(
+            "INSERT OR IGNORE INTO ai_user_credits (user_id, balance, total_granted, total_used, created_at, updated_at) "
+            "VALUES (?, 5.00, 5.00, 0.00, ?, ?)",
+            (user_id, now_ts, now_ts),
+        )
+        await db.commit()
+    return {
+        "user_id": user_id,
+        "balance": 5.0000,
+        "total_granted": 5.0000,
+        "total_used": 0.0000,
+        "created_at": now_ts,
+        "updated_at": now_ts,
+    }
+
+
+async def deduct_user_credits(
+    user_id: str = "default_user",
+    project_id: str = "global",
+    provider: str = "google",
+    model: str = "gemini-2.5-flash",
+    prompt_tokens: int = 0,
+    completion_tokens: int = 0,
+    cost_usd: float = 0.0,
+) -> dict[str, Any]:
+    """Deduct generation token usage cost from user credits and record usage log."""
+    now_ts = datetime.now(timezone.utc).isoformat()
+    record_id = f"usg_{uuid.uuid4().hex[:12]}"
+    total_tokens = prompt_tokens + completion_tokens
+
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        # 1. Update user balance
+        await db.execute(
+            "UPDATE ai_user_credits SET "
+            "balance = MAX(0.0, balance - ?), "
+            "total_used = total_used + ?, "
+            "updated_at = ? "
+            "WHERE user_id = ?",
+            (cost_usd, cost_usd, now_ts, user_id),
+        )
+        # 2. Insert usage record
+        await db.execute(
+            "INSERT INTO ai_usage_records (id, user_id, project_id, provider, model, prompt_tokens, completion_tokens, total_tokens, cost_usd, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (record_id, user_id, project_id, provider, model, prompt_tokens, completion_tokens, total_tokens, cost_usd, now_ts),
+        )
+        await db.commit()
+
+    return await get_user_credits(user_id)
+
+
+async def list_ai_usage_records(user_id: str = "default_user", limit: int = 50) -> list[dict[str, Any]]:
+    """List recent AI generation usage and token costs."""
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT id, user_id, project_id, provider, model, prompt_tokens, completion_tokens, total_tokens, cost_usd, created_at "
+            "FROM ai_usage_records WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+            (user_id, limit),
+        ) as cur:
+            rows = await cur.fetchall()
+            return [
+                {
+                    "id": r["id"],
+                    "user_id": r["user_id"],
+                    "project_id": r["project_id"],
+                    "provider": r["provider"],
+                    "model": r["model"],
+                    "prompt_tokens": r["prompt_tokens"],
+                    "completion_tokens": r["completion_tokens"],
+                    "total_tokens": r["total_tokens"],
+                    "cost_usd": round(float(r["cost_usd"]), 6),
+                    "created_at": r["created_at"],
+                }
+                for r in rows
+            ]
+
+
+async def list_omni_models(
+    search: str = "",
+    provider: str = "",
+    tag: str = "",
+) -> list[dict[str, Any]]:
+    """Retrieve full catalog of Omni models with SWE benchmark scores, pricing, and capabilities."""
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        db.row_factory = aiosqlite.Row
+        query = "SELECT * FROM ai_omni_models WHERE 1=1"
+        params: list[Any] = []
+
+        if search:
+            query += " AND (id LIKE ? OR name LIKE ? OR description LIKE ? OR provider_display LIKE ?)"
+            s_param = f"%{search.strip()}%"
+            params.extend([s_param, s_param, s_param, s_param])
+        if provider:
+            query += " AND (provider = ? OR provider_display = ?)"
+            params.extend([provider.strip().lower(), provider.strip()])
+        if tag == "top":
+            query += " AND is_top = 1"
+        elif tag == "vision":
+            query += " AND image_support = 1"
+        elif tag == "tools":
+            query += " AND tools_support = 1"
+        elif tag == "cache":
+            query += " AND cache_support = 1"
+
+        query += " ORDER BY is_top DESC, swe_score DESC, name ASC"
+
+        async with db.execute(query, tuple(params)) as cur:
+            rows = await cur.fetchall()
+            return [
+                {
+                    "id": r["id"],
+                    "name": r["name"],
+                    "provider": r["provider"],
+                    "provider_display": r["provider_display"],
+                    "icon": r["icon"],
+                    "input_cost": float(r["input_cost"]),
+                    "output_cost": float(r["output_cost"]),
+                    "swe_score": float(r["swe_score"]),
+                    "image_support": bool(r["image_support"]),
+                    "tools_support": bool(r["tools_support"]),
+                    "cache_support": bool(r["cache_support"]),
+                    "context_window": int(r["context_window"]),
+                    "is_top": bool(r["is_top"]),
+                    "is_global": bool(r["is_global"]),
+                    "description": r["description"] or "",
+                    "created_at": r["created_at"],
+                    "updated_at": r["updated_at"],
+                }
+                for r in rows
+            ]
+
+
+async def get_omni_model(model_id: str) -> Optional[dict[str, Any]]:
+    """Get single Omni model metadata by ID."""
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM ai_omni_models WHERE id = ?",
+            (model_id,),
+        ) as cur:
+            row = await cur.fetchone()
+            if not row:
+                return None
+            return {
+                "id": row["id"],
+                "name": row["name"],
+                "provider": row["provider"],
+                "provider_display": row["provider_display"],
+                "icon": row["icon"],
+                "input_cost": float(row["input_cost"]),
+                "output_cost": float(row["output_cost"]),
+                "swe_score": float(row["swe_score"]),
+                "image_support": bool(row["image_support"]),
+                "tools_support": bool(row["tools_support"]),
+                "cache_support": bool(row["cache_support"]),
+                "context_window": int(row["context_window"]),
+                "is_top": bool(row["is_top"]),
+                "is_global": bool(row["is_global"]),
+                "description": row["description"] or "",
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+            }
+
+
+async def upsert_omni_model(model_data: dict[str, Any]) -> dict[str, Any]:
+    """Insert or update an Omni Model definition (Admin/Handshake API)."""
+    now_ts = datetime.now(timezone.utc).isoformat()
+    mid = str(model_data.get("id") or "").strip()
+    if not mid:
+        raise ValueError("Model ID is required")
+
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        await db.execute("""
+            INSERT INTO ai_omni_models (
+                id, name, provider, provider_display, icon, input_cost, output_cost,
+                swe_score, image_support, tools_support, cache_support, context_window,
+                is_top, is_global, description, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                name = excluded.name,
+                provider = excluded.provider,
+                provider_display = excluded.provider_display,
+                icon = excluded.icon,
+                input_cost = excluded.input_cost,
+                output_cost = excluded.output_cost,
+                swe_score = excluded.swe_score,
+                image_support = excluded.image_support,
+                tools_support = excluded.tools_support,
+                cache_support = excluded.cache_support,
+                context_window = excluded.context_window,
+                is_top = excluded.is_top,
+                is_global = excluded.is_global,
+                description = excluded.description,
+                updated_at = excluded.updated_at
+        """, (
+            mid,
+            str(model_data.get("name") or mid),
+            str(model_data.get("provider") or "custom").lower(),
+            str(model_data.get("provider_display") or model_data.get("provider") or "Custom"),
+            str(model_data.get("icon") or "cpu"),
+            float(model_data.get("input_cost") or 0.0),
+            float(model_data.get("output_cost") or 0.0),
+            float(model_data.get("swe_score") or 0.0),
+            1 if model_data.get("image_support", True) else 0,
+            1 if model_data.get("tools_support", True) else 0,
+            1 if model_data.get("cache_support", True) else 0,
+            int(model_data.get("context_window") or 128000),
+            1 if model_data.get("is_top", False) else 0,
+            1 if model_data.get("is_global", True) else 0,
+            str(model_data.get("description") or ""),
+            now_ts,
+            now_ts,
+        ))
+        await db.commit()
+    return (await get_omni_model(mid)) or model_data
+
+
+async def list_custom_providers() -> list[dict[str, Any]]:
+    """List custom & synced providers on this VM instance."""
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM ai_custom_providers ORDER BY updated_at DESC") as cur:
+            rows = await cur.fetchall()
+            return [
+                {
+                    "id": r["id"],
+                    "name": r["name"],
+                    "provider_type": r["provider_type"],
+                    "base_url": r["base_url"],
+                    "has_api_key": bool(r["api_key"]),
+                    "gcp_project": r["gcp_project"] or "",
+                    "gcp_location": r["gcp_location"] or "us-central1",
+                    "models": json.loads(r["models_json"] or "[]"),
+                    "is_synced": bool(r["is_synced"]),
+                    "synced_at": r["synced_at"],
+                    "created_at": r["created_at"],
+                    "updated_at": r["updated_at"],
+                }
+                for r in rows
+            ]
+
+
+async def sync_handshake_providers(payload: dict[str, Any]) -> dict[str, Any]:
+    """Secure handshake sync to import custom and global providers/models to VM."""
+    now_ts = datetime.now(timezone.utc).isoformat()
+    providers_list = payload.get("providers") or []
+    models_list = payload.get("models") or []
+    imported_providers = 0
+    imported_models = 0
+
+    async with aiosqlite.connect(settings.resolved_db_path) as db:
+        for p in providers_list:
+            pid = str(p.get("id") or f"cp_{uuid.uuid4().hex[:8]}")
+            name = str(p.get("name") or pid)
+            ptype = str(p.get("provider_type") or p.get("provider") or "openai").lower()
+            base_url = str(p.get("base_url") or "")
+            api_key = str(p.get("api_key") or "")
+            gcp_project = str(p.get("gcp_project") or "")
+            gcp_location = str(p.get("gcp_location") or "us-central1")
+            models_json = json.dumps(p.get("models") or p.get("models_list") or [])
+
+            await db.execute("""
+                INSERT INTO ai_custom_providers (
+                    id, name, provider_type, base_url, api_key, gcp_project, gcp_location,
+                    models_json, is_synced, synced_at, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    name = excluded.name,
+                    provider_type = excluded.provider_type,
+                    base_url = excluded.base_url,
+                    api_key = CASE WHEN excluded.api_key != '' THEN excluded.api_key ELSE ai_custom_providers.api_key END,
+                    gcp_project = CASE WHEN excluded.gcp_project != '' THEN excluded.gcp_project ELSE ai_custom_providers.gcp_project END,
+                    gcp_location = CASE WHEN excluded.gcp_location != '' THEN excluded.gcp_location ELSE ai_custom_providers.gcp_location END,
+                    models_json = excluded.models_json,
+                    is_synced = 1,
+                    synced_at = excluded.synced_at,
+                    updated_at = excluded.updated_at
+            """, (pid, name, ptype, base_url, api_key, gcp_project, gcp_location, models_json, now_ts, now_ts, now_ts))
+            imported_providers += 1
+
+        for m in models_list:
+            mid = str(m.get("id") or "").strip()
+            if not mid:
+                continue
+            await db.execute("""
+                INSERT INTO ai_omni_models (
+                    id, name, provider, provider_display, icon, input_cost, output_cost,
+                    swe_score, image_support, tools_support, cache_support, context_window,
+                    is_top, is_global, description, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    name = excluded.name,
+                    provider = excluded.provider,
+                    provider_display = excluded.provider_display,
+                    icon = excluded.icon,
+                    input_cost = excluded.input_cost,
+                    output_cost = excluded.output_cost,
+                    swe_score = excluded.swe_score,
+                    image_support = excluded.image_support,
+                    tools_support = excluded.tools_support,
+                    cache_support = excluded.cache_support,
+                    context_window = excluded.context_window,
+                    is_top = excluded.is_top,
+                    is_global = excluded.is_global,
+                    description = excluded.description,
+                    updated_at = excluded.updated_at
+            """, (
+                mid,
+                str(m.get("name") or mid),
+                str(m.get("provider") or "custom").lower(),
+                str(m.get("provider_display") or m.get("provider") or "Custom"),
+                str(m.get("icon") or "cpu"),
+                float(m.get("input_cost") or 0.0),
+                float(m.get("output_cost") or 0.0),
+                float(m.get("swe_score") or 0.0),
+                1 if m.get("image_support", True) else 0,
+                1 if m.get("tools_support", True) else 0,
+                1 if m.get("cache_support", True) else 0,
+                int(m.get("context_window") or 128000),
+                1 if m.get("is_top", False) else 0,
+                1 if m.get("is_global", True) else 0,
+                str(m.get("description") or ""),
+                now_ts,
+                now_ts,
+            ))
+            imported_models += 1
+
+        await db.commit()
+
+    return {
+        "ok": True,
+        "imported_providers": imported_providers,
+        "imported_models": imported_models,
+        "synced_at": now_ts,
+    }
+
 
 
