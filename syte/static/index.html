@@ -2852,6 +2852,20 @@
                 <small class="hint">API keys are encrypted and stored safely on the host server.</small>
               </div>
 
+              <!-- Google Cloud Vertex AI Specific Fields -->
+              <div class="svc-ai-form-row" id="svc-ai-vertex-fields" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+                <div class="svc-ai-form-field" style="margin-bottom: 0;">
+                  <label for="svc-ai-setting-gcp-project">GCP Project ID</label>
+                  <input id="svc-ai-setting-gcp-project" placeholder="e.g. my-gcp-project-id" autocomplete="off">
+                  <small class="hint">Required for Vertex AI (auto-filled if SA JSON is pasted).</small>
+                </div>
+                <div class="svc-ai-form-field" style="margin-bottom: 0;">
+                  <label for="svc-ai-setting-gcp-location">GCP Region / Location</label>
+                  <input id="svc-ai-setting-gcp-location" placeholder="e.g. us-central1, us-east4" autocomplete="off">
+                  <small class="hint">Default: <code>us-central1</code>.</small>
+                </div>
+              </div>
+
               <div class="svc-ai-form-field">
                 <label for="svc-ai-setting-baseurl">Custom Base URL (Optional)</label>
                 <input id="svc-ai-setting-baseurl" placeholder="Leave empty for default provider endpoint" autocomplete="off">

@@ -453,6 +453,10 @@ async def _migrate(db: aiosqlite.Connection) -> None:
         ai_builder_cols = {row[1] for row in await cur.fetchall()}
     if ai_builder_cols and "saved_providers" not in ai_builder_cols:
         await db.execute("ALTER TABLE ai_builder_settings ADD COLUMN saved_providers TEXT DEFAULT '[]'")
+    if ai_builder_cols and "gcp_project" not in ai_builder_cols:
+        await db.execute("ALTER TABLE ai_builder_settings ADD COLUMN gcp_project TEXT DEFAULT ''")
+    if ai_builder_cols and "gcp_location" not in ai_builder_cols:
+        await db.execute("ALTER TABLE ai_builder_settings ADD COLUMN gcp_location TEXT DEFAULT 'us-central1'")
     async with db.execute("PRAGMA table_info(project_redirects)") as cur:
         redir_cols = {row[1] for row in await cur.fetchall()}
     if redir_cols and "preserve_query" not in redir_cols:
@@ -1407,6 +1411,8 @@ async def get_ai_builder_settings(project_id: str = "global") -> dict[str, Any]:
         "model": "gpt-4o",
         "api_key": "",
         "base_url": "",
+        "gcp_project": "",
+        "gcp_location": "us-central1",
         "temperature": 0.7,
         "max_tokens": 4096,
         "thinking_level": "medium",
@@ -1423,7 +1429,7 @@ async def get_ai_builder_settings(project_id: str = "global") -> dict[str, Any]:
     }
     async with aiosqlite.connect(settings.resolved_db_path) as db:
         async with db.execute(
-            "SELECT project_id, provider, model, api_key, base_url, temperature, max_tokens, thinking_level, system_prompt, tools_enabled, custom_models, saved_providers, updated_at "
+            "SELECT project_id, provider, model, api_key, base_url, temperature, max_tokens, thinking_level, system_prompt, tools_enabled, custom_models, saved_providers, updated_at, gcp_project, gcp_location "
             "FROM ai_builder_settings WHERE project_id = ?",
             (project_id,),
         ) as cursor:
@@ -1450,9 +1456,11 @@ async def get_ai_builder_settings(project_id: str = "global") -> dict[str, Any]:
                     "custom_models": row[10] or default_settings["custom_models"],
                     "saved_providers": saved_p if isinstance(saved_p, list) else [],
                     "updated_at": row[12] if len(row) > 12 else "",
+                    "gcp_project": row[13] if len(row) > 13 and row[13] else "",
+                    "gcp_location": row[14] if len(row) > 14 and row[14] else "us-central1",
                 }
                 if not res["api_key"] and project_id != "global":
-                    async with db.execute("SELECT api_key, saved_providers FROM ai_builder_settings WHERE project_id = 'global'") as g_cur:
+                    async with db.execute("SELECT api_key, saved_providers, gcp_project, gcp_location FROM ai_builder_settings WHERE project_id = 'global'") as g_cur:
                         g_data = await g_cur.fetchone()
                         if g_data and g_data[0]:
                             res["api_key"] = g_data[0]
@@ -1461,12 +1469,16 @@ async def get_ai_builder_settings(project_id: str = "global") -> dict[str, Any]:
                                 res["saved_providers"] = json.loads(g_data[1])
                             except Exception:
                                 pass
+                        if not res["gcp_project"] and g_data and len(g_data) > 2 and g_data[2]:
+                            res["gcp_project"] = g_data[2]
+                        if (not res["gcp_location"] or res["gcp_location"] == "us-central1") and g_data and len(g_data) > 3 and g_data[3]:
+                            res["gcp_location"] = g_data[3]
                 return res
 
         # If project-specific is not found, fallback to global settings if querying project
         if project_id != "global":
             async with db.execute(
-                "SELECT project_id, provider, model, api_key, base_url, temperature, max_tokens, thinking_level, system_prompt, tools_enabled, custom_models, saved_providers, updated_at "
+                "SELECT project_id, provider, model, api_key, base_url, temperature, max_tokens, thinking_level, system_prompt, tools_enabled, custom_models, saved_providers, updated_at, gcp_project, gcp_location "
                 "FROM ai_builder_settings WHERE project_id = 'global'"
             ) as cursor:
                 g_row = await cursor.fetchone()
@@ -1492,6 +1504,8 @@ async def get_ai_builder_settings(project_id: str = "global") -> dict[str, Any]:
                         "custom_models": g_row[10] or default_settings["custom_models"],
                         "saved_providers": saved_p if isinstance(saved_p, list) else [],
                         "updated_at": g_row[12] if len(g_row) > 12 else "",
+                        "gcp_project": g_row[13] if len(g_row) > 13 and g_row[13] else "",
+                        "gcp_location": g_row[14] if len(g_row) > 14 and g_row[14] else "us-central1",
                     }
 
     return default_settings
@@ -1503,6 +1517,8 @@ async def save_ai_builder_settings(project_id: str, data: dict[str, Any]) -> dic
     model = str(data.get("model") or "gpt-4o").strip()
     api_key = str(data.get("api_key") or "").strip()
     base_url = str(data.get("base_url") or "").strip()
+    gcp_project = str(data.get("gcp_project") or "").strip()
+    gcp_location = str(data.get("gcp_location") or "us-central1").strip() or "us-central1"
     temperature = float(data.get("temperature", 0.7))
     max_tokens = int(data.get("max_tokens", 4096))
     thinking_level = str(data.get("thinking_level") or "medium").strip()
@@ -1527,13 +1543,15 @@ async def save_ai_builder_settings(project_id: str, data: dict[str, Any]) -> dic
     async with aiosqlite.connect(settings.resolved_db_path) as db:
         for pid in set([project_id, "global"]):
             await db.execute(
-                "INSERT INTO ai_builder_settings (project_id, provider, model, api_key, base_url, temperature, max_tokens, thinking_level, system_prompt, tools_enabled, custom_models, saved_providers, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "INSERT INTO ai_builder_settings (project_id, provider, model, api_key, base_url, gcp_project, gcp_location, temperature, max_tokens, thinking_level, system_prompt, tools_enabled, custom_models, saved_providers, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(project_id) DO UPDATE SET "
                 "provider = excluded.provider, "
                 "model = excluded.model, "
                 "api_key = CASE WHEN excluded.api_key != '' THEN excluded.api_key ELSE ai_builder_settings.api_key END, "
                 "base_url = excluded.base_url, "
+                "gcp_project = CASE WHEN excluded.gcp_project != '' THEN excluded.gcp_project ELSE ai_builder_settings.gcp_project END, "
+                "gcp_location = CASE WHEN excluded.gcp_location != '' THEN excluded.gcp_location ELSE ai_builder_settings.gcp_location END, "
                 "temperature = excluded.temperature, "
                 "max_tokens = excluded.max_tokens, "
                 "thinking_level = excluded.thinking_level, "
@@ -1548,6 +1566,8 @@ async def save_ai_builder_settings(project_id: str, data: dict[str, Any]) -> dic
                     model,
                     api_key,
                     base_url,
+                    gcp_project,
+                    gcp_location,
                     temperature,
                     max_tokens,
                     thinking_level,

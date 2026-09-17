@@ -11254,6 +11254,9 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
   const providerSel = document.getElementById('svc-ai-setting-provider');
   const modelInput = document.getElementById('svc-ai-setting-model');
   const apiKeyInput = document.getElementById('svc-ai-setting-apikey');
+  const vertexFieldsWrap = document.getElementById('svc-ai-vertex-fields');
+  const gcpProjectInput = document.getElementById('svc-ai-setting-gcp-project');
+  const gcpLocationInput = document.getElementById('svc-ai-setting-gcp-location');
   const baseUrlInput = document.getElementById('svc-ai-setting-baseurl');
   const baseUrlHint = document.getElementById('svc-ai-baseurl-hint');
   const tempInput = document.getElementById('svc-ai-setting-temp');
@@ -11493,6 +11496,28 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
     });
   };
 
+  // Auto-detect project_id from SA JSON in apiKeyInput
+  if (apiKeyInput) {
+    apiKeyInput.addEventListener('input', () => {
+      const val = apiKeyInput.value.trim();
+      if (val.startsWith('{') && val.includes('"project_id"')) {
+        try {
+          const sa = JSON.parse(val);
+          if (sa.project_id && gcpProjectInput && !gcpProjectInput.value) {
+            gcpProjectInput.value = sa.project_id;
+            toast(`Auto-detected GCP Project: ${sa.project_id}`);
+          }
+        } catch (_) {}
+      }
+    });
+  }
+
+  const updateVertexFieldsVisibility = (prov) => {
+    if (vertexFieldsWrap) {
+      vertexFieldsWrap.style.display = (prov === 'vertex') ? 'grid' : 'none';
+    }
+  };
+
   // Provider Selection Tiles
   const providerTiles = document.querySelectorAll('.svc-ai-provider-tile');
   providerTiles.forEach(tile => {
@@ -11501,6 +11526,7 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
       tile.classList.add('active');
       const prov = tile.dataset.provider || 'vertex';
       if (providerSel) providerSel.value = prov;
+      updateVertexFieldsVisibility(prov);
 
       // Update placeholders and hints
       if (prov === 'vertex') {
@@ -11624,6 +11650,7 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
         const prov = btn.dataset.prov;
         if (providerSel) providerSel.value = prov;
         providerTiles.forEach(t => t.classList.toggle('active', t.dataset.provider === prov));
+        updateVertexFieldsVisibility(prov);
         switchTab('onboard');
         modelInput?.focus();
         toast(`Choose or enter a new model for ${prov.toUpperCase()}`);
@@ -11666,8 +11693,11 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
       providerTiles.forEach(t => {
         t.classList.toggle('active', t.dataset.provider === currentProv);
       });
+      updateVertexFieldsVisibility(currentProv);
 
       if (modelInput) modelInput.value = s.model || 'gemini-2.0-flash';
+      if (gcpProjectInput) gcpProjectInput.value = s.gcp_project || '';
+      if (gcpLocationInput) gcpLocationInput.value = s.gcp_location || 'us-central1';
       if (apiKeyInput) apiKeyInput.placeholder = s.has_api_key ? s.api_key_masked : 'AIzaSy... / sk-...';
       if (apiKeyInput) apiKeyInput.value = '';
       if (baseUrlInput) baseUrlInput.value = s.base_url || '';
@@ -11727,6 +11757,8 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
           model: cleanStr(modelInput?.value) || 'gemini-2.5-flash',
           api_key: enteredKey,
           base_url: cleanBaseUrl(baseUrlInput?.value || ''),
+          gcp_project: cleanStr(gcpProjectInput?.value || ''),
+          gcp_location: cleanStr(gcpLocationInput?.value || 'us-central1'),
         };
         const res = await api(`/projects/${encodeURIComponent(targetProject.id)}/ai/test-connection`, {
           method: 'POST',
@@ -11774,6 +11806,8 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
       const selectedModel = cleanStr(modelInput?.value) || 'gemini-2.5-flash';
       let enteredKey = cleanStr(apiKeyInput?.value) || '';
       const enteredBaseUrl = cleanBaseUrl(baseUrlInput?.value || '');
+      const enteredGcpProject = cleanStr(gcpProjectInput?.value || '');
+      const enteredGcpLocation = cleanStr(gcpLocationInput?.value || 'us-central1');
 
       // Multi-model fix: if key was not re-entered, inherit from matching saved provider or active settings
       if (!enteredKey) {
@@ -11793,6 +11827,8 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
         model: selectedModel,
         api_key: enteredKey,
         base_url: enteredBaseUrl,
+        gcp_project: enteredGcpProject,
+        gcp_location: enteredGcpLocation,
       };
 
       // Add to saved list if not duplicate
@@ -11800,6 +11836,8 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
       if (existingIdx >= 0) {
         if (enteredKey) savedProvidersListState[existingIdx].api_key = enteredKey;
         if (enteredBaseUrl !== undefined) savedProvidersListState[existingIdx].base_url = enteredBaseUrl;
+        if (enteredGcpProject !== undefined) savedProvidersListState[existingIdx].gcp_project = enteredGcpProject;
+        if (enteredGcpLocation !== undefined) savedProvidersListState[existingIdx].gcp_location = enteredGcpLocation;
       } else {
         savedProvidersListState.unshift(newProvEntry);
       }
@@ -11808,6 +11846,8 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
         provider: selectedProvider,
         model: selectedModel,
         base_url: enteredBaseUrl,
+        gcp_project: enteredGcpProject,
+        gcp_location: enteredGcpLocation,
         temperature: parseFloat(tempInput?.value || 0.7),
         max_tokens: parseInt(maxTokensInput?.value || 4096, 10),
         thinking_level: thinkingSel?.value || 'medium',
