@@ -14202,28 +14202,31 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 }
 
 /* Modal Tabs */
+/* Modal Tabs */
 .svc-ai-modal-tabs {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 0 20px;
+  gap: 6px;
+  padding: 8px 20px;
   border-bottom: 1px solid #e4e4e7;
   background: #fafafa;
+  overflow-x: auto;
 }
 
 .svc-ai-modal-tab-btn {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 16px;
+  padding: 8px 14px;
   font-size: 13px;
   font-weight: 500;
   color: #71717a;
   background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
+  border: 1px solid transparent;
+  border-radius: 10px;
   cursor: pointer;
   transition: all 0.15s ease;
+  white-space: nowrap;
 }
 
 .svc-ai-modal-tab-btn svg {
@@ -14233,31 +14236,35 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 
 .svc-ai-modal-tab-btn:hover {
   color: #18181b;
+  background: #f4f4f5;
 }
 
 .svc-ai-modal-tab-btn.active {
-  color: #0284c7;
-  border-bottom-color: #0284c7;
-  font-weight: 600;
+  color: #18181b;
+  background: #ffffff;
+  border-color: #e4e4e7;
+  font-weight: 700;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 .svc-ai-tab-badge {
-  background: #e4e4e7;
-  color: #3f3f46;
+  background: #f4f4f5;
+  color: #52525b;
   font-size: 11px;
   padding: 1px 6px;
   border-radius: 10px;
+  font-weight: 600;
 }
 
 .svc-ai-modal-tab-btn.active .svc-ai-tab-badge {
-  background: #bae6fd;
-  color: #0369a1;
+  background: #18181b;
+  color: #ffffff;
 }
 
 /* Provider Tiles Grid */
 .svc-ai-provider-tiles-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 10px;
   margin-top: 8px;
 }
@@ -14269,21 +14276,21 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   padding: 12px 14px;
   background: #ffffff;
   border: 1.5px solid #e4e4e7;
-  border-radius: 10px;
+  border-radius: 12px;
   cursor: pointer;
   transition: all 0.15s ease;
   position: relative;
 }
 
 .svc-ai-provider-tile:hover {
-  border-color: #cbd5e1;
-  background: #f8fafc;
+  border-color: #18181b;
+  background: #fafafa;
 }
 
 .svc-ai-provider-tile.active {
-  border-color: #0284c7;
-  background: #f0f9ff;
-  box-shadow: 0 0 0 1px #0284c7;
+  border-color: #18181b;
+  background: #fafafa;
+  box-shadow: 0 0 0 1px #18181b;
 }
 
 .svc-ai-tile-icon-wrap {
@@ -14335,7 +14342,7 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   display: none;
   width: 16px;
   height: 16px;
-  color: #0284c7;
+  color: #18181b;
   flex-shrink: 0;
 }
 
@@ -14359,28 +14366,27 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 
 .svc-ai-saved-provider-card {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 8px;
   padding: 12px 14px;
-  border: 1px solid #e4e4e7;
-  border-radius: 8px;
+  border: 1.5px solid #e4e4e7;
+  border-radius: 12px;
   background: #ffffff;
   transition: all 0.15s ease;
 }
 
 .svc-ai-saved-provider-card.active {
-  border-color: #0284c7;
-  background: #f0f9ff;
+  border-color: #18181b;
 }
 
 .svc-ai-saved-prov-left {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .svc-ai-saved-prov-model {
-  font-weight: 600;
+  font-weight: 700;
   font-size: 13.5px;
   color: #18181b;
 }
@@ -14388,17 +14394,17 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
 .svc-ai-saved-prov-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .svc-ai-active-pill {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 4px 10px;
+  padding: 3px 9px;
   border-radius: 20px;
-  background: #dcfce7;
-  color: #15803d;
+  background: #18181b;
+  color: #ffffff;
   font-size: 12px;
   font-weight: 600;
 }
@@ -14438,6 +14444,11 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   flex-direction: column;
   align-items: center;
   gap: 8px;
+}
+
+.svc-ai-skill-upload-zone:hover {
+  border-color: #18181b !important;
+  background: #f4f4f5 !important;
 }
 
 /* Quick Model Selector Floating Menu */

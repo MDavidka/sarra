@@ -292,8 +292,81 @@ async def submit_project_ai_answer(
 
 @router.get("/api/projects/{project_id}/ai/skills")
 async def get_project_ai_skills(project_id: str):
-    """List available domain skills and blueprints."""
-    return {"ok": True, "skills": list_available_skills()}
+    """List available domain skills and blueprints for a project."""
+    from syte.ai.skills import list_available_skills_for_project
+    skills = await list_available_skills_for_project(project_id)
+    return {"ok": True, "skills": skills}
+
+
+@router.post("/api/projects/{project_id}/ai/skills/upload")
+async def upload_project_skill(
+    project_id: str,
+    file: UploadFile = File(...),
+    responsibility: str = Form("general"),
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    """Upload a custom skill file (.md, .txt, .json, .py) to project skills registry."""
+    from syte.database import save_project_skill
+    import uuid
+
+    raw_bytes = await file.read()
+    content_str = raw_bytes.decode("utf-8", errors="replace").strip()
+    skill_name = Path(file.filename or "custom-skill").stem
+    skill_id = f"skill_{uuid.uuid4().hex[:8]}"
+
+    desc = f"Uploaded skill from {file.filename}"
+    first_lines = [l.strip() for l in content_str.splitlines() if l.strip()]
+    if first_lines and first_lines[0].startswith("#"):
+        desc = first_lines[0].lstrip("#").strip()
+
+    saved = await save_project_skill(
+        project_id=project_id,
+        skill_id=skill_id,
+        name=skill_name,
+        content=content_str,
+        responsibility=responsibility or "general",
+        description=desc,
+        active=True,
+    )
+    return {"ok": True, "skill": saved, "message": f"Skill '{skill_name}' uploaded successfully."}
+
+
+@router.delete("/api/projects/{project_id}/ai/skills/{skill_id}")
+async def delete_project_skill_endpoint(
+    project_id: str,
+    skill_id: str,
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    """Delete a custom uploaded skill."""
+    from syte.database import delete_project_skill
+    deleted = await delete_project_skill(project_id, skill_id)
+    return {"ok": deleted, "deleted_id": skill_id}
+
+
+@router.post("/api/projects/{project_id}/ai/skills/{skill_id}/toggle")
+async def toggle_project_skill_endpoint(
+    project_id: str,
+    skill_id: str,
+    body: Dict[str, Any],
+    _operator: dict[str, Any] = Depends(verify_operator_session_or_token),
+):
+    """Toggle a custom skill active/inactive state."""
+    from syte.database import get_project_skill, save_project_skill
+    existing = await get_project_skill(project_id, skill_id)
+    if not existing:
+        raise HTTPException(404, "Skill not found")
+    active_val = body.get("active", not existing.get("active", True))
+    saved = await save_project_skill(
+        project_id=project_id,
+        skill_id=skill_id,
+        name=existing["name"],
+        content=existing["content"],
+        responsibility=existing.get("responsibility", "general"),
+        description=existing.get("description", ""),
+        parameters=existing.get("parameters", {}),
+        active=bool(active_val),
+    )
+    return {"ok": True, "skill": saved}
 
 
 @router.post("/api/projects/{project_id}/ai/chat")

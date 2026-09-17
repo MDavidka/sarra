@@ -774,12 +774,26 @@ class UnifiedAIClient:
         vertex_contents = format_vertex_contents(messages)
         vertex_tools = format_vertex_tools(tools)
 
+        gen_config: dict[str, Any] = {
+            "temperature": self.temperature,
+            "maxOutputTokens": self.max_tokens,
+        }
+
+        # Native Gemini 2.5 / 2.0 Flash / Pro Thinking Support on Vertex AI
+        if self.thinking_level and self.thinking_level != "none" and not is_claude_on_vertex:
+            thinking_budgets = {
+                "low": 1024,
+                "medium": 4096,
+                "high": 8192,
+            }
+            budget = thinking_budgets.get(self.thinking_level, 4096)
+            gen_config["thinkingConfig"] = {
+                "thinkingBudget": budget,
+            }
+
         payload: dict[str, Any] = {
             "contents": vertex_contents,
-            "generationConfig": {
-                "temperature": self.temperature,
-                "maxOutputTokens": self.max_tokens,
-            },
+            "generationConfig": gen_config,
         }
         if system_prompt:
             payload["systemInstruction"] = {

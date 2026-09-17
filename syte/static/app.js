@@ -11242,7 +11242,7 @@ async function openModelSelectorDropdown(project, triggerBtn) {
   });
 }
 
-async function openAISettingsModal(project, initialTab = 'onboard') {
+async function openAISettingsModal(project, initialTab = 'providers') {
   const targetProject = project || selectedAIProject || { id: 'global', name: 'Global Platform' };
   const modal = document.getElementById('svc-ai-settings-modal');
   const closeBtn = document.getElementById('svc-ai-settings-close-btn');
@@ -11253,6 +11253,7 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
   const alertText = document.getElementById('svc-ai-settings-alert-text');
   const providerSel = document.getElementById('svc-ai-setting-provider');
   const modelInput = document.getElementById('svc-ai-setting-model');
+  const additionalModelsInput = document.getElementById('svc-ai-additional-models-input');
   const apiKeyInput = document.getElementById('svc-ai-setting-apikey');
   const vertexFieldsWrap = document.getElementById('svc-ai-vertex-fields');
   const gcpProjectInput = document.getElementById('svc-ai-setting-gcp-project');
@@ -11270,13 +11271,18 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
   const testStatus = document.getElementById('svc-ai-test-status');
   const toggleKeyBtn = document.getElementById('svc-ai-toggle-key-visibility');
 
+  // Bulk JSON Drawer Elements
+  const toggleBulkJsonBtn = document.getElementById('svc-ai-toggle-bulk-json-btn');
+  const closeBulkJsonBtn = document.getElementById('svc-ai-close-bulk-json-btn');
+  const applyBulkJsonBtn = document.getElementById('svc-ai-apply-bulk-json-btn');
+  const bulkJsonDrawer = document.getElementById('svc-ai-bulk-json-drawer');
+  const bulkJsonInput = document.getElementById('svc-ai-bulk-json-input');
+
   // Tab Elements
-  const tabBtnOnboard = document.getElementById('svc-ai-tab-btn-onboard');
-  const tabBtnSaved = document.getElementById('svc-ai-tab-btn-saved');
+  const tabBtnProviders = document.getElementById('svc-ai-tab-btn-providers') || document.getElementById('svc-ai-tab-btn-onboard');
   const tabBtnSkills = document.getElementById('svc-ai-tab-btn-skills');
   const tabBtnAdvanced = document.getElementById('svc-ai-tab-btn-advanced');
-  const panelOnboard = document.getElementById('svc-ai-panel-onboard');
-  const panelSaved = document.getElementById('svc-ai-panel-saved');
+  const panelProviders = document.getElementById('svc-ai-panel-providers') || document.getElementById('svc-ai-panel-onboard');
   const panelSkills = document.getElementById('svc-ai-panel-skills');
   const panelAdvanced = document.getElementById('svc-ai-panel-advanced');
   const savedCountBadge = document.getElementById('svc-ai-saved-count');
@@ -11285,6 +11291,11 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
   const skillsCatalogEl = document.getElementById('svc-ai-skills-catalog');
   const customSkillsInput = document.getElementById('svc-ai-custom-skills-input');
   const refreshSkillsBtn = document.getElementById('svc-ai-refresh-skills-btn');
+
+  // Skill Upload Elements
+  const skillUploadZone = document.getElementById('svc-ai-skill-upload-zone');
+  const skillFileInput = document.getElementById('svc-ai-skill-file-input');
+  const skillUploadStatus = document.getElementById('svc-ai-skill-upload-status');
 
   if (!modal) return;
   modal.classList.remove('hidden');
@@ -11305,19 +11316,23 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
       }
       skillsCatalogEl.innerHTML = skills.map(sk => {
         const isEnabled = enabledSkillsSet.has(sk.id) || enabledSkillsSet.has(sk.name) || sk.enabled_by_default;
+        const isCustom = !!sk.is_custom || sk.category === 'Custom';
         return `
-          <div class="svc-ai-skill-card ${isEnabled ? 'enabled' : ''}" style="background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; display: flex; flex-direction: column; justify-content: space-between; gap: 8px;">
+          <div class="svc-ai-skill-card ${isEnabled ? 'enabled' : ''}" style="background: #ffffff; border: 1.5px solid ${isEnabled ? '#18181b' : '#e4e4e7'}; border-radius: 14px; padding: 14px; display: flex; flex-direction: column; justify-content: space-between; gap: 10px; transition: all 0.15s ease;">
             <div>
-              <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 6px; margin-bottom: 4px;">
-                <strong style="font-size: 0.85rem; color: var(--text);">${escapeHtml(sk.name || sk.id)}</strong>
-                <span style="font-size: 0.68rem; padding: 1px 6px; border-radius: 4px; background: rgba(59,130,246,0.12); color: #3b82f6; font-weight: 500;">${escapeHtml(sk.category || 'Skill')}</span>
+              <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 6px; margin-bottom: 6px;">
+                <strong style="font-size: 0.88rem; color: #18181b; font-weight: 700;">${escapeHtml(sk.name || sk.id)}</strong>
+                <div style="display:flex; align-items:center; gap:4px;">
+                  <span style="font-size: 0.68rem; padding: 2px 7px; border-radius: 6px; background: ${isCustom ? '#fef3c7' : '#f4f4f5'}; color: ${isCustom ? '#92400e' : '#52525b'}; font-weight: 600;">${escapeHtml(sk.category || (isCustom ? 'Custom' : 'Skill'))}</span>
+                  ${isCustom ? `<button type="button" class="svc-ai-del-skill-btn" data-skill-id="${escapeHtml(sk.id)}" title="Delete custom skill" style="background:none; border:none; color:#a1a1aa; cursor:pointer; padding:2px; display:inline-flex; align-items:center;"><i data-lucide="trash-2" style="width:13px; height:13px;"></i></button>` : ''}
+                </div>
               </div>
-              <p style="font-size: 0.76rem; color: var(--text-dim); margin: 0; line-height: 1.3;">${escapeHtml(sk.description || '')}</p>
+              <p style="font-size: 0.78rem; color: #71717a; margin: 0; line-height: 1.35;">${escapeHtml(sk.description || '')}</p>
             </div>
-            <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border); padding-top: 8px; margin-top: 4px;">
-              <span style="font-size: 0.72rem; color: var(--text-muted);">${sk.tools_count ? `${sk.tools_count} tools` : 'Blueprint'}</span>
-              <label style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.76rem; font-weight: 500;">
-                <input type="checkbox" class="svc-ai-skill-toggle" data-skill-id="${escapeHtml(sk.id)}" ${isEnabled ? 'checked' : ''}>
+            <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #f4f4f5; padding-top: 10px; margin-top: 4px;">
+              <span style="font-size: 0.72rem; color: #a1a1aa;">${sk.tools_count ? `${sk.tools_count} tools` : (isCustom ? 'Uploaded file' : 'Built-in')}</span>
+              <label style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.78rem; font-weight: 600; color: #18181b;">
+                <input type="checkbox" class="svc-ai-skill-toggle" data-skill-id="${escapeHtml(sk.id)}" ${isEnabled ? 'checked' : ''} style="accent-color: #18181b; width: 15px; height: 15px;">
                 <span>${isEnabled ? 'Active' : 'Enable'}</span>
               </label>
             </div>
@@ -11328,48 +11343,243 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
       skillsCatalogEl.querySelectorAll('.svc-ai-skill-toggle').forEach(t => {
         t.onchange = () => {
           const sid = t.dataset.skillId;
+          const card = t.closest('.svc-ai-skill-card');
           if (t.checked) {
             enabledSkillsSet.add(sid);
-            t.parentElement.parentElement.parentElement.classList.add('enabled');
-            t.nextElementSibling.textContent = 'Active';
+            if (card) {
+              card.classList.add('enabled');
+              card.style.borderColor = '#18181b';
+            }
+            if (t.nextElementSibling) t.nextElementSibling.textContent = 'Active';
           } else {
             enabledSkillsSet.delete(sid);
-            t.parentElement.parentElement.parentElement.classList.remove('enabled');
-            t.nextElementSibling.textContent = 'Enable';
+            if (card) {
+              card.classList.remove('enabled');
+              card.style.borderColor = '#e4e4e7';
+            }
+            if (t.nextElementSibling) t.nextElementSibling.textContent = 'Enable';
           }
         };
       });
+
+      skillsCatalogEl.querySelectorAll('.svc-ai-del-skill-btn').forEach(btn => {
+        btn.onclick = async (e) => {
+          e.stopPropagation();
+          const sid = btn.dataset.skillId;
+          if (!confirm(`Delete custom skill "${sid}"?`)) return;
+          try {
+            await api(`/projects/${encodeURIComponent(targetProject.id)}/ai/skills/${encodeURIComponent(sid)}`, {
+              method: 'DELETE'
+            });
+            enabledSkillsSet.delete(sid);
+            toast('Custom skill deleted');
+            void renderSkillsCatalog();
+          } catch (err) {
+            toast(`Error deleting skill: ${err.message}`);
+          }
+        };
+      });
+
       refreshIcons();
     } catch (err) {
       skillsCatalogEl.innerHTML = `<p class="hint" style="color:#ef4444;">Error loading skills: ${escapeHtml(err.message)}</p>`;
     }
   };
 
+  // Skill File Upload Handling
+  if (skillUploadZone && skillFileInput) {
+    skillUploadZone.onclick = () => skillFileInput.click();
+
+    skillUploadZone.ondragover = (e) => {
+      e.preventDefault();
+      skillUploadZone.style.borderColor = '#18181b';
+      skillUploadZone.style.background = '#f4f4f5';
+    };
+
+    skillUploadZone.ondragleave = () => {
+      skillUploadZone.style.borderColor = '#cbd5e1';
+      skillUploadZone.style.background = '#fafafa';
+    };
+
+    skillUploadZone.ondrop = async (e) => {
+      e.preventDefault();
+      skillUploadZone.style.borderColor = '#cbd5e1';
+      skillUploadZone.style.background = '#fafafa';
+      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+        await handleFileUpload(e.dataTransfer.files[0]);
+      }
+    };
+
+    skillFileInput.onchange = async () => {
+      if (skillFileInput.files && skillFileInput.files[0]) {
+        await handleFileUpload(skillFileInput.files[0]);
+        skillFileInput.value = '';
+      }
+    };
+  }
+
+  const handleFileUpload = async (file) => {
+    if (!file) return;
+    if (skillUploadStatus) {
+      skillUploadStatus.textContent = `Uploading ${file.name}…`;
+      skillUploadStatus.style.color = '#71717a';
+    }
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await api(`/projects/${encodeURIComponent(targetProject.id)}/ai/skills/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+      if (res.ok) {
+        if (res.skill && res.skill.id) {
+          enabledSkillsSet.add(res.skill.id);
+        }
+        if (skillUploadStatus) {
+          skillUploadStatus.textContent = `Uploaded "${file.name}" successfully!`;
+          skillUploadStatus.style.color = '#16a34a';
+        }
+        toast(`Uploaded skill: ${file.name}`);
+        void renderSkillsCatalog();
+      } else {
+        const errDetail = res.error || res.detail || 'Upload failed';
+        if (skillUploadStatus) {
+          skillUploadStatus.textContent = `Upload failed: ${errDetail}`;
+          skillUploadStatus.style.color = '#dc2626';
+        }
+        showAlert(`Skill Upload Error: ${errDetail}`);
+      }
+    } catch (err) {
+      if (skillUploadStatus) {
+        skillUploadStatus.textContent = `Upload error: ${err.message}`;
+        skillUploadStatus.style.color = '#dc2626';
+      }
+      showAlert(`Skill Upload Error: ${err.message}`);
+    }
+  };
+
   const switchTab = (tab) => {
-    if (tabBtnOnboard) tabBtnOnboard.classList.toggle('active', tab === 'onboard');
-    if (tabBtnSaved) tabBtnSaved.classList.toggle('active', tab === 'saved');
-    if (tabBtnSkills) tabBtnSkills.classList.toggle('active', tab === 'skills');
-    if (tabBtnAdvanced) tabBtnAdvanced.classList.toggle('active', tab === 'advanced');
+    const normTab = (tab === 'onboard' || tab === 'saved') ? 'providers' : tab;
+    if (tabBtnProviders) tabBtnProviders.classList.toggle('active', normTab === 'providers');
+    if (tabBtnSkills) tabBtnSkills.classList.toggle('active', normTab === 'skills');
+    if (tabBtnAdvanced) tabBtnAdvanced.classList.toggle('active', normTab === 'advanced');
 
-    if (panelOnboard) panelOnboard.classList.toggle('hidden', tab !== 'onboard');
-    if (panelSaved) panelSaved.classList.toggle('hidden', tab !== 'saved');
-    if (panelSkills) panelSkills.classList.toggle('hidden', tab !== 'skills');
-    if (panelAdvanced) panelAdvanced.classList.toggle('hidden', tab !== 'advanced');
+    if (panelProviders) panelProviders.classList.toggle('hidden', normTab !== 'providers');
+    if (panelSkills) panelSkills.classList.toggle('hidden', normTab !== 'skills');
+    if (panelAdvanced) panelAdvanced.classList.toggle('hidden', normTab !== 'advanced');
 
-    if (tab === 'skills') {
+    if (normTab === 'skills') {
       void renderSkillsCatalog();
     }
     refreshIcons();
   };
 
-  if (tabBtnOnboard) tabBtnOnboard.onclick = () => switchTab('onboard');
-  if (tabBtnSaved) tabBtnSaved.onclick = () => switchTab('saved');
+  if (tabBtnProviders) tabBtnProviders.onclick = () => switchTab('providers');
   if (tabBtnSkills) tabBtnSkills.onclick = () => switchTab('skills');
   if (tabBtnAdvanced) tabBtnAdvanced.onclick = () => switchTab('advanced');
-  if (addNewProviderBtn) addNewProviderBtn.onclick = () => switchTab('onboard');
+  if (addNewProviderBtn) {
+    addNewProviderBtn.onclick = () => {
+      switchTab('providers');
+      const editor = document.getElementById('svc-ai-provider-editor-section');
+      if (editor) editor.scrollIntoView({ behavior: 'smooth' });
+      modelInput?.focus();
+    };
+  }
   if (refreshSkillsBtn) refreshSkillsBtn.onclick = () => renderSkillsCatalog();
 
-  switchTab(initialTab || 'onboard');
+  // Bulk JSON Drawer Toggling
+  if (toggleBulkJsonBtn && bulkJsonDrawer) {
+    toggleBulkJsonBtn.onclick = () => {
+      bulkJsonDrawer.classList.toggle('hidden');
+      if (!bulkJsonDrawer.classList.contains('hidden') && bulkJsonInput) {
+        bulkJsonInput.focus();
+      }
+      refreshIcons();
+    };
+  }
+  if (closeBulkJsonBtn && bulkJsonDrawer) {
+    closeBulkJsonBtn.onclick = () => {
+      bulkJsonDrawer.classList.add('hidden');
+    };
+  }
+
+  // Bulk JSON Import Logic
+  if (applyBulkJsonBtn && bulkJsonInput) {
+    applyBulkJsonBtn.onclick = async () => {
+      const raw = (bulkJsonInput.value || '').trim();
+      if (!raw) {
+        showAlert('Please paste valid JSON containing provider configurations.');
+        return;
+      }
+      try {
+        const parsed = JSON.parse(raw);
+        let itemsToImport = [];
+        if (Array.isArray(parsed)) {
+          itemsToImport = parsed;
+        } else if (parsed && Array.isArray(parsed.saved_providers)) {
+          itemsToImport = parsed.saved_providers;
+        } else if (parsed && Array.isArray(parsed.providers)) {
+          itemsToImport = parsed.providers;
+        } else if (parsed && typeof parsed === 'object') {
+          itemsToImport = [parsed];
+        }
+
+        if (!itemsToImport.length) {
+          showAlert('No provider entries found in JSON.');
+          return;
+        }
+
+        let importedCount = 0;
+        itemsToImport.forEach(item => {
+          const prov = (item.provider || 'openai').trim().toLowerCase();
+          const models = [];
+          if (item.model) models.push(item.model.trim());
+          if (Array.isArray(item.models_list)) {
+            item.models_list.forEach(m => { if (m && !models.includes(m.trim())) models.push(m.trim()); });
+          } else if (typeof item.models_list === 'string') {
+            item.models_list.split(',').forEach(m => { const tm = m.trim(); if (tm && !models.includes(tm)) models.push(tm); });
+          }
+          if (!models.length) models.push('default-model');
+
+          models.forEach(m => {
+            const entry = {
+              id: item.id || `p_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+              name: item.name || `${prov.toUpperCase()} (${m})`,
+              provider: prov,
+              model: m,
+              models_list: models,
+              api_key: item.api_key || '',
+              base_url: item.base_url || '',
+              gcp_project: item.gcp_project || '',
+              gcp_location: item.gcp_location || 'us-central1',
+            };
+            const existingIdx = savedProvidersListState.findIndex(p => p.provider === prov && p.model === m);
+            if (existingIdx >= 0) {
+              savedProvidersListState[existingIdx] = { ...savedProvidersListState[existingIdx], ...entry };
+            } else {
+              savedProvidersListState.unshift(entry);
+            }
+            importedCount++;
+          });
+        });
+
+        // Save imported list to backend
+        await api(`/projects/${encodeURIComponent(targetProject.id)}/ai/settings`, {
+          method: 'PUT',
+          body: JSON.stringify({ saved_providers: savedProvidersListState }),
+        });
+
+        if (bulkJsonDrawer) bulkJsonDrawer.classList.add('hidden');
+        renderSavedProviders(currentLoadedSettings?.provider, currentLoadedSettings?.model);
+        toast(`Successfully imported ${importedCount} provider model configuration(s)!`);
+      } catch (err) {
+        showAlert(`JSON Parse Error: ${err.message}`);
+      }
+    };
+  }
+
+  const initialNormTab = (initialTab === 'onboard' || initialTab === 'saved') ? 'providers' : (initialTab || 'providers');
+  switchTab(initialNormTab);
 
   const showAlert = (msg) => {
     if (alertBox && alertText) {
@@ -11579,16 +11789,22 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
 
     if (!savedProvidersListState.length) {
       savedProvidersList.innerHTML = `
-        <div class="svc-ai-no-saved-providers">
-          <i data-lucide="layers" style="color:#71717a; width:32px; height:32px; margin-bottom:8px;"></i>
-          <p>No saved providers yet.</p>
+        <div class="svc-ai-no-saved-providers" style="padding: 24px 16px; background: #fafafa; border: 1.5px dashed #e4e4e7; border-radius: 12px; text-align: center;">
+          <i data-lucide="layers" style="color:#a1a1aa; width:32px; height:32px; margin-bottom:8px;"></i>
+          <p style="font-size:13px; color:#71717a; margin:0 0 10px;">No saved providers yet.</p>
           <button type="button" class="btn-pill btn-primary btn-sm" id="svc-ai-empty-add-btn">
-            <i data-lucide="plus"></i><span>Add Your First Provider</span>
+            <i data-lucide="plus"></i><span>Configure Provider Below</span>
           </button>
         </div>
       `;
       const emptyAdd = savedProvidersList.querySelector('#svc-ai-empty-add-btn');
-      if (emptyAdd) emptyAdd.onclick = () => switchTab('onboard');
+      if (emptyAdd) {
+        emptyAdd.onclick = () => {
+          const editor = document.getElementById('svc-ai-provider-editor-section');
+          if (editor) editor.scrollIntoView({ behavior: 'smooth' });
+          modelInput?.focus();
+        };
+      }
       refreshIcons();
       return;
     }
@@ -11596,30 +11812,67 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
     savedProvidersList.innerHTML = savedProvidersListState.map((p, idx) => {
       const isActive = (p.model === activeModel && (p.provider === activeProvider || !p.provider));
       const prov = p.provider || 'openai';
+      const modelsList = Array.isArray(p.models_list) && p.models_list.length ? p.models_list : [p.model];
+      
       return `
-        <div class="svc-ai-saved-provider-card ${isActive ? 'active' : ''}">
-          <div class="svc-ai-saved-prov-left">
-            <div class="svc-ai-dropdown-prov-badge ${escapeHtml(prov)}">${escapeHtml(prov)}</div>
-            <div class="svc-ai-saved-prov-text">
-              <div class="svc-ai-saved-prov-model">${escapeHtml(p.model || 'Model')}</div>
-              <small class="hint">${escapeHtml(p.name || prov)} • ${p.api_key ? 'Key saved' : (currentLoadedSettings?.has_api_key && currentLoadedSettings.provider === prov ? 'Inherits active key' : 'No key')}</small>
+        <div class="svc-ai-saved-provider-card ${isActive ? 'active' : ''}" style="background: #ffffff; border: 1.5px solid ${isActive ? '#18181b' : '#e4e4e7'}; border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; transition: all 0.15s ease;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+            <div class="svc-ai-saved-prov-left" style="display: flex; align-items: center; gap: 10px;">
+              <div class="svc-ai-dropdown-prov-badge ${escapeHtml(prov)}" style="font-size: 0.72rem; font-weight: 700; text-transform: uppercase; padding: 3px 8px; border-radius: 6px; background: #f4f4f5; color: #18181b;">${escapeHtml(prov)}</div>
+              <div class="svc-ai-saved-prov-text">
+                <div class="svc-ai-saved-prov-model" style="font-weight: 700; font-size: 0.88rem; color: #18181b;">${escapeHtml(p.model || 'Model')}</div>
+                <small class="hint" style="font-size: 0.75rem; color: #71717a;">${escapeHtml(p.name || prov)} • ${p.api_key ? 'Key/SA saved' : (currentLoadedSettings?.has_api_key && currentLoadedSettings.provider === prov ? 'Inherits active key' : 'No key saved')}</small>
+              </div>
+            </div>
+            <div class="svc-ai-saved-prov-actions" style="display: flex; align-items: center; gap: 6px;">
+              <button type="button" class="btn-pill btn-ghost btn-sm svc-ai-add-model-btn" data-prov="${escapeHtml(prov)}" title="Add another model for this provider" style="font-size: 0.72rem; padding: 3px 8px; border: 1px solid #e4e4e7; border-radius: 8px;">
+                <i data-lucide="plus"></i><span>Model</span>
+              </button>
+              ${isActive
+                ? '<span class="svc-ai-active-pill" style="display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 20px; background: #18181b; color: #ffffff; font-size: 0.75rem; font-weight: 600;"><i data-lucide="check" style="width:12px; height:12px;"></i> Active</span>'
+                : `<button type="button" class="btn-pill btn-secondary btn-sm svc-ai-activate-btn" data-idx="${idx}" style="font-size: 0.75rem; padding: 3px 10px; font-weight: 600;">Activate</button>`
+              }
+              <button type="button" class="svc-ai-del-prov-btn" data-idx="${idx}" title="Delete provider" style="background:none; border:none; color:#a1a1aa; cursor:pointer; padding:4px; border-radius:6px; display:inline-flex; align-items:center;">
+                <i data-lucide="trash-2" style="width:14px; height:14px;"></i>
+              </button>
             </div>
           </div>
-          <div class="svc-ai-saved-prov-actions" style="display: flex; align-items: center; gap: 6px;">
-            <button type="button" class="btn-pill btn-ghost btn-sm svc-ai-add-model-btn" data-prov="${escapeHtml(prov)}" title="Add another model for this provider" style="font-size: 0.72rem; padding: 2px 8px;">
-              <i data-lucide="plus"></i><span>Model</span>
-            </button>
-            ${isActive
-              ? '<span class="svc-ai-active-pill"><i data-lucide="check"></i> Active</span>'
-              : `<button type="button" class="btn-pill btn-secondary btn-sm svc-ai-activate-btn" data-idx="${idx}">Activate</button>`
-            }
-            <button type="button" class="svc-ai-del-prov-btn" data-idx="${idx}" title="Delete provider">
-              <i data-lucide="trash-2"></i>
-            </button>
-          </div>
+          ${modelsList.length > 1 ? `
+            <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap; border-top: 1px solid #f4f4f5; padding-top: 6px;">
+              <span style="font-size: 0.72rem; color: #71717a; font-weight: 500;">Models:</span>
+              ${modelsList.map(m => `
+                <button type="button" class="svc-ai-model-switch-chip ${m === p.model ? 'active' : ''}" data-idx="${idx}" data-model="${escapeHtml(m)}" style="font-size: 0.72rem; padding: 2px 8px; border-radius: 12px; border: 1px solid ${m === p.model ? '#18181b' : '#e4e4e7'}; background: ${m === p.model ? '#18181b' : '#fafafa'}; color: ${m === p.model ? '#ffffff' : '#3f3f46'}; cursor: pointer; font-weight: 500;">${escapeHtml(m)}</button>
+              `).join('')}
+            </div>
+          ` : ''}
         </div>
       `;
     }).join('');
+
+    // Switch model under same provider chip
+    savedProvidersList.querySelectorAll('.svc-ai-model-switch-chip').forEach(chip => {
+      chip.onclick = async (e) => {
+        e.stopPropagation();
+        const idx = parseInt(chip.dataset.idx, 10);
+        const targetModel = chip.dataset.model;
+        const targetP = savedProvidersListState[idx];
+        if (!targetP) return;
+        targetP.model = targetModel;
+        try {
+          const res = await api(`/projects/${encodeURIComponent(targetProject.id)}/ai/providers/activate`, {
+            method: 'POST',
+            body: JSON.stringify({ provider_id: targetP.id, model: targetModel, provider: targetP.provider }),
+          });
+          if (res.ok) {
+            toast(`Switched active model to ${targetModel}`);
+            closeModal();
+            renderAIChatWorkspace(targetProject);
+          }
+        } catch (err) {
+          toast(`Failed to activate: ${err.message}`);
+        }
+      };
+    });
 
     // Activate buttons
     savedProvidersList.querySelectorAll('.svc-ai-activate-btn').forEach(btn => {
@@ -11651,7 +11904,8 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
         if (providerSel) providerSel.value = prov;
         providerTiles.forEach(t => t.classList.toggle('active', t.dataset.provider === prov));
         updateVertexFieldsVisibility(prov);
-        switchTab('onboard');
+        const editor = document.getElementById('svc-ai-provider-editor-section');
+        if (editor) editor.scrollIntoView({ behavior: 'smooth' });
         modelInput?.focus();
         toast(`Choose or enter a new model for ${prov.toUpperCase()}`);
       };
@@ -11695,7 +11949,7 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
       });
       updateVertexFieldsVisibility(currentProv);
 
-      if (modelInput) modelInput.value = s.model || 'gemini-2.0-flash';
+      if (modelInput) modelInput.value = s.model || 'gemini-2.5-flash';
       if (gcpProjectInput) gcpProjectInput.value = s.gcp_project || '';
       if (gcpLocationInput) gcpLocationInput.value = s.gcp_location || 'us-central1';
       if (apiKeyInput) apiKeyInput.placeholder = s.has_api_key ? s.api_key_masked : 'AIzaSy... / sk-...';
@@ -11804,10 +12058,20 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
 
       const selectedProvider = cleanStr(providerSel?.value) || 'vertex';
       const selectedModel = cleanStr(modelInput?.value) || 'gemini-2.5-flash';
+      const extraModelsRaw = cleanStr(additionalModelsInput?.value || '');
       let enteredKey = cleanStr(apiKeyInput?.value) || '';
       const enteredBaseUrl = cleanBaseUrl(baseUrlInput?.value || '');
       const enteredGcpProject = cleanStr(gcpProjectInput?.value || '');
       const enteredGcpLocation = cleanStr(gcpLocationInput?.value || 'us-central1');
+
+      // Multi-model list collection
+      const modelsList = [selectedModel];
+      if (extraModelsRaw) {
+        extraModelsRaw.split(',').forEach(m => {
+          const tm = cleanStr(m);
+          if (tm && !modelsList.includes(tm)) modelsList.push(tm);
+        });
+      }
 
       // Multi-model fix: if key was not re-entered, inherit from matching saved provider or active settings
       if (!enteredKey) {
@@ -11825,6 +12089,7 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
         name: `${selectedProvider.toUpperCase()} (${selectedModel})`,
         provider: selectedProvider,
         model: selectedModel,
+        models_list: modelsList,
         api_key: enteredKey,
         base_url: enteredBaseUrl,
         gcp_project: enteredGcpProject,
@@ -11838,9 +12103,30 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
         if (enteredBaseUrl !== undefined) savedProvidersListState[existingIdx].base_url = enteredBaseUrl;
         if (enteredGcpProject !== undefined) savedProvidersListState[existingIdx].gcp_project = enteredGcpProject;
         if (enteredGcpLocation !== undefined) savedProvidersListState[existingIdx].gcp_location = enteredGcpLocation;
+        savedProvidersListState[existingIdx].models_list = modelsList;
       } else {
         savedProvidersListState.unshift(newProvEntry);
       }
+
+      // Also create separate entries for any extra models if desired
+      modelsList.forEach(m => {
+        if (m !== selectedModel) {
+          const idx = savedProvidersListState.findIndex(p => p.provider === selectedProvider && p.model === m);
+          if (idx < 0) {
+            savedProvidersListState.push({
+              id: `p_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+              name: `${selectedProvider.toUpperCase()} (${m})`,
+              provider: selectedProvider,
+              model: m,
+              models_list: modelsList,
+              api_key: enteredKey,
+              base_url: enteredBaseUrl,
+              gcp_project: enteredGcpProject,
+              gcp_location: enteredGcpLocation,
+            });
+          }
+        }
+      });
 
       const payload = {
         provider: selectedProvider,
