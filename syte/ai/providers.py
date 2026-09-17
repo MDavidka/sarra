@@ -96,7 +96,13 @@ def extract_error_message(err_code: int, err_body: str, provider: str = "AI") ->
         except Exception:
             err_msg = f"{prov_name} HTTP {err_code}: {err_body[:300]}"
     if err_code in (401, 403):
-        err_msg = f"{err_msg} — Please verify your Google Cloud IAM permissions (Vertex AI User role / roles/aiplatform.user) and billing status."
+        if "API_KEY_SERVICE_BLOCKED" in err_body or "API keys are not supported" in err_body:
+            err_msg = (
+                f"{err_msg} — Native Vertex AI requires a Google Cloud Service Account JSON or OAuth2 token "
+                "(API keys are blocked on Vertex PredictionService unless Vertex AI Express mode is enabled, or use Google AI Studio 'Gemini' provider for API key authentication)."
+            )
+        else:
+            err_msg = f"{err_msg} — Please verify your Google Cloud IAM permissions (Vertex AI User role / roles/aiplatform.user) and billing status."
     elif err_code == 429:
         err_msg = f"{err_msg} — Rate limit or quota reached. Please check your project billing and quota limits."
     return err_msg
