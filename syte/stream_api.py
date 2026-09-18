@@ -130,46 +130,18 @@ async def stream_api_catalog() -> Dict[str, Any]:
 
 
 def get_normalized_models_catalog(settings_data: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Build a unified, deduplicated list of available model profiles for Syte and external clients."""
-    curated = [
-        {"id": "gpt-4o", "name": "GPT-4o (Omni)", "profile": "gpt-4o", "provider": "openai", "enabled": True, "active": True},
-        {"id": "gpt-4o-mini", "name": "GPT-4o Mini", "profile": "gpt-4o-mini", "provider": "openai", "enabled": True, "active": True},
-        {"id": "o3-mini", "name": "o3-mini (Reasoning)", "profile": "o3-mini", "provider": "openai", "enabled": True, "active": True},
-        {"id": "claude-3-5-sonnet-20241022", "name": "Claude 3.5 Sonnet", "profile": "claude-3-5-sonnet-20241022", "provider": "anthropic", "enabled": True, "active": True},
-        {"id": "claude-3-5-haiku-20241022", "name": "Claude 3.5 Haiku", "profile": "claude-3-5-haiku-20241022", "provider": "anthropic", "enabled": True, "active": True},
-        {"id": "gemini-2.0-flash", "name": "Gemini 2.0 Flash", "profile": "gemini-2.0-flash", "provider": "google", "enabled": True, "active": True},
-        {"id": "gemini-1.5-pro", "name": "Gemini 1.5 Pro", "profile": "gemini-1.5-pro", "provider": "google", "enabled": True, "active": True},
-        {"id": "deepseek-chat", "name": "DeepSeek V3", "profile": "deepseek-chat", "provider": "deepseek", "enabled": True, "active": True},
-        {"id": "deepseek-reasoner", "name": "DeepSeek R1 (Reasoner)", "profile": "deepseek-reasoner", "provider": "deepseek", "enabled": True, "active": True},
-        {"id": "qwen2.5-coder", "name": "Qwen 2.5 Coder", "profile": "qwen2.5-coder", "provider": "qwen", "enabled": True, "active": True},
-        {"id": "qwen3.8-flash", "name": "Qwen 3.8 Flash", "profile": "qwen3.8-flash", "provider": "custom", "enabled": True, "active": True},
-        {"id": "syra-base", "name": "Syra Base (Autonomous)", "profile": "syra-base", "provider": "syra", "enabled": True, "active": True},
-        {"id": "syra-nano", "name": "Syra Nano (Fast)", "profile": "syra-nano", "provider": "syra", "enabled": True, "active": True},
-        {"id": "syra-havy", "name": "Syra Heavy (Deep)", "profile": "syra-havy", "provider": "syra", "enabled": True, "active": True},
-        {"id": "syra-ultra", "name": "Syra Ultra (Full-Stack)", "profile": "syra-ultra", "provider": "syra", "enabled": True, "active": True},
-    ]
+    """Build a unified, deduplicated list of available model profiles for Syte and external clients.
+    Only includes models that are actually saved/configured or turned on at Syra."""
+    models: List[Dict[str, Any]] = []
 
-    custom_str = settings_data.get("custom_models") or ""
-    if custom_str:
-        for m in custom_str.split(","):
-            m = m.strip()
-            if m and not any(c["id"] == m or c["profile"] == m for c in curated):
-                curated.append({
-                    "id": m,
-                    "name": m,
-                    "profile": m,
-                    "provider": settings_data.get("provider", "custom"),
-                    "enabled": True,
-                    "active": True,
-                })
-
+    # Include turned-on models from saved providers
     for sp in settings_data.get("saved_providers") or []:
         if isinstance(sp, dict):
             p_name = sp.get("name") or sp.get("provider") or "Custom"
             models_sub = sp.get("models_list") or ([sp.get("model")] if sp.get("model") else [])
             for m in models_sub:
-                if m and not any(c["id"] == m or c["profile"] == m for c in curated):
-                    curated.append({
+                if m and not any(c["id"] == m or c["profile"] == m for c in models):
+                    models.append({
                         "id": m,
                         "name": f"{m} ({p_name})",
                         "profile": m,
@@ -178,18 +150,46 @@ def get_normalized_models_catalog(settings_data: Dict[str, Any]) -> List[Dict[st
                         "active": sp.get("active", True),
                     })
 
+    # Gemini Enterprise Agent Platform models configured with Google Vertex
+    gcp_project = settings_data.get("gcp_project") or ""
+    if gcp_project or settings_data.get("provider") == "google":
+        gemini_enterprise_models = [
+            {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro (Google Vertex)", "profile": "gemini-2.5-pro", "provider": "google", "enabled": True, "active": True},
+            {"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash (Google Vertex)", "profile": "gemini-2.5-flash", "provider": "google", "enabled": True, "active": True},
+            {"id": "gemini-3.8-flash", "name": "Gemini 3.8 Flash (Google Vertex)", "profile": "gemini-3.8-flash", "provider": "google", "enabled": True, "active": True},
+            {"id": "gemini-2.5-flash-lite", "name": "Gemini 2.5 Flash-Lite (Google Vertex)", "profile": "gemini-2.5-flash-lite", "provider": "google", "enabled": True, "active": True},
+            {"id": "gemini-2.5-computer-use", "name": "Gemini 2.5 Computer Use (Google Vertex)", "profile": "gemini-2.5-computer-use", "provider": "google", "enabled": True, "active": True},
+        ]
+        for m in gemini_enterprise_models:
+            if not any(c["id"] == m["id"] or c["profile"] == m["profile"] for c in models):
+                models.append(m)
+
+    custom_str = settings_data.get("custom_models") or ""
+    if custom_str:
+        for m in custom_str.split(","):
+            m = m.strip()
+            if m and not any(c["id"] == m or c["profile"] == m for c in models):
+                models.append({
+                    "id": m,
+                    "name": m,
+                    "profile": m,
+                    "provider": settings_data.get("provider", "custom"),
+                    "enabled": True,
+                    "active": True,
+                })
+
     active_m = str(settings_data.get("model") or "").strip()
-    if active_m and not any(c["id"] == active_m or c["profile"] == active_m for c in curated):
-        curated.insert(0, {
+    if active_m and not any(c["id"] == active_m or c["profile"] == active_m for c in models):
+        models.insert(0, {
             "id": active_m,
             "name": f"{active_m} (Active)",
             "profile": active_m,
-            "provider": settings_data.get("provider", "custom"),
+            "provider": settings_data.get("provider", "google"),
             "enabled": True,
             "active": True,
         })
 
-    return curated
+    return models
 
 
 @router.get("/health")

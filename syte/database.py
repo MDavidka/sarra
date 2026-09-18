@@ -573,36 +573,23 @@ async def _migrate(db: aiosqlite.Connection) -> None:
         VALUES ('default_user', 5.00, 5.00, 0.00, ?, ?)
     """, (now_ts, now_ts))
 
-    # Seed default Omni Models catalog if empty
-    async with db.execute("SELECT COUNT(*) FROM ai_omni_models") as cur:
-        count_row = await cur.fetchone()
-        omni_count = count_row[0] if count_row else 0
+    # Seed Google Gemini Enterprise Agent Platform models into ai_omni_models
+    gemini_enterprise_models = [
+        ("gemini-3.8-flash", "Gemini 3.8 Flash", "google", "Google Vertex AI", "google", 0.75, 3.75, 64.2, 1, 1, 1, 1000000, 1, 1, "Frontier enterprise multimodal agent model with fast reasoning and tool execution", now_ts, now_ts),
+        ("gemini-2.5-flash", "Gemini 2.5 Flash", "google", "Google Vertex AI", "google", 0.15, 0.60, 56.8, 1, 1, 1, 1000000, 1, 1, "High-speed hybrid reasoning workhorse for agentic coding and automation", now_ts, now_ts),
+        ("gemini-2.5-pro", "Gemini 2.5 Pro", "google", "Google Vertex AI", "google", 1.25, 5.00, 68.9, 1, 1, 1, 2000000, 1, 1, "Deep reasoning enterprise foundation model with adaptive thinking budget", now_ts, now_ts),
+        ("gemini-2.5-flash-lite", "Gemini 2.5 Flash-Lite", "google", "Google Vertex AI", "google", 0.075, 0.30, 48.5, 1, 1, 1, 1000000, 0, 1, "Ultra-efficient lightweight model for high-frequency tool loops", now_ts, now_ts),
+        ("gemini-2.5-computer-use", "Gemini 2.5 Computer Use", "google", "Google Vertex AI", "google", 1.25, 5.00, 60.4, 1, 1, 1, 1000000, 0, 1, "Autonomous GUI navigation, screen understanding, and tool execution", now_ts, now_ts),
+    ]
+    for gm in gemini_enterprise_models:
+        await db.execute("""
+            INSERT OR IGNORE INTO ai_omni_models (
+                id, name, provider, provider_display, icon, input_cost, output_cost,
+                swe_score, image_support, tools_support, cache_support, context_window,
+                is_top, is_global, description, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, gm)
 
-    if omni_count == 0:
-        DEFAULT_OMNI_MODELS = [
-            ("gemini-2.5-pro", "Gemini 2.5 Pro", "google", "Google Vertex AI", "google", 1.25, 5.00, 63.8, 1, 1, 1, 1000000, 1, 1, "Flagship Google multimodal model with deep reasoning and 1M context window."),
-            ("gemini-2.5-flash", "Gemini 2.5 Flash", "google", "Google Vertex AI", "google", 0.15, 0.60, 56.2, 1, 1, 1, 1000000, 1, 1, "High-frequency low-latency Google model with native multimodal capabilities."),
-            ("gemini-2.5-flash-lite", "Gemini 2.5 Flash Lite", "google", "Google Vertex AI", "google", 0.075, 0.30, 50.4, 1, 1, 1, 1000000, 0, 1, "Ultra-fast lightweight Gemini model for rapid tasks and tools."),
-            ("claude-3-7-sonnet", "Claude 3.7 Sonnet", "anthropic", "Anthropic", "anthropic", 3.00, 15.00, 70.3, 1, 1, 1, 200000, 1, 1, "Top-ranked coding and reasoning model with hybrid thinking architecture."),
-            ("claude-3-5-sonnet-20241022", "Claude 3.5 Sonnet", "anthropic", "Anthropic", "anthropic", 3.00, 15.00, 64.0, 1, 1, 1, 200000, 1, 1, "Industry benchmark for frontend generation, reasoning, and tool execution."),
-            ("gpt-4o", "GPT-4o", "openai", "OpenAI", "openai", 2.50, 10.00, 54.2, 1, 1, 1, 128000, 1, 1, "Omni multimodal flagship from OpenAI with broad reasoning and vision."),
-            ("o3-mini", "o3-mini (Reasoning)", "openai", "OpenAI", "openai", 1.10, 4.40, 61.5, 0, 1, 1, 200000, 1, 1, "High-efficiency specialized STEM and algorithmic coding reasoning model."),
-            ("deepseek-chat", "DeepSeek V3", "deepseek", "DeepSeek", "deepseek", 0.14, 0.28, 49.2, 0, 1, 1, 64000, 1, 1, "State-of-the-art open weights architecture with high speed and low cost."),
-            ("deepseek-reasoner", "DeepSeek R1", "deepseek", "DeepSeek", "deepseek", 0.55, 2.19, 58.6, 0, 1, 1, 64000, 1, 1, "Open reasoning model with transparent chain-of-thought tokens."),
-            ("meta/llama-3.3-70b-instruct-maas", "Llama 3.3 70B", "meta", "Meta Llama", "meta", 0.40, 1.20, 48.0, 0, 1, 0, 128000, 1, 1, "Meta's flagship open weights 70B instruction-tuned model."),
-            ("qwen/qwen-2.5-coder-32b-instruct", "Qwen 2.5 Coder 32B", "qwen", "Alibaba Qwen", "qwen", 0.20, 0.60, 51.6, 0, 1, 0, 128000, 0, 1, "Dedicated code generation model specialized in full-stack refactoring."),
-            ("z-ai/glm-5.2:free", "GLM 5.2 Flash", "openrouter", "Zhipu AI", "glm", 0.00, 0.00, 46.5, 1, 1, 0, 128000, 0, 1, "Fast multimodal GLM architecture with free community tier access."),
-            ("minimax-m2", "MiniMax M2", "custom", "MiniMax", "minimax", 0.20, 0.80, 44.0, 0, 1, 0, 128000, 0, 1, "Long-context language model with high concurrency support."),
-            ("gemma-4", "Gemma 4 / 27B", "google", "Google DeepMind", "google", 0.10, 0.20, 42.5, 0, 1, 0, 8192, 0, 1, "Open weights family from Google DeepMind optimized for lightweight execution.")
-        ]
-        for m in DEFAULT_OMNI_MODELS:
-            await db.execute("""
-                INSERT OR REPLACE INTO ai_omni_models (
-                    id, name, provider, provider_display, icon, input_cost, output_cost,
-                    swe_score, image_support, tools_support, cache_support, context_window,
-                    is_top, is_global, description, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (*m, now_ts, now_ts))
 
 
 async def get_setting(key: str, default: str = "") -> str:
@@ -1504,8 +1491,8 @@ async def get_project_visitor_stats_7d(project_id: str) -> dict[str, Any]:
 async def get_ai_builder_settings(project_id: str = "global") -> dict[str, Any]:
     default_settings = {
         "project_id": project_id,
-        "provider": "openai",
-        "model": "gpt-4o",
+        "provider": "google",
+        "model": "gemini-2.5-pro",
         "api_key": "",
         "base_url": "",
         "gcp_project": "",
@@ -1520,7 +1507,7 @@ async def get_ai_builder_settings(project_id: str = "global") -> dict[str, Any]:
             "Always inspect relevant files before modifying them, run tests or build verification when applicable, and provide clean, concise progress updates."
         ),
         "tools_enabled": "all",
-        "custom_models": "gpt-4o,gpt-4o-mini,o3-mini,claude-3-5-sonnet-20241022,claude-3-5-haiku-20241022,gemini-1.5-pro,gemini-2.0-flash,deepseek-chat,deepseek-reasoner,qwen2.5-coder",
+        "custom_models": "",
         "saved_providers": [],
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -1550,7 +1537,7 @@ async def get_ai_builder_settings(project_id: str = "global") -> dict[str, Any]:
                     "thinking_level": row[7] or "medium",
                     "system_prompt": row[8] or default_settings["system_prompt"],
                     "tools_enabled": row[9] or "all",
-                    "custom_models": row[10] or default_settings["custom_models"],
+                    "custom_models": row[10] if row[10] is not None else "",
                     "saved_providers": saved_p if isinstance(saved_p, list) else [],
                     "updated_at": row[12] if len(row) > 12 else "",
                     "gcp_project": row[13] if len(row) > 13 and row[13] else "",
@@ -1598,7 +1585,7 @@ async def get_ai_builder_settings(project_id: str = "global") -> dict[str, Any]:
                         "thinking_level": g_row[7] or "medium",
                         "system_prompt": g_row[8] or default_settings["system_prompt"],
                         "tools_enabled": g_row[9] or "all",
-                        "custom_models": g_row[10] or default_settings["custom_models"],
+                        "custom_models": g_row[10] if g_row[10] is not None else "",
                         "saved_providers": saved_p if isinstance(saved_p, list) else [],
                         "updated_at": g_row[12] if len(g_row) > 12 else "",
                         "gcp_project": g_row[13] if len(g_row) > 13 and g_row[13] else "",

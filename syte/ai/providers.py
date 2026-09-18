@@ -782,9 +782,11 @@ class UnifiedAIClient:
         # Native Gemini 2.5 / 2.0 Flash / Pro Thinking Support on Vertex AI
         if self.thinking_level and self.thinking_level != "none" and not is_claude_on_vertex:
             thinking_budgets = {
-                "low": 1024,
-                "medium": 4096,
-                "high": 8192,
+                "low": 0,           # Fast mode: actually fast (0 thinking tokens, no thinking delay)
+                "medium": 4096,     # Balanced speed & depth
+                "high": 12288,      # Deep reasoning & verification
+                "extra_high": 24576,# Extra high: think significantly more
+                "max": 32768,       # Maximum reasoning budget
             }
             budget = thinking_budgets.get(self.thinking_level, 4096)
             gen_config["thinkingConfig"] = {
@@ -920,6 +922,13 @@ class UnifiedAIClient:
             "max_tokens": self.max_tokens,
             "stream": True,
         }
+        if self.thinking_level and self.thinking_level != "none":
+            if self.thinking_level == "low":
+                payload["reasoning_effort"] = "low"
+            elif self.thinking_level == "medium":
+                payload["reasoning_effort"] = "medium"
+            elif self.thinking_level in ("high", "extra_high", "max"):
+                payload["reasoning_effort"] = "high"
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"

@@ -13560,6 +13560,14 @@ body.account-auth-pending .app-shell,body.account-auth-pending .sidebar-backdrop
   outline: none;
   padding: 8px 0;
 }
+.svc-ai-omni-search-input-box input::-webkit-search-cancel-button,
+.svc-ai-omni-search-input-box input::-webkit-search-decoration,
+.svc-ai-omni-search-input-box input::-ms-clear,
+.svc-ai-omni-search-input-box input::-ms-reveal {
+  display: none !important;
+  -webkit-appearance: none !important;
+  appearance: none !important;
+}
 
 .svc-ai-omni-count-badge {
   font-size: 11px;
