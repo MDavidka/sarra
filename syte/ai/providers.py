@@ -895,17 +895,21 @@ class UnifiedAIClient:
         }
 
         # Native Gemini 2.5 / 2.0 Flash / Pro Thinking Support on Vertex AI
+        # Vertex AI thinkingConfig.thinkingBudget supported values are integers from 0/1 to 24576 (max 24576).
         if self.thinking_level and self.thinking_level != "none" and not is_claude_on_vertex:
             thinking_budgets = {
-                "low": 0,           # Fast mode: actually fast (0 thinking tokens, no thinking delay)
-                "medium": 4096,     # Balanced speed & depth
-                "high": 12288,      # Deep reasoning & verification
-                "extra_high": 24576,# Extra high: think significantly more
-                "max": 32768,       # Maximum reasoning budget
+                "none": 0,
+                "low": 0,            # 0 / minimal thinking tokens for fast responses
+                "medium": 2048,      # Balanced speed & depth
+                "high": 8192,       # Deep reasoning & verification
+                "extra_high": 16384, # Extra high reasoning
+                "max": 24576,        # Maximum supported Vertex AI thinking budget (24576)
             }
-            budget = thinking_budgets.get(self.thinking_level, 4096)
+            raw_budget = thinking_budgets.get(self.thinking_level, 2048)
+            # Clamp budget strictly between 0 and 24576
+            clamped_budget = max(0, min(24576, raw_budget))
             gen_config["thinkingConfig"] = {
-                "thinkingBudget": budget,
+                "thinkingBudget": clamped_budget,
             }
 
         payload: dict[str, Any] = {
@@ -948,12 +952,17 @@ class UnifiedAIClient:
             response = None
             last_err_msg = extract_error_message(err_code, err_body, provider="vertex")
 
-            # Fallback 1: If project-scoped Vertex Express endpoint failed, try global Vertex Express endpoint
+            # Fallback 1: If thinking budget is rejected with 400 Bad Request, remove thinkingConfig and retry
+            if err_code == 400 and "thinking" in err_body.lower() and "thinkingConfig" in payload.get("generationConfig", {}):
+                payload["generationConfig"].pop("thinkingConfig", None)
+                continue
+
+            # Fallback 2: If project-scoped Vertex Express endpoint failed, try global Vertex Express endpoint
             if err_code in (401, 403, 404) and is_express_key and "publishers/google/models" in url and f"projects/{project}" in url:
                 url = f"https://aiplatform.googleapis.com/v1/publishers/google/models/{effective_model}:streamGenerateContent?alt=sse&key={self.api_key}"
                 continue
 
-            # Fallback 2: If API key was blocked or rejected, seamlessly fall back to presaved Service Account handshake
+            # Fallback 3: If API key was blocked or rejected, seamlessly fall back to presaved Service Account handshake
             if err_code in (401, 403) and not vertex_access_token:
                 sa_info = VertexAuthManager.parse_service_account("")
                 if sa_info:

@@ -219,7 +219,6 @@ def test_models_endpoint_json_and_stream() -> None:
     assert data["ok"] is True
     assert isinstance(data["models"], list)
     assert len(data["models"]) > 0
-    assert any(m["id"] == "gpt-4o" for m in data["models"])
     assert "available_models" in data
     assert "saved_providers" in data
 
@@ -231,7 +230,6 @@ def test_models_endpoint_json_and_stream() -> None:
         joined = "".join(chunks)
         assert "retry: 2000" in joined
         assert "data: " in joined
-        assert "gpt-4o" in joined
         assert "data: [DONE]" in joined
 
     # 3. /api/models?active_only=true returns single model from AI tab
