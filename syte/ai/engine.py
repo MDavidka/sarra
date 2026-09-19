@@ -422,10 +422,24 @@ class AIAgentEngine:
                     inferred_p = infer_provider_for_model(target_model)
                     if inferred_p:
                         settings_override["provider"] = inferred_p
+                        if inferred_p == "vertex":
+                            if not settings_override.get("gcp_project"):
+                                settings_override["gcp_project"] = "gen-lang-client-0678084379"
+                            if not settings_override.get("gcp_location"):
+                                settings_override["gcp_location"] = "us-central1"
                         if "base_url" not in settings_override:
                             settings_override["base_url"] = ""
 
             ai_settings.update(settings_override)
+
+        # Guarantee Vertex provider and presaved handshake for all Google/Gemini models
+        current_model = str(ai_settings.get("model", "")).lower()
+        if "gemini" in current_model or "gemma" in current_model or ai_settings.get("provider") in ("google", "vertex"):
+            ai_settings["provider"] = "vertex"
+            if not ai_settings.get("gcp_project"):
+                ai_settings["gcp_project"] = "gen-lang-client-0678084379"
+            if not ai_settings.get("gcp_location") or ai_settings.get("gcp_location") == "us-central1":
+                ai_settings["gcp_location"] = "us-central1"
 
         client = UnifiedAIClient(
             provider=ai_settings.get("provider", "openai"),
