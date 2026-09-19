@@ -580,6 +580,7 @@ async def _migrate(db: aiosqlite.Connection) -> None:
         ("gemini-2.5-pro", "Gemini 2.5 Pro", "google", "Google Vertex AI", "google", 1.25, 5.00, 68.9, 1, 1, 1, 2000000, 1, 1, "Deep reasoning enterprise foundation model with adaptive thinking budget", now_ts, now_ts),
         ("gemini-2.5-flash-lite", "Gemini 2.5 Flash-Lite", "google", "Google Vertex AI", "google", 0.075, 0.30, 48.5, 1, 1, 1, 1000000, 0, 1, "Ultra-efficient lightweight model for high-frequency tool loops", now_ts, now_ts),
         ("gemini-2.5-computer-use", "Gemini 2.5 Computer Use", "google", "Google Vertex AI", "google", 1.25, 5.00, 60.4, 1, 1, 1, 1000000, 0, 1, "Autonomous GUI navigation, screen understanding, and tool execution", now_ts, now_ts),
+        ("openrouter:free", "OpenRouter Free", "openrouter", "OpenRouter (Auto Free)", "openrouter", 0.00, 0.00, 55.4, 1, 1, 1, 262144, 1, 1, "Auto-routed across all discovered free OpenRouter models with zero latency fallback", now_ts, now_ts),
     ]
     for gm in gemini_enterprise_models:
         await db.execute("""

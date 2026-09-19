@@ -27,6 +27,7 @@ logger = logging.getLogger("syte.ai.providers")
 DEFAULT_BASE_URLS = {
     "vertex": "https://{LOCATION}-aiplatform.googleapis.com/v1/projects/{PROJECT}/locations/{LOCATION}/publishers/google",
     "gemini": "https://generativelanguage.googleapis.com/v1beta/openai",
+    "google": "https://generativelanguage.googleapis.com/v1beta/openai",
     "openai": "https://api.openai.com/v1",
     "anthropic": "https://api.anthropic.com/v1",
     "deepseek": "https://api.deepseek.com/v1",
@@ -43,12 +44,31 @@ ENV_KEY_MAP = {
         "GOOGLE_CLOUD_API_KEY",
         "VERTEX_SERVICE_ACCOUNT_JSON",
     ],
-    "gemini": ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
+    "gemini": ["GEMINI_API_KEY", "GOOGLE_API_KEY", "GCP_API_KEY"],
+    "google": ["GEMINI_API_KEY", "GOOGLE_API_KEY", "GCP_API_KEY", "VERTEX_API_KEY"],
     "openai": ["OPENAI_API_KEY"],
     "anthropic": ["ANTHROPIC_API_KEY", "CLAUDE_API_KEY"],
     "deepseek": ["DEEPSEEK_API_KEY"],
     "openrouter": ["OPENROUTER_API_KEY", "OPENROUTER_KEY", "OPEN_ROUTER_API_KEY"],
 }
+
+
+def infer_provider_for_model(model: str) -> str:
+    """Infer the authoritative provider for a model name to prevent mismatching to custom proxies."""
+    m = _clean_string(model).lower()
+    if m.startswith("openrouter") or ":free" in m:
+        return "openrouter"
+    if "gemini" in m or "gemma" in m:
+        return "google"
+    if "claude" in m or "sonnet" in m or "haiku" in m or "opus" in m:
+        return "anthropic"
+    if "gpt" in m or "o1" in m or "o3" in m or "chatgpt" in m:
+        return "openai"
+    if "deepseek" in m:
+        return "deepseek"
+    if "glm" in m or "zai" in m or "zhipu" in m:
+        return "zai"
+    return ""
 
 
 def _clean_string(s: str) -> str:
@@ -440,7 +460,7 @@ def _normalize_base_url(provider: str, base_url: str, gcp_project: str = "", gcp
                 url = url.replace("{PROJECT}", project).replace("{project}", project)
         if "{LOCATION}" in url or "{location}" in url:
             url = url.replace("{LOCATION}", location).replace("{location}", location)
-    elif p == "gemini" or "generativelanguage.googleapis.com" in url:
+    elif p in ("gemini", "google") or "generativelanguage.googleapis.com" in url:
         if not url.endswith("/openai"):
             if not url.endswith("/v1beta"):
                 url = f"{url}/v1beta/openai"
@@ -595,14 +615,42 @@ class UnifiedAIClient:
         gcp_project: str = "",
         gcp_location: str = "us-central1",
     ):
-        self.provider = _clean_string(provider or "openai").lower()
+        raw_provider = _clean_string(provider or "").lower()
         self.model = _clean_string(model or "gpt-4o")
+        raw_base_url = _clean_string(base_url)
+
+        # Robust provider auto-detection to prevent routing errors (e.g. Gemini routed to b.ai distributor)
+        inferred = infer_provider_for_model(self.model)
+        if inferred == "google":
+            if raw_provider in ("custom", "openai", "") or "api.b.ai" in raw_base_url:
+                self.provider = "google"
+                raw_base_url = ""
+            else:
+                self.provider = raw_provider or "google"
+        elif inferred == "openrouter":
+            if raw_provider in ("custom", "") or "api.b.ai" in raw_base_url:
+                self.provider = "openrouter"
+                raw_base_url = "https://openrouter.ai/api/v1"
+            else:
+                self.provider = raw_provider or "openrouter"
+        elif inferred and (raw_provider in ("custom", "") and "api.b.ai" in raw_base_url):
+            self.provider = inferred
+            raw_base_url = ""
+        else:
+            self.provider = raw_provider or "openai"
+
         self.api_key = _resolve_api_key(self.provider, api_key)
+        # If switching away from poisoned custom key to google or openrouter, resolve proper key
+        if not self.api_key or (self.provider in ("google", "vertex", "openrouter") and self.api_key.startswith("sk-1ea")):
+            self.api_key = _resolve_api_key(self.provider) or (
+                _resolve_api_key("gemini") if self.provider in ("google", "vertex") else ""
+            )
+
         self.gcp_project = _clean_string(gcp_project)
         self.gcp_location = _clean_string(gcp_location or "us-central1")
         self.base_url = _normalize_base_url(
             self.provider,
-            _clean_string(base_url),
+            raw_base_url,
             gcp_project=self.gcp_project,
             gcp_location=self.gcp_location,
         )
@@ -896,7 +944,7 @@ class UnifiedAIClient:
             return
 
         effective_model = self.model
-        if self.provider == "gemini" or "generativelanguage.googleapis.com" in (self.base_url or ""):
+        if self.provider in ("gemini", "google") or "generativelanguage.googleapis.com" in (self.base_url or ""):
             effective_model = _normalize_google_model(self.model, is_vertex=False)
 
         url = f"{(self.base_url or '').rstrip('/')}/chat/completions"
@@ -910,7 +958,7 @@ class UnifiedAIClient:
 
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
-            if self.provider == "gemini" or self.api_key.startswith("AIza") or self.api_key.startswith("AQ."):
+            if self.provider in ("gemini", "google") or self.api_key.startswith("AIza") or self.api_key.startswith("AQ."):
                 headers["x-goog-api-key"] = self.api_key
 
         formatted_messages = sanitize_openai_messages(messages, system_prompt=system_prompt)
@@ -953,19 +1001,33 @@ class UnifiedAIClient:
             err_msg = extract_error_message(err_code, err_body, provider=self.provider)
             return None, err_msg, err_code
 
+        from syte.ai.openrouter_free import get_cached_free_model_ids
+
+        is_auto_free = (self.model in ("openrouter:free", "openrouter/free", "openrouter:auto"))
+        candidates = get_cached_free_model_ids() if is_auto_free else [effective_model]
+
         response: Optional[httpx.Response] = None
         last_err_msg = "Unknown error"
-        for attempt in range(3):
-            response, last_err_msg, err_code = await _open_stream(url, payload)
+
+        for cand_model in candidates:
+            payload["model"] = cand_model
+            max_retries = 2 if is_auto_free else 3
+            for attempt in range(max_retries):
+                response, last_err_msg, err_code = await _open_stream(url, payload)
+                if response is not None:
+                    break
+                if err_code in (429, 502, 503, 504) and attempt < (max_retries - 1):
+                    await asyncio.sleep(1.0)
+                    continue
+                if "Connection failed" in last_err_msg and attempt < (max_retries - 1):
+                    await asyncio.sleep(1.0)
+                    continue
+                break
             if response is not None:
                 break
-            if err_code in (429, 502, 503, 504) and attempt < 2:
-                await asyncio.sleep(1.5 * (attempt + 1))
-                continue
-            if "Connection failed" in last_err_msg and attempt < 2:
-                await asyncio.sleep(1.5 * (attempt + 1))
-                continue
-            break
+            if not is_auto_free:
+                break
+            logger.info("OpenRouter free model candidate '%s' failed (HTTP %d). Trying next free candidate...", cand_model, err_code)
 
         if response is None:
             yield {"type": "error", "content": last_err_msg}

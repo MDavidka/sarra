@@ -397,13 +397,33 @@ class AIAgentEngine:
                     if target_model in models_sub or sp.get("model") == target_model:
                         matched_sp = sp
                         break
+
+                # If not matched in project's saved_providers, check global saved_providers
+                if not matched_sp and self.project_id != "global":
+                    global_settings = await get_ai_builder_settings("global")
+                    for sp in (global_settings.get("saved_providers") or []):
+                        if not isinstance(sp, dict):
+                            continue
+                        models_sub = sp.get("models_list") or ([sp.get("model")] if sp.get("model") else [])
+                        if target_model in models_sub or sp.get("model") == target_model:
+                            matched_sp = sp
+                            break
+
                 if matched_sp:
                     if matched_sp.get("provider") and "provider" not in settings_override:
                         settings_override["provider"] = matched_sp["provider"]
                     if matched_sp.get("api_key") and "api_key" not in settings_override:
                         settings_override["api_key"] = matched_sp["api_key"]
-                    if matched_sp.get("base_url") and "base_url" not in settings_override:
-                        settings_override["base_url"] = matched_sp["base_url"]
+                    if "base_url" not in settings_override:
+                        settings_override["base_url"] = matched_sp.get("base_url", "")
+                else:
+                    # Infer provider from model name to prevent mismatching to custom proxies
+                    from syte.ai.providers import infer_provider_for_model
+                    inferred_p = infer_provider_for_model(target_model)
+                    if inferred_p:
+                        settings_override["provider"] = inferred_p
+                        if "base_url" not in settings_override:
+                            settings_override["base_url"] = ""
 
             ai_settings.update(settings_override)
 
