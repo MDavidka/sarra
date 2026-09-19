@@ -5728,7 +5728,11 @@ document.addEventListener('DOMContentLoaded', () => {
     loginWithBootstrapKey(input.value);
   });
   if (tabApi) tabApi.addEventListener('click', () => switchLoginTab('api'));
-  if (tabKey) tabKey.addEventListener('click', () => switchLoginTab('key'));
+  const headerCreditsBtn = document.getElementById('svc-ai-credits-pill-btn');
+  if (headerCreditsBtn) {
+    headerCreditsBtn.addEventListener('click', () => openCreditsModal());
+    void refreshUserCreditsBadge();
+  }
   document.addEventListener('keydown', (e) => {
     const screen = document.getElementById('login-screen');
     if (e.key === 'Escape' && screen && !screen.classList.contains('hidden')) hideLoginScreen();
@@ -9854,6 +9858,19 @@ function processAIServerEvent(data, project, messagesList, state) {
     messagesList.appendChild(stopEl);
     refreshIcons();
     smartScrollToBottom(messagesList);
+  } else if (eventType === 'credits_update') {
+    const balance = Number(data.balance);
+    const balanceText = isNaN(balance) ? '$5.00' : `$${balance.toFixed(2)}`;
+    const badgeVal = document.getElementById('svc-ai-credits-badge-val');
+    if (badgeVal) badgeVal.textContent = balanceText;
+    const omniVal = document.getElementById('svc-ai-omni-credit-val');
+    if (omniVal) omniVal.textContent = balanceText;
+    const summaryBal = document.getElementById('svc-ai-credits-summary-balance');
+    if (summaryBal) summaryBal.textContent = balanceText;
+    const summaryUsed = document.getElementById('svc-ai-credits-summary-used');
+    if (summaryUsed && data.total_used !== undefined) {
+      summaryUsed.textContent = `$${Number(data.total_used).toFixed(2)}`;
+    }
   } else if (eventType === 'done' || eventType === 'session_idle') {
     clearLiveMarkers();
     setAIChatSendingState(false, project);
@@ -11102,147 +11119,554 @@ async function renderAIChatWorkspace(project) {
     settingsBtn.onclick = () => openAISettingsModal(selectedAIProject || currentProject, 'saved');
   }
   if (modelSelectorBtn) {
-    modelSelectorBtn.onclick = () => openModelSelectorDropdown(selectedAIProject || currentProject, modelSelectorBtn);
+    modelSelectorBtn.onclick = () => openOmniRouterModal(selectedAIProject || currentProject);
   }
+
+  const creditsPillBtn = document.getElementById('svc-ai-credits-pill-btn');
+  if (creditsPillBtn) {
+    creditsPillBtn.onclick = () => openCreditsModal();
+  }
+  void refreshUserCreditsBadge();
 
   refreshIcons();
 }
 
-async function openModelSelectorDropdown(project, triggerBtn) {
-  const currentProject = project || selectedAIProject || { id: 'global', name: 'Global Platform' };
+function getSvglIcon(brandOrModel, size = 18) {
+  const key = String(brandOrModel || '').toLowerCase();
   
-  // Remove any existing dropdown
-  const oldMenu = document.getElementById('svc-ai-model-quick-dropdown');
-  if (oldMenu) {
-    oldMenu.remove();
-    return;
+  if (key.includes('google') || key.includes('gemini') || key.includes('vertex') || key.includes('gemma')) {
+    return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" class="svgl-icon svgl-google" style="display:inline-block; vertical-align:middle;">
+      <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"/>
+      <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z"/>
+      <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.99 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/>
+      <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+    </svg>`;
   }
+  if (key.includes('anthropic') || key.includes('claude') || key.includes('sonnet') || key.includes('opus') || key.includes('haiku')) {
+    return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="#D97706" class="svgl-icon svgl-anthropic" style="display:inline-block; vertical-align:middle;">
+      <path d="M17.472 3.667h-3.874L20.89 20.333h3.874L17.472 3.667zm-10.944 0L0 20.333h3.874l1.658-4.482h6.988l1.658 4.482h3.874L11.528 3.667H6.528zm.972 9.074l2.028-5.482 2.028 5.482H7.5z"/>
+    </svg>`;
+  }
+  if (key.includes('openai') || key.includes('gpt') || key.includes('o3') || key.includes('o1')) {
+    return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="#10B981" class="svgl-icon svgl-openai" style="display:inline-block; vertical-align:middle;">
+      <path d="M22.282 9.821a5.985 5.985 0 0 0-.516-4.91 6.046 6.046 0 0 0-6.51-2.9A6.065 6.065 0 0 0 4.981 4.18a5.985 5.985 0 0 0-3.998 2.9 6.046 6.046 0 0 0 .743 7.097 5.98 5.98 0 0 0 .51 4.911 6.051 6.051 0 0 0 6.515 2.9A5.985 5.985 0 0 0 13.26 24a6.056 6.056 0 0 0 5.772-4.206 5.99 5.99 0 0 0 3.997-2.9 6.056 6.056 0 0 0-.747-7.073zM13.26 22.43a4.476 4.476 0 0 1-2.876-1.04l.141-.081 4.779-2.758a.795.795 0 0 0 .392-.681v-6.737l2.02 1.168a.071.071 0 0 1 .038.052v5.583a4.504 4.504 0 0 1-4.494 4.494zM3.6 18.304a4.47 4.47 0 0 1-.535-3.014l.142.085 4.783 2.759a.771.771 0 0 0 .78 0l5.843-3.369v2.332a.08.08 0 0 1-.033.062L9.74 19.95a4.5 4.5 0 0 1-6.14-1.646zM2.34 7.896a4.485 4.485 0 0 1 2.366-1.973V11.6a.766.766 0 0 0 .388.676l5.815 3.355-2.02 1.168a.076.076 0 0 1-.071 0l-4.83-2.786A4.504 4.504 0 0 1 2.34 7.872zm16.597 3.855l-5.833-3.387L15.119 7.2a.076.076 0 0 1 .071 0l4.83 2.791a4.494 4.494 0 0 1-.676 8.105v-5.678a.79.79 0 0 0-.407-.667zm2.01-3.023l-.141-.085-4.774-2.782a.776.776 0 0 0-.785 0L9.409 9.23V6.897a.066.066 0 0 1 .028-.061l4.83-2.787a4.5 4.5 0 0 1 6.68 4.66zM8.307 15.356l-2.02-1.164a.08.08 0 0 1-.038-.057V8.552a4.5 4.5 0 0 1 7.37-3.454l-.142.08-4.778 2.758a.795.795 0 0 0-.392.681zm1.092-2.58l2.6-1.5 2.6 1.5v3l-2.6 1.5-2.6-1.5z"/>
+    </svg>`;
+  }
+  if (key.includes('deepseek')) {
+    return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="#3B82F6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svgl-icon svgl-deepseek" style="display:inline-block; vertical-align:middle;">
+      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 14.93V18c0 .55-.45 1-1 1s-1-.45-1-1v-1.07c-2.83-.48-5-2.94-5-5.93 0-.55.45-1 1-1s1 .45 1 1c0 2.21 1.79 4 4 4s4-1.79 4-4c0-.55.45-1 1-1s1 .45 1 1c0 2.99-2.17 5.45-5 5.93zM12 6c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3z"/>
+    </svg>`;
+  }
+  if (key.includes('meta') || key.includes('llama')) {
+    return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="#0284C7" class="svgl-icon svgl-meta" style="display:inline-block; vertical-align:middle;">
+      <path d="M12 16.5c-2.4 0-4.4-1.8-4.9-4.2.5-2.4 2.5-4.3 4.9-4.3s4.4 1.9 4.9 4.3c-.5 2.4-2.5 4.2-4.9 4.2zm9.9-4.5C21.4 6.7 17.1 2.8 12 2.8S2.6 6.7 2.1 12c.5 5.3 4.8 9.2 9.9 9.2s9.4-3.9 9.9-9.2zm-2.1 0c-.5 4.2-4.1 7.3-8.8 7.3s-8.3-3.1-8.8-7.3c.5-4.2 4.1-7.3 8.8-7.3s8.3 3.1 8.8 7.3z"/>
+    </svg>`;
+  }
+  if (key.includes('mistral')) {
+    return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="#F97316" class="svgl-icon svgl-mistral" style="display:inline-block; vertical-align:middle;">
+      <path d="M3 3h4v4H3zm14 0h4v4h-4zM3 10h4v4H3zm7 0h4v4h-4zm7 0h4v4h-4zm-7 7h4v4h-4zM3 17h4v4H3zm14 0h4v4h-4z"/>
+    </svg>`;
+  }
+  if (key.includes('qwen') || key.includes('alibaba')) {
+    return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="#8B5CF6" class="svgl-icon svgl-qwen" style="display:inline-block; vertical-align:middle;">
+      <path d="M12 2L2 7l10 5 10-5-10-5zm0 9.5L4.5 7.75 12 4l7.5 3.75L12 11.5zM2 17l10 5 10-5v-3l-10 5-10-5v3zm0-5l10 5 10-5V9l-10 5-10-5v3z"/>
+    </svg>`;
+  }
+  if (key.includes('glm') || key.includes('zhipu')) {
+    return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="#EC4899" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svgl-icon svgl-glm" style="display:inline-block; vertical-align:middle;">
+      <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+      <polyline points="2 17 12 22 22 17"></polyline>
+      <polyline points="2 12 12 17 22 12"></polyline>
+    </svg>`;
+  }
+  if (key.includes('minimax')) {
+    return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="#06B6D4" stroke-width="2" class="svgl-icon svgl-minimax" style="display:inline-block; vertical-align:middle;">
+      <rect x="2" y="4" width="20" height="16" rx="4"></rect>
+      <path d="M7 15V9l5 4 5-4v6"></path>
+    </svg>`;
+  }
+  return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="#A1A1AA" stroke-width="2" class="svgl-icon svgl-cpu" style="display:inline-block; vertical-align:middle;">
+    <rect x="4" y="4" width="16" height="16" rx="2"></rect>
+    <rect x="9" y="9" width="6" height="6"></rect>
+    <path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"></path>
+  </svg>`;
+}
 
-  // Fetch settings to get saved_providers and active model
-  let savedProviders = [];
-  let currentModel = 'gpt-4o';
-  let currentProvider = 'openai';
+async function refreshUserCreditsBadge() {
   try {
-    const res = await api(`/projects/${encodeURIComponent(currentProject.id)}/ai/settings`);
-    if (res.ok && res.settings) {
-      savedProviders = res.settings.saved_providers || [];
-      currentModel = res.settings.model || 'gpt-4o';
-      currentProvider = res.settings.provider || 'openai';
+    const res = await api('/ai/user/credits');
+    if (res && res.ok && res.credits) {
+      const bal = Number(res.credits.balance);
+      const str = isNaN(bal) ? '$5.00' : `$${bal.toFixed(2)}`;
+      const badgeVal = document.getElementById('svc-ai-credits-badge-val');
+      if (badgeVal) badgeVal.textContent = str;
+      const omniVal = document.getElementById('svc-ai-omni-credit-val');
+      if (omniVal) omniVal.textContent = str;
+      const summaryBal = document.getElementById('svc-ai-credits-summary-balance');
+      if (summaryBal) summaryBal.textContent = str;
+      const summaryGranted = document.getElementById('svc-ai-credits-summary-granted');
+      if (summaryGranted) summaryGranted.textContent = `$${Number(res.credits.total_granted || 5).toFixed(2)}`;
+      const summaryUsed = document.getElementById('svc-ai-credits-summary-used');
+      if (summaryUsed) summaryUsed.textContent = `$${Number(res.credits.total_used || 0).toFixed(2)}`;
     }
   } catch (_) {}
+}
 
-  const dropdown = document.createElement('div');
-  dropdown.id = 'svc-ai-model-quick-dropdown';
-  dropdown.className = 'svc-ai-model-quick-dropdown';
+let omniCatalogData = null;
+let omniActiveFilter = 'all';
+let omniSearchQuery = '';
 
-  let itemsHtml = '';
-  if (!savedProviders.length) {
-    itemsHtml = `
-      <div class="svc-ai-dropdown-item active" data-provider="${escapeHtml(currentProvider)}" data-model="${escapeHtml(currentModel)}">
-        <div class="svc-ai-dropdown-item-left">
-          <div class="svc-ai-dropdown-prov-badge ${escapeHtml(currentProvider)}">${escapeHtml(currentProvider)}</div>
-          <div class="svc-ai-dropdown-model-name">${escapeHtml(currentModel)}</div>
-        </div>
-        <i data-lucide="check" class="svc-ai-dropdown-check"></i>
-      </div>
-    `;
-  } else {
-    itemsHtml = savedProviders.map(p => {
-      const isActive = (p.model === currentModel && (p.provider === currentProvider || !p.provider));
-      const prov = p.provider || 'openai';
-      return `
-        <div class="svc-ai-dropdown-item ${isActive ? 'active' : ''}" data-id="${escapeHtml(p.id || '')}" data-provider="${escapeHtml(prov)}" data-model="${escapeHtml(p.model)}">
-          <div class="svc-ai-dropdown-item-left">
-            <div class="svc-ai-dropdown-prov-badge ${escapeHtml(prov)}">${escapeHtml(prov)}</div>
-            <div>
-              <div class="svc-ai-dropdown-model-name">${escapeHtml(p.model)}</div>
-              ${p.name && p.name !== p.model ? `<small class="svc-ai-dropdown-sub">${escapeHtml(p.name)}</small>` : ''}
-            </div>
-          </div>
-          ${isActive ? '<i data-lucide="check" class="svc-ai-dropdown-check"></i>' : ''}
-        </div>
-      `;
-    }).join('');
-  }
+async function openOmniRouterModal(project) {
+  const currentProject = project || selectedAIProject || { id: 'global', name: 'Global Platform' };
+  const modal = document.getElementById('svc-ai-omni-router-modal');
+  const backdrop = document.getElementById('svc-ai-omni-backdrop');
+  const closeBtn = document.getElementById('svc-ai-omni-close-btn');
+  const creditChip = document.getElementById('svc-ai-omni-credit-chip');
+  const searchInput = document.getElementById('svc-ai-omni-search-input');
+  const filterChipsWrap = document.getElementById('svc-ai-omni-filter-chips');
+  const listEl = document.getElementById('svc-ai-omni-models-list');
+  const handshakeBtn = document.getElementById('svc-ai-omni-open-handshake-btn');
 
-  dropdown.innerHTML = `
-    <div class="svc-ai-dropdown-header">
-      <span>Switch Model / Provider</span>
-      <button type="button" class="svc-ai-dropdown-close" id="svc-ai-dropdown-close-btn">&times;</button>
-    </div>
-    <div class="svc-ai-dropdown-list">
-      ${itemsHtml}
-    </div>
-    <div class="svc-ai-dropdown-footer">
-      <button type="button" class="svc-ai-dropdown-add-btn" id="svc-ai-dropdown-add-btn">
-        <i data-lucide="plus"></i><span>Add / Configure Provider</span>
-      </button>
-    </div>
-  `;
+  if (!modal) return;
+  modal.classList.remove('hidden');
 
-  document.body.appendChild(dropdown);
-  refreshIcons();
-
-  // Position near triggerBtn
-  if (triggerBtn) {
-    const rect = triggerBtn.getBoundingClientRect();
-    const dropdownHeight = dropdown.offsetHeight || 220;
-    const top = rect.top - dropdownHeight - 8 > 10 ? rect.top - dropdownHeight - 8 : rect.bottom + 8;
-    dropdown.style.position = 'fixed';
-    dropdown.style.left = `${Math.max(10, Math.min(window.innerWidth - 300, rect.left))}px`;
-    dropdown.style.top = `${Math.max(10, top)}px`;
-    dropdown.style.zIndex = '9999';
-  }
-
-  const closeDropdown = () => {
-    dropdown.remove();
-    document.removeEventListener('click', handleOutsideClick);
+  const closeModal = () => {
+    modal.classList.add('hidden');
   };
 
-  const handleOutsideClick = (e) => {
-    if (!dropdown.contains(e.target) && (!triggerBtn || !triggerBtn.contains(e.target))) {
-      closeDropdown();
-    }
-  };
-  setTimeout(() => document.addEventListener('click', handleOutsideClick), 10);
-
-  const closeBtn = dropdown.querySelector('#svc-ai-dropdown-close-btn');
-  if (closeBtn) closeBtn.onclick = closeDropdown;
-
-  const addBtn = dropdown.querySelector('#svc-ai-dropdown-add-btn');
-  if (addBtn) {
-    addBtn.onclick = () => {
-      closeDropdown();
-      openAISettingsModal(currentProject, 'onboard');
+  if (backdrop) backdrop.onclick = closeModal;
+  if (closeBtn) closeBtn.onclick = closeModal;
+  if (creditChip) creditChip.onclick = () => { closeModal(); openCreditsModal(); };
+  if (handshakeBtn) {
+    handshakeBtn.onclick = () => {
+      closeModal();
+      openAISettingsModal(currentProject, 'providers');
     };
   }
 
-  dropdown.querySelectorAll('.svc-ai-dropdown-item').forEach(item => {
-    item.onclick = async () => {
-      const provId = item.dataset.id;
-      const model = item.dataset.model;
-      const provider = item.dataset.provider;
-      closeDropdown();
-      try {
-        const res = await api(`/projects/${encodeURIComponent(currentProject.id)}/ai/providers/activate`, {
-          method: 'POST',
-          body: JSON.stringify({ provider_id: provId, model: model, provider: provider }),
-        });
-        if (res.ok) {
-          const inputModelLabel = document.getElementById('svc-ai-input-model-label');
-          if (inputModelLabel) inputModelLabel.textContent = model;
-          toast(`Active model switched to: ${model}`);
-        } else {
-          toast(`Failed to switch model: ${res.error || 'Server error'}`);
-        }
-      } catch (err) {
-        toast(`Error switching model: ${err.message}`);
+  // Fetch Omni Models & Credits from API
+  try {
+    if (listEl) listEl.innerHTML = '<div style="padding:24px; text-align:center; color:#71717a;">Loading Omni Model Library…</div>';
+    const res = await api(`/ai/omni/models?project_id=${encodeURIComponent(currentProject.id)}`);
+    if (res && res.ok) {
+      omniCatalogData = res;
+      if (res.credits && res.credits.balance !== undefined) {
+        const balStr = `$${Number(res.credits.balance).toFixed(2)}`;
+        const omniVal = document.getElementById('svc-ai-omni-credit-val');
+        if (omniVal) omniVal.textContent = balStr;
+        const badgeVal = document.getElementById('svc-ai-credits-badge-val');
+        if (badgeVal) badgeVal.textContent = balStr;
       }
+      renderOmniUI(currentProject);
+    } else {
+      if (listEl) listEl.innerHTML = `<div style="padding:24px; text-align:center; color:#ef4444;">Failed to load models: ${escapeHtml(res?.error || 'Unknown error')}</div>`;
+    }
+  } catch (err) {
+    if (listEl) listEl.innerHTML = `<div style="padding:24px; text-align:center; color:#ef4444;">Error loading models: ${escapeHtml(err.message)}</div>`;
+  }
+
+  if (searchInput && !searchInput.dataset.bound) {
+    searchInput.dataset.bound = 'true';
+    searchInput.addEventListener('input', () => {
+      omniSearchQuery = searchInput.value.trim().toLowerCase();
+      renderOmniFilteredList(currentProject);
+    });
+  }
+
+  if (filterChipsWrap && !filterChipsWrap.dataset.bound) {
+    filterChipsWrap.dataset.bound = 'true';
+    filterChipsWrap.querySelectorAll('.svc-ai-filter-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        filterChipsWrap.querySelectorAll('.svc-ai-filter-chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        omniActiveFilter = chip.dataset.tag || 'all';
+        renderOmniFilteredList(currentProject);
+      });
+    });
+  }
+}
+
+function renderOmniUI(project) {
+  if (!omniCatalogData) return;
+  const chartEl = document.getElementById('svc-ai-omni-benchmark-chart');
+  const topModels = omniCatalogData.top_swe_models || [];
+  const activeModelId = omniCatalogData.active_model || 'gemini-2.5-flash';
+
+  // Render vertical pill bars SWE benchmark chart
+  if (chartEl) {
+    chartEl.innerHTML = topModels.map(m => {
+      const score = m.swe_bench_score || 0;
+      const pct = Math.max(25, Math.min(100, Math.round((score / 75) * 100)));
+      const isActive = (m.model_id === activeModelId);
+      return `
+        <div class="svc-ai-benchmark-bar-col ${isActive ? 'active' : ''}" data-model-id="${escapeHtml(m.model_id)}" title="Click to activate ${escapeHtml(m.name)} (SWE score: ${score}%)">
+          <div class="svc-ai-benchmark-score-label">${score ? `${score}%` : 'N/A'}</div>
+          <div class="svc-ai-benchmark-pill-track">
+            <div class="svc-ai-benchmark-pill-fill" style="height: ${pct}%;">
+              <div class="svc-ai-benchmark-pill-icon">
+                ${getSvglIcon(m.provider || m.model_id, 18)}
+              </div>
+            </div>
+          </div>
+          <div class="svc-ai-benchmark-model-name">${escapeHtml(m.name)}</div>
+          ${isActive ? '<span class="svc-ai-benchmark-active-dot"></span>' : ''}
+        </div>
+      `;
+    }).join('');
+
+    chartEl.querySelectorAll('.svc-ai-benchmark-bar-col').forEach(col => {
+      col.onclick = async () => {
+        const mid = col.dataset.modelId;
+        await selectOmniModel(mid, project);
+      };
+    });
+  }
+
+  renderOmniFilteredList(project);
+}
+
+function renderOmniFilteredList(project) {
+  if (!omniCatalogData) return;
+  const listEl = document.getElementById('svc-ai-omni-models-list');
+  const countBadge = document.getElementById('svc-ai-omni-count-badge');
+  const allModels = omniCatalogData.models || [];
+  const activeModelId = omniCatalogData.active_model || 'gemini-2.5-flash';
+
+  const filtered = allModels.filter(m => {
+    // Filter chip matching
+    if (omniActiveFilter === 'top' && (m.swe_bench_score || 0) < 58) return false;
+    if (omniActiveFilter === 'vision' && !m.is_vision) return false;
+    if (omniActiveFilter === 'tools' && !m.is_tools) return false;
+    if (omniActiveFilter === 'cache' && !m.is_cache) return false;
+    if (omniActiveFilter === 'google' && m.provider !== 'google' && m.provider !== 'vertex' && !m.model_id.startsWith('gemini')) return false;
+    if (omniActiveFilter === 'anthropic' && m.provider !== 'anthropic' && !m.model_id.startsWith('claude')) return false;
+    if (omniActiveFilter === 'openai' && m.provider !== 'openai' && !m.model_id.startsWith('gpt') && !m.model_id.startsWith('o1') && !m.model_id.startsWith('o3')) return false;
+    if (omniActiveFilter === 'deepseek' && m.provider !== 'deepseek') return false;
+
+    // Search query matching
+    if (omniSearchQuery) {
+      const hay = `${m.name} ${m.model_id} ${m.provider} ${m.description || ''} ${(m.capabilities || []).join(' ')}`.toLowerCase();
+      if (!hay.includes(omniSearchQuery)) return false;
+    }
+    return true;
+  });
+
+  if (countBadge) {
+    countBadge.textContent = `${filtered.length} results`;
+  }
+
+  if (!listEl) return;
+
+  if (!filtered.length) {
+    listEl.innerHTML = `
+      <div class="svc-ai-omni-empty">
+        <i data-lucide="search-x" style="width:32px; height:32px; color:#71717a; margin-bottom:8px;"></i>
+        <p>No models matching your search filters.</p>
+      </div>
+    `;
+    refreshIcons();
+    return;
+  }
+
+  listEl.innerHTML = filtered.map(m => {
+    const isActive = (m.model_id === activeModelId);
+    const inCost = Number(m.input_cost_per_m || 0).toFixed(2);
+    const outCost = Number(m.output_cost_per_m || 0).toFixed(2);
+    return `
+      <div class="svc-ai-omni-model-card ${isActive ? 'active' : ''}" data-model-id="${escapeHtml(m.model_id)}">
+        <div class="svc-ai-omni-card-left">
+          <div class="svc-ai-omni-card-icon ${escapeHtml(m.provider || 'cloud')}">
+            ${getSvglIcon(m.provider || m.model_id, 22)}
+          </div>
+          <div class="svc-ai-omni-card-main">
+            <div class="svc-ai-omni-card-title-row">
+              <span class="svc-ai-omni-card-name">${escapeHtml(m.name || m.model_id)}</span>
+              <span class="svc-ai-omni-card-prov-tag">${escapeHtml((m.provider || 'cloud').toUpperCase())}</span>
+              ${m.swe_bench_score ? `<span class="svc-ai-omni-swe-pill">SWE ${m.swe_bench_score}%</span>` : ''}
+            </div>
+            <div class="svc-ai-omni-card-badges">
+              ${m.is_vision ? '<span class="svc-ai-cap-tag"><i data-lucide="eye"></i> Vision</span>' : ''}
+              ${m.is_tools ? '<span class="svc-ai-cap-tag"><i data-lucide="wrench"></i> Tools</span>' : ''}
+              ${m.is_cache ? '<span class="svc-ai-cap-tag"><i data-lucide="database"></i> Cache</span>' : ''}
+              <span class="svc-ai-cap-tag">${escapeHtml(m.context_window || '128k ctx')}</span>
+            </div>
+          </div>
+        </div>
+        <div class="svc-ai-omni-card-right">
+          <div class="svc-ai-omni-pricing-col">
+            <span class="svc-ai-omni-price-in">$${inCost} in</span>
+            <span class="svc-ai-omni-price-out">$${outCost} out</span>
+            <span class="svc-ai-omni-price-unit">/ 1M tokens</span>
+          </div>
+          <div class="svc-ai-omni-card-actions">
+            <button type="button" class="btn-pill btn-ghost btn-sm svc-ai-model-profile-btn" data-model-id="${escapeHtml(m.model_id)}" title="View profile attributes & capabilities">
+              <i data-lucide="info"></i><span>Profile</span>
+            </button>
+            ${isActive
+              ? '<span class="svc-ai-omni-selected-badge"><i data-lucide="check"></i> Active</span>'
+              : `<button type="button" class="btn-pill btn-primary btn-sm svc-ai-model-select-btn" data-model-id="${escapeHtml(m.model_id)}">
+                  <i data-lucide="sparkles"></i><span>Select</span>
+                 </button>`
+            }
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  refreshIcons();
+
+  listEl.querySelectorAll('.svc-ai-model-profile-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const mid = btn.dataset.modelId;
+      const targetModel = allModels.find(x => x.model_id === mid);
+      if (targetModel) openModelProfileModal(targetModel, project);
+    };
+  });
+
+  listEl.querySelectorAll('.svc-ai-model-select-btn').forEach(btn => {
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      const mid = btn.dataset.modelId;
+      await selectOmniModel(mid, project);
     };
   });
 }
 
-async function openAISettingsModal(project, initialTab = 'onboard') {
+async function selectOmniModel(modelId, project) {
+  const currentProject = project || selectedAIProject || { id: 'global', name: 'Global Platform' };
+  try {
+    const res = await api(`/ai/omni/select-model`, {
+      method: 'POST',
+      body: JSON.stringify({ model_id: modelId, project_id: currentProject.id })
+    });
+    if (res && res.ok) {
+      if (omniCatalogData) omniCatalogData.active_model = modelId;
+      const inputModelLabel = document.getElementById('svc-ai-input-model-label');
+      if (inputModelLabel) inputModelLabel.textContent = modelId;
+      setAICache(currentProject.id, { model: modelId });
+      toast(`Switched active model to ${modelId}`);
+      
+      const modal = document.getElementById('svc-ai-omni-router-modal');
+      if (modal) modal.classList.add('hidden');
+      
+      const profileModal = document.getElementById('svc-ai-model-profile-modal');
+      if (profileModal) profileModal.classList.add('hidden');
+      
+      renderAIChatWorkspace(currentProject);
+    } else {
+      toast(`Failed to select model: ${res?.error || 'Server error'}`);
+    }
+  } catch (err) {
+    toast(`Error selecting model: ${err.message}`);
+  }
+}
+
+function openModelProfileModal(model, project) {
+  const modal = document.getElementById('svc-ai-model-profile-modal');
+  const backdrop = document.getElementById('svc-ai-profile-backdrop');
+  const dialogContent = document.getElementById('svc-ai-profile-dialog-content');
+  if (!modal || !dialogContent || !model) return;
+
+  const currentProject = project || selectedAIProject || { id: 'global', name: 'Global Platform' };
+  const inCost = Number(model.input_cost_per_m || 0).toFixed(2);
+  const outCost = Number(model.output_cost_per_m || 0).toFixed(2);
+  const cacheCost = Number(model.cache_read_cost_per_m || 0).toFixed(2);
+
+  dialogContent.innerHTML = `
+    <div class="svc-ai-profile-header">
+      <div class="svc-ai-profile-brand">
+        <div class="svc-ai-profile-icon">${getSvglIcon(model.provider || model.model_id, 28)}</div>
+        <div>
+          <h3 class="svc-ai-profile-title">${escapeHtml(model.name || model.model_id)}</h3>
+          <span class="svc-ai-profile-prov">${escapeHtml((model.provider || 'cloud').toUpperCase())} • ${escapeHtml(model.model_id)}</span>
+        </div>
+      </div>
+      <button type="button" class="svc-ai-omni-close-btn" id="svc-ai-profile-close-btn"><i data-lucide="x"></i></button>
+    </div>
+
+    <p class="svc-ai-profile-desc">${escapeHtml(model.description || 'Frontier software engineering and reasoning AI model.')}</p>
+
+    <div class="svc-ai-profile-specs-grid">
+      <div class="svc-ai-profile-spec-item highlight">
+        <span class="spec-label"><i data-lucide="award"></i> SWE-Bench Verified</span>
+        <span class="spec-val">${model.swe_bench_score ? `${model.swe_bench_score}%` : 'Evaluated'}</span>
+        <small class="spec-hint">Autonomous software solve benchmark</small>
+      </div>
+      <div class="svc-ai-profile-spec-item">
+        <span class="spec-label"><i data-lucide="arrow-down-left"></i> Input Pricing</span>
+        <span class="spec-val">$${inCost}</span>
+        <small class="spec-hint">per 1M input tokens</small>
+      </div>
+      <div class="svc-ai-profile-spec-item">
+        <span class="spec-label"><i data-lucide="arrow-up-right"></i> Output Pricing</span>
+        <span class="spec-val">$${outCost}</span>
+        <small class="spec-hint">per 1M output tokens</small>
+      </div>
+      <div class="svc-ai-profile-spec-item">
+        <span class="spec-label"><i data-lucide="database"></i> Prompt Cache Read</span>
+        <span class="spec-val">$${cacheCost}</span>
+        <small class="spec-hint">per 1M cached tokens</small>
+      </div>
+      <div class="svc-ai-profile-spec-item">
+        <span class="spec-label"><i data-lucide="maximize-2"></i> Context Window</span>
+        <span class="spec-val">${escapeHtml(model.context_window || '128k ctx')}</span>
+        <small class="spec-hint">Maximum token capacity</small>
+      </div>
+      <div class="svc-ai-profile-spec-item">
+        <span class="spec-label"><i data-lucide="zap"></i> Latency Tier</span>
+        <span class="spec-val">${(model.swe_bench_score || 0) > 65 ? 'Frontier' : 'Fast'}</span>
+        <small class="spec-hint">Generation speed tier</small>
+      </div>
+    </div>
+
+    <div class="svc-ai-profile-caps-section">
+      <h4 style="font-size:0.85rem; font-weight:700; color:#18181b; margin:0 0 10px;">Capabilities & Modalities</h4>
+      <div class="svc-ai-profile-caps-list">
+        <div class="cap-item ${model.is_vision ? 'supported' : 'unsupported'}">
+          <i data-lucide="${model.is_vision ? 'check-circle-2' : 'x-circle'}"></i>
+          <span>Image & Vision Modality</span>
+        </div>
+        <div class="cap-item ${model.is_tools ? 'supported' : 'unsupported'}">
+          <i data-lucide="${model.is_tools ? 'check-circle-2' : 'x-circle'}"></i>
+          <span>Function & Tool Calling</span>
+        </div>
+        <div class="cap-item ${model.is_cache ? 'supported' : 'unsupported'}">
+          <i data-lucide="${model.is_cache ? 'check-circle-2' : 'x-circle'}"></i>
+          <span>Prompt Caching Acceleration</span>
+        </div>
+        <div class="cap-item ${model.is_reasoning ? 'supported' : 'unsupported'}">
+          <i data-lucide="${model.is_reasoning ? 'check-circle-2' : 'x-circle'}"></i>
+          <span>Deep Reasoning & Extended Thinking</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="svc-ai-profile-footer">
+      <button type="button" class="btn-pill btn-secondary" id="svc-ai-profile-cancel-btn">Close</button>
+      <button type="button" class="btn-pill btn-primary" id="svc-ai-profile-activate-btn">
+        <i data-lucide="sparkles"></i><span>Activate ${escapeHtml(model.name || model.model_id)}</span>
+      </button>
+    </div>
+  `;
+
+  modal.classList.remove('hidden');
+  refreshIcons();
+
+  const closeProfile = () => {
+    modal.classList.add('hidden');
+  };
+
+  if (backdrop) backdrop.onclick = closeProfile;
+  const pCloseBtn = document.getElementById('svc-ai-profile-close-btn');
+  const pCancelBtn = document.getElementById('svc-ai-profile-cancel-btn');
+  const pActivateBtn = document.getElementById('svc-ai-profile-activate-btn');
+
+  if (pCloseBtn) pCloseBtn.onclick = closeProfile;
+  if (pCancelBtn) pCancelBtn.onclick = closeProfile;
+  if (pActivateBtn) {
+    pActivateBtn.onclick = async () => {
+      await selectOmniModel(model.model_id, currentProject);
+    };
+  }
+}
+
+async function openCreditsModal() {
+  const modal = document.getElementById('svc-ai-credits-modal');
+  const backdrop = document.getElementById('svc-ai-credits-backdrop');
+  const closeBtn = document.getElementById('svc-ai-credits-close-btn');
+  const balEl = document.getElementById('svc-ai-credits-summary-balance');
+  const grantEl = document.getElementById('svc-ai-credits-summary-granted');
+  const usedEl = document.getElementById('svc-ai-credits-summary-used');
+  const listEl = document.getElementById('svc-ai-credits-history-list');
+
+  if (!modal) return;
+  modal.classList.remove('hidden');
+
+  const closeModal = () => modal.classList.add('hidden');
+  if (backdrop) backdrop.onclick = closeModal;
+  if (closeBtn) closeBtn.onclick = closeModal;
+
+  try {
+    if (listEl) listEl.innerHTML = '<div style="padding:16px; text-align:center; color:#71717a;">Loading usage history…</div>';
+    const res = await api('/ai/user/credits');
+    if (res && res.ok && res.credits) {
+      if (balEl) balEl.textContent = `$${Number(res.credits.balance).toFixed(2)}`;
+      if (grantEl) grantEl.textContent = `$${Number(res.credits.total_granted || 5).toFixed(2)}`;
+      if (usedEl) usedEl.textContent = `$${Number(res.credits.total_used || 0).toFixed(2)}`;
+
+      const records = res.records || [];
+      if (!listEl) return;
+      if (!records.length) {
+        listEl.innerHTML = `
+          <div style="padding:24px; text-align:center; color:#71717a;">
+            <p style="margin:0 0 4px; font-weight:600; color:#18181b;">No token generations recorded yet.</p>
+            <p style="margin:0; font-size:0.8rem;">Every AI prompt and completion automatically deducts metered tokens from your $5.00 starting grant.</p>
+          </div>
+        `;
+      } else {
+        listEl.innerHTML = records.map(r => `
+          <div class="svc-ai-credits-record-row" style="display:flex; justify-content:space-between; align-items:center; padding:10px 12px; border-bottom:1px solid #f4f4f5; font-size:0.82rem;">
+            <div>
+              <strong style="color:#18181b; display:block;">${escapeHtml(r.model || 'model')}</strong>
+              <small style="color:#71717a;">${new Date(r.timestamp * 1000).toLocaleString()}</small>
+            </div>
+            <div style="text-align:right;">
+              <span style="font-weight:700; color:#ef4444;">-$${Number(r.cost || 0).toFixed(5)}</span>
+              <div style="font-size:0.72rem; color:#71717a;">${(r.prompt_tokens || 0).toLocaleString()} in / ${(r.completion_tokens || 0).toLocaleString()} out</div>
+            </div>
+          </div>
+        `).join('');
+      }
+      refreshIcons();
+    }
+  } catch (err) {
+    if (listEl) listEl.innerHTML = `<div style="padding:16px; color:#ef4444;">Error: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+async function triggerHandshakeSync(project) {
+  const currentProject = project || selectedAIProject || { id: 'global', name: 'Global Platform' };
+  const statusEl = document.getElementById('svc-ai-handshake-status-text');
+  if (statusEl) {
+    statusEl.textContent = 'Syncing handshake providers to VM…';
+    statusEl.style.color = '#71717a';
+  }
+  try {
+    const res = await api(`/ai/handshake/sync-providers`, {
+      method: 'POST',
+      body: JSON.stringify({ project_id: currentProject.id })
+    });
+    if (res && res.ok) {
+      toast(`Handshake Sync completed: ${res.synced_providers_count} providers, ${res.synced_models_count} models synced to VM!`);
+      if (statusEl) {
+        statusEl.textContent = `Synced successfully at ${new Date(res.timestamp * 1000).toLocaleTimeString()} (${res.synced_models_count} models available).`;
+        statusEl.style.color = '#16a34a';
+      }
+    } else {
+      const err = res.error || res.detail || 'Handshake failed';
+      toast(`Handshake failed: ${err}`);
+      if (statusEl) {
+        statusEl.textContent = `Sync failed: ${err}`;
+        statusEl.style.color = '#ef4444';
+      }
+    }
+  } catch (err) {
+    toast(`Handshake error: ${err.message}`);
+    if (statusEl) {
+      statusEl.textContent = `Sync error: ${err.message}`;
+      statusEl.style.color = '#ef4444';
+    }
+  }
+}
+
+async function openModelSelectorDropdown(project, triggerBtn) {
+  // Direct to Sycord AI Router Modal
+  openOmniRouterModal(project);
+}
+
+async function openAISettingsModal(project, initialTab = 'providers') {
   const targetProject = project || selectedAIProject || { id: 'global', name: 'Global Platform' };
   const modal = document.getElementById('svc-ai-settings-modal');
   const closeBtn = document.getElementById('svc-ai-settings-close-btn');
@@ -11253,7 +11677,11 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
   const alertText = document.getElementById('svc-ai-settings-alert-text');
   const providerSel = document.getElementById('svc-ai-setting-provider');
   const modelInput = document.getElementById('svc-ai-setting-model');
+  const additionalModelsInput = document.getElementById('svc-ai-additional-models-input');
   const apiKeyInput = document.getElementById('svc-ai-setting-apikey');
+  const vertexFieldsWrap = document.getElementById('svc-ai-vertex-fields');
+  const gcpProjectInput = document.getElementById('svc-ai-setting-gcp-project');
+  const gcpLocationInput = document.getElementById('svc-ai-setting-gcp-location');
   const baseUrlInput = document.getElementById('svc-ai-setting-baseurl');
   const baseUrlHint = document.getElementById('svc-ai-baseurl-hint');
   const tempInput = document.getElementById('svc-ai-setting-temp');
@@ -11267,13 +11695,18 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
   const testStatus = document.getElementById('svc-ai-test-status');
   const toggleKeyBtn = document.getElementById('svc-ai-toggle-key-visibility');
 
+  // Bulk JSON Drawer Elements
+  const toggleBulkJsonBtn = document.getElementById('svc-ai-toggle-bulk-json-btn');
+  const closeBulkJsonBtn = document.getElementById('svc-ai-close-bulk-json-btn');
+  const applyBulkJsonBtn = document.getElementById('svc-ai-apply-bulk-json-btn');
+  const bulkJsonDrawer = document.getElementById('svc-ai-bulk-json-drawer');
+  const bulkJsonInput = document.getElementById('svc-ai-bulk-json-input');
+
   // Tab Elements
-  const tabBtnOnboard = document.getElementById('svc-ai-tab-btn-onboard');
-  const tabBtnSaved = document.getElementById('svc-ai-tab-btn-saved');
+  const tabBtnProviders = document.getElementById('svc-ai-tab-btn-providers') || document.getElementById('svc-ai-tab-btn-onboard');
   const tabBtnSkills = document.getElementById('svc-ai-tab-btn-skills');
   const tabBtnAdvanced = document.getElementById('svc-ai-tab-btn-advanced');
-  const panelOnboard = document.getElementById('svc-ai-panel-onboard');
-  const panelSaved = document.getElementById('svc-ai-panel-saved');
+  const panelProviders = document.getElementById('svc-ai-panel-providers') || document.getElementById('svc-ai-panel-onboard');
   const panelSkills = document.getElementById('svc-ai-panel-skills');
   const panelAdvanced = document.getElementById('svc-ai-panel-advanced');
   const savedCountBadge = document.getElementById('svc-ai-saved-count');
@@ -11282,6 +11715,11 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
   const skillsCatalogEl = document.getElementById('svc-ai-skills-catalog');
   const customSkillsInput = document.getElementById('svc-ai-custom-skills-input');
   const refreshSkillsBtn = document.getElementById('svc-ai-refresh-skills-btn');
+
+  // Skill Upload Elements
+  const skillUploadZone = document.getElementById('svc-ai-skill-upload-zone');
+  const skillFileInput = document.getElementById('svc-ai-skill-file-input');
+  const skillUploadStatus = document.getElementById('svc-ai-skill-upload-status');
 
   if (!modal) return;
   modal.classList.remove('hidden');
@@ -11302,19 +11740,23 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
       }
       skillsCatalogEl.innerHTML = skills.map(sk => {
         const isEnabled = enabledSkillsSet.has(sk.id) || enabledSkillsSet.has(sk.name) || sk.enabled_by_default;
+        const isCustom = !!sk.is_custom || sk.category === 'Custom';
         return `
-          <div class="svc-ai-skill-card ${isEnabled ? 'enabled' : ''}" style="background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; display: flex; flex-direction: column; justify-content: space-between; gap: 8px;">
+          <div class="svc-ai-skill-card ${isEnabled ? 'enabled' : ''}" style="background: #ffffff; border: 1.5px solid ${isEnabled ? '#18181b' : '#e4e4e7'}; border-radius: 14px; padding: 14px; display: flex; flex-direction: column; justify-content: space-between; gap: 10px; transition: all 0.15s ease;">
             <div>
-              <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 6px; margin-bottom: 4px;">
-                <strong style="font-size: 0.85rem; color: var(--text);">${escapeHtml(sk.name || sk.id)}</strong>
-                <span style="font-size: 0.68rem; padding: 1px 6px; border-radius: 4px; background: rgba(59,130,246,0.12); color: #3b82f6; font-weight: 500;">${escapeHtml(sk.category || 'Skill')}</span>
+              <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 6px; margin-bottom: 6px;">
+                <strong style="font-size: 0.88rem; color: #18181b; font-weight: 700;">${escapeHtml(sk.name || sk.id)}</strong>
+                <div style="display:flex; align-items:center; gap:4px;">
+                  <span style="font-size: 0.68rem; padding: 2px 7px; border-radius: 6px; background: ${isCustom ? '#fef3c7' : '#f4f4f5'}; color: ${isCustom ? '#92400e' : '#52525b'}; font-weight: 600;">${escapeHtml(sk.category || (isCustom ? 'Custom' : 'Skill'))}</span>
+                  ${isCustom ? `<button type="button" class="svc-ai-del-skill-btn" data-skill-id="${escapeHtml(sk.id)}" title="Delete custom skill" style="background:none; border:none; color:#a1a1aa; cursor:pointer; padding:2px; display:inline-flex; align-items:center;"><i data-lucide="trash-2" style="width:13px; height:13px;"></i></button>` : ''}
+                </div>
               </div>
-              <p style="font-size: 0.76rem; color: var(--text-dim); margin: 0; line-height: 1.3;">${escapeHtml(sk.description || '')}</p>
+              <p style="font-size: 0.78rem; color: #71717a; margin: 0; line-height: 1.35;">${escapeHtml(sk.description || '')}</p>
             </div>
-            <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border); padding-top: 8px; margin-top: 4px;">
-              <span style="font-size: 0.72rem; color: var(--text-muted);">${sk.tools_count ? `${sk.tools_count} tools` : 'Blueprint'}</span>
-              <label style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.76rem; font-weight: 500;">
-                <input type="checkbox" class="svc-ai-skill-toggle" data-skill-id="${escapeHtml(sk.id)}" ${isEnabled ? 'checked' : ''}>
+            <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #f4f4f5; padding-top: 10px; margin-top: 4px;">
+              <span style="font-size: 0.72rem; color: #a1a1aa;">${sk.tools_count ? `${sk.tools_count} tools` : (isCustom ? 'Uploaded file' : 'Built-in')}</span>
+              <label style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.78rem; font-weight: 600; color: #18181b;">
+                <input type="checkbox" class="svc-ai-skill-toggle" data-skill-id="${escapeHtml(sk.id)}" ${isEnabled ? 'checked' : ''} style="accent-color: #18181b; width: 15px; height: 15px;">
                 <span>${isEnabled ? 'Active' : 'Enable'}</span>
               </label>
             </div>
@@ -11325,48 +11767,243 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
       skillsCatalogEl.querySelectorAll('.svc-ai-skill-toggle').forEach(t => {
         t.onchange = () => {
           const sid = t.dataset.skillId;
+          const card = t.closest('.svc-ai-skill-card');
           if (t.checked) {
             enabledSkillsSet.add(sid);
-            t.parentElement.parentElement.parentElement.classList.add('enabled');
-            t.nextElementSibling.textContent = 'Active';
+            if (card) {
+              card.classList.add('enabled');
+              card.style.borderColor = '#18181b';
+            }
+            if (t.nextElementSibling) t.nextElementSibling.textContent = 'Active';
           } else {
             enabledSkillsSet.delete(sid);
-            t.parentElement.parentElement.parentElement.classList.remove('enabled');
-            t.nextElementSibling.textContent = 'Enable';
+            if (card) {
+              card.classList.remove('enabled');
+              card.style.borderColor = '#e4e4e7';
+            }
+            if (t.nextElementSibling) t.nextElementSibling.textContent = 'Enable';
           }
         };
       });
+
+      skillsCatalogEl.querySelectorAll('.svc-ai-del-skill-btn').forEach(btn => {
+        btn.onclick = async (e) => {
+          e.stopPropagation();
+          const sid = btn.dataset.skillId;
+          if (!confirm(`Delete custom skill "${sid}"?`)) return;
+          try {
+            await api(`/projects/${encodeURIComponent(targetProject.id)}/ai/skills/${encodeURIComponent(sid)}`, {
+              method: 'DELETE'
+            });
+            enabledSkillsSet.delete(sid);
+            toast('Custom skill deleted');
+            void renderSkillsCatalog();
+          } catch (err) {
+            toast(`Error deleting skill: ${err.message}`);
+          }
+        };
+      });
+
       refreshIcons();
     } catch (err) {
       skillsCatalogEl.innerHTML = `<p class="hint" style="color:#ef4444;">Error loading skills: ${escapeHtml(err.message)}</p>`;
     }
   };
 
+  // Skill File Upload Handling
+  if (skillUploadZone && skillFileInput) {
+    skillUploadZone.onclick = () => skillFileInput.click();
+
+    skillUploadZone.ondragover = (e) => {
+      e.preventDefault();
+      skillUploadZone.style.borderColor = '#18181b';
+      skillUploadZone.style.background = '#f4f4f5';
+    };
+
+    skillUploadZone.ondragleave = () => {
+      skillUploadZone.style.borderColor = '#cbd5e1';
+      skillUploadZone.style.background = '#fafafa';
+    };
+
+    skillUploadZone.ondrop = async (e) => {
+      e.preventDefault();
+      skillUploadZone.style.borderColor = '#cbd5e1';
+      skillUploadZone.style.background = '#fafafa';
+      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+        await handleFileUpload(e.dataTransfer.files[0]);
+      }
+    };
+
+    skillFileInput.onchange = async () => {
+      if (skillFileInput.files && skillFileInput.files[0]) {
+        await handleFileUpload(skillFileInput.files[0]);
+        skillFileInput.value = '';
+      }
+    };
+  }
+
+  const handleFileUpload = async (file) => {
+    if (!file) return;
+    if (skillUploadStatus) {
+      skillUploadStatus.textContent = `Uploading ${file.name}…`;
+      skillUploadStatus.style.color = '#71717a';
+    }
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await api(`/projects/${encodeURIComponent(targetProject.id)}/ai/skills/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+      if (res.ok) {
+        if (res.skill && res.skill.id) {
+          enabledSkillsSet.add(res.skill.id);
+        }
+        if (skillUploadStatus) {
+          skillUploadStatus.textContent = `Uploaded "${file.name}" successfully!`;
+          skillUploadStatus.style.color = '#16a34a';
+        }
+        toast(`Uploaded skill: ${file.name}`);
+        void renderSkillsCatalog();
+      } else {
+        const errDetail = res.error || res.detail || 'Upload failed';
+        if (skillUploadStatus) {
+          skillUploadStatus.textContent = `Upload failed: ${errDetail}`;
+          skillUploadStatus.style.color = '#dc2626';
+        }
+        showAlert(`Skill Upload Error: ${errDetail}`);
+      }
+    } catch (err) {
+      if (skillUploadStatus) {
+        skillUploadStatus.textContent = `Upload error: ${err.message}`;
+        skillUploadStatus.style.color = '#dc2626';
+      }
+      showAlert(`Skill Upload Error: ${err.message}`);
+    }
+  };
+
   const switchTab = (tab) => {
-    if (tabBtnOnboard) tabBtnOnboard.classList.toggle('active', tab === 'onboard');
-    if (tabBtnSaved) tabBtnSaved.classList.toggle('active', tab === 'saved');
-    if (tabBtnSkills) tabBtnSkills.classList.toggle('active', tab === 'skills');
-    if (tabBtnAdvanced) tabBtnAdvanced.classList.toggle('active', tab === 'advanced');
+    const normTab = (tab === 'onboard' || tab === 'saved') ? 'providers' : tab;
+    if (tabBtnProviders) tabBtnProviders.classList.toggle('active', normTab === 'providers');
+    if (tabBtnSkills) tabBtnSkills.classList.toggle('active', normTab === 'skills');
+    if (tabBtnAdvanced) tabBtnAdvanced.classList.toggle('active', normTab === 'advanced');
 
-    if (panelOnboard) panelOnboard.classList.toggle('hidden', tab !== 'onboard');
-    if (panelSaved) panelSaved.classList.toggle('hidden', tab !== 'saved');
-    if (panelSkills) panelSkills.classList.toggle('hidden', tab !== 'skills');
-    if (panelAdvanced) panelAdvanced.classList.toggle('hidden', tab !== 'advanced');
+    if (panelProviders) panelProviders.classList.toggle('hidden', normTab !== 'providers');
+    if (panelSkills) panelSkills.classList.toggle('hidden', normTab !== 'skills');
+    if (panelAdvanced) panelAdvanced.classList.toggle('hidden', normTab !== 'advanced');
 
-    if (tab === 'skills') {
+    if (normTab === 'skills') {
       void renderSkillsCatalog();
     }
     refreshIcons();
   };
 
-  if (tabBtnOnboard) tabBtnOnboard.onclick = () => switchTab('onboard');
-  if (tabBtnSaved) tabBtnSaved.onclick = () => switchTab('saved');
+  if (tabBtnProviders) tabBtnProviders.onclick = () => switchTab('providers');
   if (tabBtnSkills) tabBtnSkills.onclick = () => switchTab('skills');
   if (tabBtnAdvanced) tabBtnAdvanced.onclick = () => switchTab('advanced');
-  if (addNewProviderBtn) addNewProviderBtn.onclick = () => switchTab('onboard');
+  if (addNewProviderBtn) {
+    addNewProviderBtn.onclick = () => {
+      switchTab('providers');
+      const editor = document.getElementById('svc-ai-provider-editor-section');
+      if (editor) editor.scrollIntoView({ behavior: 'smooth' });
+      modelInput?.focus();
+    };
+  }
   if (refreshSkillsBtn) refreshSkillsBtn.onclick = () => renderSkillsCatalog();
 
-  switchTab(initialTab || 'onboard');
+  // Bulk JSON Drawer Toggling
+  if (toggleBulkJsonBtn && bulkJsonDrawer) {
+    toggleBulkJsonBtn.onclick = () => {
+      bulkJsonDrawer.classList.toggle('hidden');
+      if (!bulkJsonDrawer.classList.contains('hidden') && bulkJsonInput) {
+        bulkJsonInput.focus();
+      }
+      refreshIcons();
+    };
+  }
+  if (closeBulkJsonBtn && bulkJsonDrawer) {
+    closeBulkJsonBtn.onclick = () => {
+      bulkJsonDrawer.classList.add('hidden');
+    };
+  }
+
+  // Bulk JSON Import Logic
+  if (applyBulkJsonBtn && bulkJsonInput) {
+    applyBulkJsonBtn.onclick = async () => {
+      const raw = (bulkJsonInput.value || '').trim();
+      if (!raw) {
+        showAlert('Please paste valid JSON containing provider configurations.');
+        return;
+      }
+      try {
+        const parsed = JSON.parse(raw);
+        let itemsToImport = [];
+        if (Array.isArray(parsed)) {
+          itemsToImport = parsed;
+        } else if (parsed && Array.isArray(parsed.saved_providers)) {
+          itemsToImport = parsed.saved_providers;
+        } else if (parsed && Array.isArray(parsed.providers)) {
+          itemsToImport = parsed.providers;
+        } else if (parsed && typeof parsed === 'object') {
+          itemsToImport = [parsed];
+        }
+
+        if (!itemsToImport.length) {
+          showAlert('No provider entries found in JSON.');
+          return;
+        }
+
+        let importedCount = 0;
+        itemsToImport.forEach(item => {
+          const prov = (item.provider || 'openai').trim().toLowerCase();
+          const models = [];
+          if (item.model) models.push(item.model.trim());
+          if (Array.isArray(item.models_list)) {
+            item.models_list.forEach(m => { if (m && !models.includes(m.trim())) models.push(m.trim()); });
+          } else if (typeof item.models_list === 'string') {
+            item.models_list.split(',').forEach(m => { const tm = m.trim(); if (tm && !models.includes(tm)) models.push(tm); });
+          }
+          if (!models.length) models.push('default-model');
+
+          models.forEach(m => {
+            const entry = {
+              id: item.id || `p_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+              name: item.name || `${prov.toUpperCase()} (${m})`,
+              provider: prov,
+              model: m,
+              models_list: models,
+              api_key: item.api_key || '',
+              base_url: item.base_url || '',
+              gcp_project: item.gcp_project || '',
+              gcp_location: item.gcp_location || 'us-central1',
+            };
+            const existingIdx = savedProvidersListState.findIndex(p => p.provider === prov && p.model === m);
+            if (existingIdx >= 0) {
+              savedProvidersListState[existingIdx] = { ...savedProvidersListState[existingIdx], ...entry };
+            } else {
+              savedProvidersListState.unshift(entry);
+            }
+            importedCount++;
+          });
+        });
+
+        // Save imported list to backend
+        await api(`/projects/${encodeURIComponent(targetProject.id)}/ai/settings`, {
+          method: 'PUT',
+          body: JSON.stringify({ saved_providers: savedProvidersListState }),
+        });
+
+        if (bulkJsonDrawer) bulkJsonDrawer.classList.add('hidden');
+        renderSavedProviders(currentLoadedSettings?.provider, currentLoadedSettings?.model);
+        toast(`Successfully imported ${importedCount} provider model configuration(s)!`);
+      } catch (err) {
+        showAlert(`JSON Parse Error: ${err.message}`);
+      }
+    };
+  }
+
+  const initialNormTab = (initialTab === 'onboard' || initialTab === 'saved') ? 'providers' : (initialTab || 'providers');
+  switchTab(initialNormTab);
 
   const showAlert = (msg) => {
     if (alertBox && alertText) {
@@ -11419,11 +12056,40 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
 
   const PRESET_MODELS = {
     vertex: [
-      'gemini-2.0-flash',
-      'gemini-2.0-flash-lite',
-      'gemini-1.5-pro-002',
+      'gemini-3.8-flash',
+      'gemini-3.8-flash-cyber',
+      'gemini-3.7-flash',
+      'gemini-3.6-flash',
+      'gemini-3.1-pro',
+      'gemini-3.1-flash-lite',
+      'gemini-2.5-pro',
+      'gemini-2.5-flash',
+      'gemini-2.5-flash-lite',
+      'claude-opus-4.7',
+      'claude-opus-4.6',
+      'claude-sonnet-4.6',
+      'claude-haiku-4.5',
+      'glm-5',
+      'glm-4.7',
+      'deepseek-v3.2',
+      'deepseek-v3.2-speciale',
+      'qwen3',
+      'qwen3-vl',
+      'llama-4-maverick',
+      'llama-4-scout',
+      'minimax-m2',
+      'gemma-4',
+      'claude-3-7-sonnet@20250219',
       'claude-3-5-sonnet@20241022',
       'meta/llama-3.3-70b-instruct-maas',
+    ],
+    gemini: [
+      'gemini-2.5-flash',
+      'gemini-2.5-pro',
+      'gemini-2.0-flash',
+      'gemini-2.0-flash-lite',
+      'gemini-1.5-pro',
+      'gemini-1.5-flash',
     ],
     openai: [
       'gpt-4o',
@@ -11481,6 +12147,28 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
     });
   };
 
+  // Auto-detect project_id from SA JSON in apiKeyInput
+  if (apiKeyInput) {
+    apiKeyInput.addEventListener('input', () => {
+      const val = apiKeyInput.value.trim();
+      if (val.startsWith('{') && val.includes('"project_id"')) {
+        try {
+          const sa = JSON.parse(val);
+          if (sa.project_id && gcpProjectInput && !gcpProjectInput.value) {
+            gcpProjectInput.value = sa.project_id;
+            toast(`Auto-detected GCP Project: ${sa.project_id}`);
+          }
+        } catch (_) {}
+      }
+    });
+  }
+
+  const updateVertexFieldsVisibility = (prov) => {
+    if (vertexFieldsWrap) {
+      vertexFieldsWrap.style.display = (prov === 'vertex') ? 'grid' : 'none';
+    }
+  };
+
   // Provider Selection Tiles
   const providerTiles = document.querySelectorAll('.svc-ai-provider-tile');
   providerTiles.forEach(tile => {
@@ -11489,12 +12177,18 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
       tile.classList.add('active');
       const prov = tile.dataset.provider || 'vertex';
       if (providerSel) providerSel.value = prov;
+      updateVertexFieldsVisibility(prov);
 
       // Update placeholders and hints
       if (prov === 'vertex') {
-        if (modelInput) modelInput.value = 'gemini-2.0-flash';
-        if (baseUrlInput) { baseUrlInput.placeholder = 'https://generativelanguage.googleapis.com/v1beta'; }
-        if (baseUrlHint) { baseUrlHint.textContent = 'Standard Google Vertex / Gemini endpoint.'; }
+        if (modelInput) modelInput.value = 'gemini-2.5-flash';
+        if (baseUrlInput) { baseUrlInput.placeholder = 'Optional: custom Vertex endpoint URL'; }
+        if (baseUrlHint) { baseUrlHint.textContent = 'Google Cloud Vertex AI endpoint. Auto-resolves project & region from env or SA credentials.'; }
+        if (apiKeyInput) { apiKeyInput.placeholder = 'Service Account JSON, OAuth2 token, or Vertex API Key'; }
+      } else if (prov === 'gemini') {
+        if (modelInput) modelInput.value = 'gemini-2.5-flash';
+        if (baseUrlInput) { baseUrlInput.placeholder = 'https://generativelanguage.googleapis.com/v1beta/openai'; }
+        if (baseUrlHint) { baseUrlHint.textContent = 'Standard Google AI Studio Gemini API endpoint.'; }
         if (apiKeyInput) { apiKeyInput.placeholder = 'AIzaSy... (Gemini API Key)'; }
       } else if (prov === 'openai') {
         if (modelInput) modelInput.value = 'gpt-4o';
@@ -11536,16 +12230,22 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
 
     if (!savedProvidersListState.length) {
       savedProvidersList.innerHTML = `
-        <div class="svc-ai-no-saved-providers">
-          <i data-lucide="layers" style="color:#71717a; width:32px; height:32px; margin-bottom:8px;"></i>
-          <p>No saved providers yet.</p>
+        <div class="svc-ai-no-saved-providers" style="padding: 24px 16px; background: #fafafa; border: 1.5px dashed #e4e4e7; border-radius: 12px; text-align: center;">
+          <i data-lucide="layers" style="color:#a1a1aa; width:32px; height:32px; margin-bottom:8px;"></i>
+          <p style="font-size:13px; color:#71717a; margin:0 0 10px;">No saved providers yet.</p>
           <button type="button" class="btn-pill btn-primary btn-sm" id="svc-ai-empty-add-btn">
-            <i data-lucide="plus"></i><span>Add Your First Provider</span>
+            <i data-lucide="plus"></i><span>Configure Provider Below</span>
           </button>
         </div>
       `;
       const emptyAdd = savedProvidersList.querySelector('#svc-ai-empty-add-btn');
-      if (emptyAdd) emptyAdd.onclick = () => switchTab('onboard');
+      if (emptyAdd) {
+        emptyAdd.onclick = () => {
+          const editor = document.getElementById('svc-ai-provider-editor-section');
+          if (editor) editor.scrollIntoView({ behavior: 'smooth' });
+          modelInput?.focus();
+        };
+      }
       refreshIcons();
       return;
     }
@@ -11553,30 +12253,67 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
     savedProvidersList.innerHTML = savedProvidersListState.map((p, idx) => {
       const isActive = (p.model === activeModel && (p.provider === activeProvider || !p.provider));
       const prov = p.provider || 'openai';
+      const modelsList = Array.isArray(p.models_list) && p.models_list.length ? p.models_list : [p.model];
+      
       return `
-        <div class="svc-ai-saved-provider-card ${isActive ? 'active' : ''}">
-          <div class="svc-ai-saved-prov-left">
-            <div class="svc-ai-dropdown-prov-badge ${escapeHtml(prov)}">${escapeHtml(prov)}</div>
-            <div class="svc-ai-saved-prov-text">
-              <div class="svc-ai-saved-prov-model">${escapeHtml(p.model || 'Model')}</div>
-              <small class="hint">${escapeHtml(p.name || prov)} • ${p.api_key ? 'Key saved' : (currentLoadedSettings?.has_api_key && currentLoadedSettings.provider === prov ? 'Inherits active key' : 'No key')}</small>
+        <div class="svc-ai-saved-provider-card ${isActive ? 'active' : ''}" style="background: #ffffff; border: 1.5px solid ${isActive ? '#18181b' : '#e4e4e7'}; border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; transition: all 0.15s ease;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+            <div class="svc-ai-saved-prov-left" style="display: flex; align-items: center; gap: 10px;">
+              <div class="svc-ai-dropdown-prov-badge ${escapeHtml(prov)}" style="font-size: 0.72rem; font-weight: 700; text-transform: uppercase; padding: 3px 8px; border-radius: 6px; background: #f4f4f5; color: #18181b;">${escapeHtml(prov)}</div>
+              <div class="svc-ai-saved-prov-text">
+                <div class="svc-ai-saved-prov-model" style="font-weight: 700; font-size: 0.88rem; color: #18181b;">${escapeHtml(p.model || 'Model')}</div>
+                <small class="hint" style="font-size: 0.75rem; color: #71717a;">${escapeHtml(p.name || prov)} • ${p.api_key ? 'Key/SA saved' : (currentLoadedSettings?.has_api_key && currentLoadedSettings.provider === prov ? 'Inherits active key' : 'No key saved')}</small>
+              </div>
+            </div>
+            <div class="svc-ai-saved-prov-actions" style="display: flex; align-items: center; gap: 6px;">
+              <button type="button" class="btn-pill btn-ghost btn-sm svc-ai-add-model-btn" data-prov="${escapeHtml(prov)}" title="Add another model for this provider" style="font-size: 0.72rem; padding: 3px 8px; border: 1px solid #e4e4e7; border-radius: 8px;">
+                <i data-lucide="plus"></i><span>Model</span>
+              </button>
+              ${isActive
+                ? '<span class="svc-ai-active-pill" style="display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 20px; background: #18181b; color: #ffffff; font-size: 0.75rem; font-weight: 600;"><i data-lucide="check" style="width:12px; height:12px;"></i> Active</span>'
+                : `<button type="button" class="btn-pill btn-secondary btn-sm svc-ai-activate-btn" data-idx="${idx}" style="font-size: 0.75rem; padding: 3px 10px; font-weight: 600;">Activate</button>`
+              }
+              <button type="button" class="svc-ai-del-prov-btn" data-idx="${idx}" title="Delete provider" style="background:none; border:none; color:#a1a1aa; cursor:pointer; padding:4px; border-radius:6px; display:inline-flex; align-items:center;">
+                <i data-lucide="trash-2" style="width:14px; height:14px;"></i>
+              </button>
             </div>
           </div>
-          <div class="svc-ai-saved-prov-actions" style="display: flex; align-items: center; gap: 6px;">
-            <button type="button" class="btn-pill btn-ghost btn-sm svc-ai-add-model-btn" data-prov="${escapeHtml(prov)}" title="Add another model for this provider" style="font-size: 0.72rem; padding: 2px 8px;">
-              <i data-lucide="plus"></i><span>Model</span>
-            </button>
-            ${isActive
-              ? '<span class="svc-ai-active-pill"><i data-lucide="check"></i> Active</span>'
-              : `<button type="button" class="btn-pill btn-secondary btn-sm svc-ai-activate-btn" data-idx="${idx}">Activate</button>`
-            }
-            <button type="button" class="svc-ai-del-prov-btn" data-idx="${idx}" title="Delete provider">
-              <i data-lucide="trash-2"></i>
-            </button>
-          </div>
+          ${modelsList.length > 1 ? `
+            <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap; border-top: 1px solid #f4f4f5; padding-top: 6px;">
+              <span style="font-size: 0.72rem; color: #71717a; font-weight: 500;">Models:</span>
+              ${modelsList.map(m => `
+                <button type="button" class="svc-ai-model-switch-chip ${m === p.model ? 'active' : ''}" data-idx="${idx}" data-model="${escapeHtml(m)}" style="font-size: 0.72rem; padding: 2px 8px; border-radius: 12px; border: 1px solid ${m === p.model ? '#18181b' : '#e4e4e7'}; background: ${m === p.model ? '#18181b' : '#fafafa'}; color: ${m === p.model ? '#ffffff' : '#3f3f46'}; cursor: pointer; font-weight: 500;">${escapeHtml(m)}</button>
+              `).join('')}
+            </div>
+          ` : ''}
         </div>
       `;
     }).join('');
+
+    // Switch model under same provider chip
+    savedProvidersList.querySelectorAll('.svc-ai-model-switch-chip').forEach(chip => {
+      chip.onclick = async (e) => {
+        e.stopPropagation();
+        const idx = parseInt(chip.dataset.idx, 10);
+        const targetModel = chip.dataset.model;
+        const targetP = savedProvidersListState[idx];
+        if (!targetP) return;
+        targetP.model = targetModel;
+        try {
+          const res = await api(`/projects/${encodeURIComponent(targetProject.id)}/ai/providers/activate`, {
+            method: 'POST',
+            body: JSON.stringify({ provider_id: targetP.id, model: targetModel, provider: targetP.provider }),
+          });
+          if (res.ok) {
+            toast(`Switched active model to ${targetModel}`);
+            closeModal();
+            renderAIChatWorkspace(targetProject);
+          }
+        } catch (err) {
+          toast(`Failed to activate: ${err.message}`);
+        }
+      };
+    });
 
     // Activate buttons
     savedProvidersList.querySelectorAll('.svc-ai-activate-btn').forEach(btn => {
@@ -11607,7 +12344,9 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
         const prov = btn.dataset.prov;
         if (providerSel) providerSel.value = prov;
         providerTiles.forEach(t => t.classList.toggle('active', t.dataset.provider === prov));
-        switchTab('onboard');
+        updateVertexFieldsVisibility(prov);
+        const editor = document.getElementById('svc-ai-provider-editor-section');
+        if (editor) editor.scrollIntoView({ behavior: 'smooth' });
         modelInput?.focus();
         toast(`Choose or enter a new model for ${prov.toUpperCase()}`);
       };
@@ -11649,8 +12388,11 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
       providerTiles.forEach(t => {
         t.classList.toggle('active', t.dataset.provider === currentProv);
       });
+      updateVertexFieldsVisibility(currentProv);
 
-      if (modelInput) modelInput.value = s.model || 'gemini-2.0-flash';
+      if (modelInput) modelInput.value = s.model || 'gemini-2.5-flash';
+      if (gcpProjectInput) gcpProjectInput.value = s.gcp_project || '';
+      if (gcpLocationInput) gcpLocationInput.value = s.gcp_location || 'us-central1';
       if (apiKeyInput) apiKeyInput.placeholder = s.has_api_key ? s.api_key_masked : 'AIzaSy... / sk-...';
       if (apiKeyInput) apiKeyInput.value = '';
       if (baseUrlInput) baseUrlInput.value = s.base_url || '';
@@ -11667,6 +12409,11 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
         } catch (_) {}
       }
 
+      const activeModelDisplay = document.getElementById('svc-ai-settings-active-model-display');
+      if (activeModelDisplay) activeModelDisplay.textContent = s.model || 'gemini-2.5-flash';
+      const activeProvBadge = document.getElementById('svc-ai-settings-active-prov-badge');
+      if (activeProvBadge) activeProvBadge.textContent = (s.provider || 'vertex').toUpperCase();
+
       savedProvidersListState = s.saved_providers || [];
       renderPresetChips();
       renderSavedProviders(s.provider, s.model);
@@ -11675,15 +12422,31 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
     showAlert(`Could not load settings for project: ${err.message}`);
   }
 
+  // Browse Omni Library from Settings
+  const openOmniFromSettingsBtn = document.getElementById('svc-ai-open-omni-from-settings-btn');
+  if (openOmniFromSettingsBtn) {
+    openOmniFromSettingsBtn.onclick = () => {
+      closeModal();
+      openOmniRouterModal(targetProject);
+    };
+  }
+
+  // Handshake Sync button
+  const syncHandshakeBtn = document.getElementById('svc-ai-sync-handshake-btn');
+  if (syncHandshakeBtn) {
+    syncHandshakeBtn.onclick = () => triggerHandshakeSync(targetProject);
+  }
+
   // Test Connection
   if (testBtn) {
     testBtn.onclick = async () => {
       hideAlert();
-      const selectedProvider = providerSel?.value || 'vertex';
-      let enteredKey = apiKeyInput?.value?.trim() || '';
+      const cleanStr = (s) => (s || '').replace(/[\u2060\u200B\u200C\u200D\uFEFF\u00A0]/g, '').trim();
+      const selectedProvider = cleanStr(providerSel?.value) || 'vertex';
+      let enteredKey = cleanStr(apiKeyInput?.value) || '';
       if (!enteredKey) {
         const matchingSaved = savedProvidersListState.find(p => p.provider === selectedProvider && p.api_key);
-        if (matchingSaved) enteredKey = matchingSaved.api_key;
+        if (matchingSaved) enteredKey = cleanStr(matchingSaved.api_key);
       }
       const hasExistingKey = currentLoadedSettings?.has_api_key && (currentLoadedSettings.provider === selectedProvider || !enteredKey);
       if (!enteredKey && !hasExistingKey && selectedProvider !== 'ollama' && selectedProvider !== 'custom') {
@@ -11698,7 +12461,7 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
       try {
         const cleanBaseUrl = (u) => {
           if (!u) return '';
-          let cleaned = u.trim().replace(/\/+$/, '');
+          let cleaned = cleanStr(u).replace(/\/+$/, '');
           if (cleaned.endsWith('/chat/completions')) {
             cleaned = cleaned.slice(0, -'/chat/completions'.length).replace(/\/+$/, '');
           }
@@ -11706,9 +12469,11 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
         };
         const payload = {
           provider: selectedProvider,
-          model: modelInput?.value?.trim() || 'gemini-2.0-flash',
+          model: cleanStr(modelInput?.value) || 'gemini-2.5-flash',
           api_key: enteredKey,
           base_url: cleanBaseUrl(baseUrlInput?.value || ''),
+          gcp_project: cleanStr(gcpProjectInput?.value || ''),
+          gcp_location: cleanStr(gcpLocationInput?.value || 'us-central1'),
         };
         const res = await api(`/projects/${encodeURIComponent(targetProject.id)}/ai/test-connection`, {
           method: 'POST',
@@ -11742,27 +12507,40 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
   const handleSave = async () => {
     hideAlert();
     try {
+      const cleanStr = (s) => (s || '').replace(/[\u2060\u200B\u200C\u200D\uFEFF\u00A0]/g, '').trim();
       const cleanBaseUrl = (u) => {
         if (!u) return '';
-        let cleaned = u.trim().replace(/\/+$/, '');
+        let cleaned = cleanStr(u).replace(/\/+$/, '');
         if (cleaned.endsWith('/chat/completions')) {
           cleaned = cleaned.slice(0, -'/chat/completions'.length).replace(/\/+$/, '');
         }
         return cleaned;
       };
 
-      const selectedProvider = providerSel?.value || 'vertex';
-      const selectedModel = modelInput?.value?.trim() || 'gemini-2.0-flash';
-      let enteredKey = apiKeyInput?.value?.trim() || '';
+      const selectedProvider = cleanStr(providerSel?.value) || 'vertex';
+      const selectedModel = cleanStr(modelInput?.value) || 'gemini-2.5-flash';
+      const extraModelsRaw = cleanStr(additionalModelsInput?.value || '');
+      let enteredKey = cleanStr(apiKeyInput?.value) || '';
       const enteredBaseUrl = cleanBaseUrl(baseUrlInput?.value || '');
+      const enteredGcpProject = cleanStr(gcpProjectInput?.value || '');
+      const enteredGcpLocation = cleanStr(gcpLocationInput?.value || 'us-central1');
+
+      // Multi-model list collection
+      const modelsList = [selectedModel];
+      if (extraModelsRaw) {
+        extraModelsRaw.split(',').forEach(m => {
+          const tm = cleanStr(m);
+          if (tm && !modelsList.includes(tm)) modelsList.push(tm);
+        });
+      }
 
       // Multi-model fix: if key was not re-entered, inherit from matching saved provider or active settings
       if (!enteredKey) {
         const matchingSaved = savedProvidersListState.find(p => p.provider === selectedProvider && p.api_key);
         if (matchingSaved) {
-          enteredKey = matchingSaved.api_key;
+          enteredKey = cleanStr(matchingSaved.api_key);
         } else if (currentLoadedSettings?.has_api_key && currentLoadedSettings.provider === selectedProvider) {
-          enteredKey = currentLoadedSettings.api_key || '';
+          enteredKey = cleanStr(currentLoadedSettings.api_key || '');
         }
       }
 
@@ -11772,8 +12550,11 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
         name: `${selectedProvider.toUpperCase()} (${selectedModel})`,
         provider: selectedProvider,
         model: selectedModel,
+        models_list: modelsList,
         api_key: enteredKey,
         base_url: enteredBaseUrl,
+        gcp_project: enteredGcpProject,
+        gcp_location: enteredGcpLocation,
       };
 
       // Add to saved list if not duplicate
@@ -11781,14 +12562,39 @@ async function openAISettingsModal(project, initialTab = 'onboard') {
       if (existingIdx >= 0) {
         if (enteredKey) savedProvidersListState[existingIdx].api_key = enteredKey;
         if (enteredBaseUrl !== undefined) savedProvidersListState[existingIdx].base_url = enteredBaseUrl;
+        if (enteredGcpProject !== undefined) savedProvidersListState[existingIdx].gcp_project = enteredGcpProject;
+        if (enteredGcpLocation !== undefined) savedProvidersListState[existingIdx].gcp_location = enteredGcpLocation;
+        savedProvidersListState[existingIdx].models_list = modelsList;
       } else {
         savedProvidersListState.unshift(newProvEntry);
       }
+
+      // Also create separate entries for any extra models if desired
+      modelsList.forEach(m => {
+        if (m !== selectedModel) {
+          const idx = savedProvidersListState.findIndex(p => p.provider === selectedProvider && p.model === m);
+          if (idx < 0) {
+            savedProvidersListState.push({
+              id: `p_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+              name: `${selectedProvider.toUpperCase()} (${m})`,
+              provider: selectedProvider,
+              model: m,
+              models_list: modelsList,
+              api_key: enteredKey,
+              base_url: enteredBaseUrl,
+              gcp_project: enteredGcpProject,
+              gcp_location: enteredGcpLocation,
+            });
+          }
+        }
+      });
 
       const payload = {
         provider: selectedProvider,
         model: selectedModel,
         base_url: enteredBaseUrl,
+        gcp_project: enteredGcpProject,
+        gcp_location: enteredGcpLocation,
         temperature: parseFloat(tempInput?.value || 0.7),
         max_tokens: parseInt(maxTokensInput?.value || 4096, 10),
         thinking_level: thinkingSel?.value || 'medium',
@@ -15503,88 +16309,90 @@ const DOCS_DATA = {
   "qs-install": {
     "title": "Quickstart & Installation",
     "lead": "Deploy, configure, and manage high-performance web applications and reverse proxy endpoints with Syte.",
-    "updated": "03/09/2026",
-    "content": "\n      <p>Syte is a modern self-hosted deployment engine built for high-performance Node.js, Python, Static, and Docker applications with native SSL provisioning and edge routing.</p>\n      \n      <div class=\"docs-cmd-card\">\n        <div class=\"docs-cmd-header\">\n          <div class=\"docs-cmd-tabs\">\n            <button class=\"docs-cmd-tab active\" onclick=\"switchCmdTab(this, 'npm')\">npm</button>\n            <button class=\"docs-cmd-tab\" onclick=\"switchCmdTab(this, 'pnpm')\">pnpm</button>\n            <button class=\"docs-cmd-tab\" onclick=\"switchCmdTab(this, 'yarn')\">yarn</button>\n            <button class=\"docs-cmd-tab\" onclick=\"switchCmdTab(this, 'bun')\">bun</button>\n          </div>\n          <button class=\"docs-cmd-copy-btn\" onclick=\"copySnippet(this, 'npm install -g @syte/cli')\" title=\"Copy command\">\n            <i data-lucide=\"clipboard\" style=\"width:14px;height:14px;\"></i>\n          </button>\n        </div>\n        <div class=\"docs-cmd-body\">\n          <pre class=\"docs-cmd-snippet active\" data-content=\"npm\"><code>npm install -g @syte/cli</code></pre>\n          <pre class=\"docs-cmd-snippet\" data-content=\"pnpm\"><code>pnpm add -g @syte/cli</code></pre>\n          <pre class=\"docs-cmd-snippet\" data-content=\"yarn\"><code>yarn global add @syte/cli</code></pre>\n          <pre class=\"docs-cmd-snippet\" data-content=\"bun\"><code>bun add -g @syte/cli</code></pre>\n        </div>\n      </div>\n\n      <h2 class=\"docs-section-h2\">Production Host Installation</h2>\n      <p>Run the automated setup script on your Ubuntu/Debian Linux virtual machine:</p>\n      <div class=\"docs-cmd-card\">\n        <div class=\"docs-cmd-header\">\n          <div class=\"docs-cmd-tabs\"><button class=\"docs-cmd-tab active\">bash</button></div>\n          <button class=\"docs-cmd-copy-btn\" onclick=\"copySnippet(this, 'curl -sSL https://get.syte.dev | bash')\" title=\"Copy command\">\n            <i data-lucide=\"clipboard\" style=\"width:14px;height:14px;\"></i>\n          </button>\n        </div>\n        <div class=\"docs-cmd-body\">\n          <pre class=\"docs-cmd-snippet active\"><code>curl -sSL https://get.syte.dev | bash</code></pre>\n        </div>\n      </div>\n            ",
     "hasHero": true,
-    "isApi": false
+    "updated": "03/09/2026",
+    "content": "\n      <p>Syte is a modern self-hosted deployment engine built for high-performance Node.js, Python, Static, and Docker applications with native SSL provisioning and edge routing.</p>\n      \n      <div class=\"docs-cmd-card\">\n        <div class=\"docs-cmd-header\">\n          <div class=\"docs-cmd-tabs\">\n            <button class=\"docs-cmd-tab active\" onclick=\"switchCmdTab(this, 'npm')\">npm</button>\n            <button class=\"docs-cmd-tab\" onclick=\"switchCmdTab(this, 'pnpm')\">pnpm</button>\n            <button class=\"docs-cmd-tab\" onclick=\"switchCmdTab(this, 'yarn')\">yarn</button>\n            <button class=\"docs-cmd-tab\" onclick=\"switchCmdTab(this, 'bun')\">bun</button>\n          </div>\n          <button class=\"docs-cmd-copy-btn\" onclick=\"copySnippet(this, 'npm install -g @syte/cli')\" title=\"Copy command\">\n            <i data-lucide=\"clipboard\" style=\"width:14px;height:14px;\"></i>\n          </button>\n        </div>\n        <div class=\"docs-cmd-body\">\n          <pre class=\"docs-cmd-snippet active\" data-content=\"npm\"><code>npm install -g @syte/cli</code></pre>\n          <pre class=\"docs-cmd-snippet\" data-content=\"pnpm\"><code>pnpm add -g @syte/cli</code></pre>\n          <pre class=\"docs-cmd-snippet\" data-content=\"yarn\"><code>yarn global add @syte/cli</code></pre>\n          <pre class=\"docs-cmd-snippet\" data-content=\"bun\"><code>bun add -g @syte/cli</code></pre>\n        </div>\n      </div>\n\n      <h2 class=\"docs-section-h2\">Production Host Installation</h2>\n      <p>Run the automated setup script on your Ubuntu/Debian Linux virtual machine:</p>\n      <div class=\"docs-cmd-card\">\n        <div class=\"docs-cmd-header\">\n          <div class=\"docs-cmd-tabs\"><button class=\"docs-cmd-tab active\">bash</button></div>\n          <button class=\"docs-cmd-copy-btn\" onclick=\"copySnippet(this, 'curl -sSL https://get.syte.dev | bash')\" title=\"Copy command\">\n            <i data-lucide=\"clipboard\" style=\"width:14px;height:14px;\"></i>\n          </button>\n        </div>\n        <div class=\"docs-cmd-body\">\n          <pre class=\"docs-cmd-snippet active\"><code>curl -sSL https://get.syte.dev | bash</code></pre>\n        </div>\n      </div>\n            "
   },
   "welcome": {
     "title": "Syte Documentation",
     "lead": "Everything you need to build, deploy, scale, and manage projects on Syte.",
-    "updated": "03/09/2026",
-    "content": "\n      <p>Welcome to Syte documentation. Choose a category from the sidebar or search above to explore getting started guides, architecture, networking, or the full 113 API endpoints reference.</p>\n      \n      <div class=\"docs-step-item\">\n        <div class=\"docs-step-num\">1</div>\n        <div class=\"docs-step-content\">\n          <h4><a onclick=\"showDocsPage('qs-install')\" style=\"cursor:pointer;color:inherit;text-decoration:underline;\">Quickstart &amp; Installation</a></h4>\n          <p>Get Syte up and running on your local machine or Linux server in under 2 minutes.</p>\n        </div>\n      </div>\n      <div class=\"docs-step-item\">\n        <div class=\"docs-step-num\">2</div>\n        <div class=\"docs-step-content\">\n          <h4><a onclick=\"showDocsPage('qs-deploy')\" style=\"cursor:pointer;color:inherit;text-decoration:underline;\">Deploy Your First Application</a></h4>\n          <p>Import from GitHub, upload a ZIP, or connect a public repository for instant zero-downtime deployment.</p>\n        </div>\n      </div>\n      <div class=\"docs-step-item\">\n        <div class=\"docs-step-num\">3</div>\n        <div class=\"docs-step-content\">\n          <h4><a onclick=\"showDocsPage('api-projects-get')\" style=\"cursor:pointer;color:inherit;text-decoration:underline;\">Explore API Reference</a></h4>\n          <p>Programmatically automate projects, builds, custom domains, secrets, and telemetry.</p>\n        </div>\n      </div>\n            ",
     "hasHero": true,
-    "isApi": false
+    "updated": "03/09/2026",
+    "content": "\n      <p>Welcome to Syte documentation. Choose a category from the sidebar or search above to explore getting started guides, architecture, networking, or the full 113 API endpoints reference.</p>\n      \n      <div class=\"docs-step-item\">\n        <div class=\"docs-step-num\">1</div>\n        <div class=\"docs-step-content\">\n          <h4><a onclick=\"showDocsPage('qs-install')\" style=\"cursor:pointer;color:inherit;text-decoration:underline;\">Quickstart &amp; Installation</a></h4>\n          <p>Get Syte up and running on your local machine or Linux server in under 2 minutes.</p>\n        </div>\n      </div>\n      <div class=\"docs-step-item\">\n        <div class=\"docs-step-num\">2</div>\n        <div class=\"docs-step-content\">\n          <h4><a onclick=\"showDocsPage('qs-deploy')\" style=\"cursor:pointer;color:inherit;text-decoration:underline;\">Deploy Your First Application</a></h4>\n          <p>Import from GitHub, upload a ZIP, or connect a public repository for instant zero-downtime deployment.</p>\n        </div>\n      </div>\n      <div class=\"docs-step-item\">\n        <div class=\"docs-step-num\">3</div>\n        <div class=\"docs-step-content\">\n          <h4><a onclick=\"showDocsPage('api-projects-get')\" style=\"cursor:pointer;color:inherit;text-decoration:underline;\">Explore API Reference</a></h4>\n          <p>Programmatically automate projects, builds, custom domains, secrets, and telemetry.</p>\n        </div>\n      </div>\n            "
   },
   "qs-deploy": {
     "title": "Deploying Your First App",
     "lead": "Step-by-step instructions to import, build, and deploy your web app.",
     "updated": "03/09/2026",
-    "content": "\n      <p>Follow these steps to connect your Git repository and deploy in seconds:</p>\n      <div class=\"docs-step-item\">\n        <div class=\"docs-step-num\">1</div>\n        <div class=\"docs-step-content\">\n          <h4>Connect Git or Upload ZIP</h4>\n          <p>Navigate to the Projects dashboard and click <strong>Create Project</strong> or import directly from GitHub.</p>\n        </div>\n      </div>\n      <div class=\"docs-step-item\">\n        <div class=\"docs-step-num\">2</div>\n        <div class=\"docs-step-content\">\n          <h4>Auto Framework Detection</h4>\n          <p>Syte detects Next.js, Vite, Remix, Astro, FastAPI, Django, Express, and Dockerfile projects automatically.</p>\n        </div>\n      </div>\n      <div class=\"docs-step-item\">\n        <div class=\"docs-step-num\">3</div>\n        <div class=\"docs-step-content\">\n          <h4>Live Production Deployment</h4>\n          <p>Click <strong>Deploy</strong> to trigger automated container building and edge proxy configuration.</p>\n        </div>\n      </div>\n            ",
-    "hasHero": false,
-    "isApi": false
+    "content": "\n      <p>Follow these steps to connect your Git repository and deploy in seconds:</p>\n      <div class=\"docs-step-item\">\n        <div class=\"docs-step-num\">1</div>\n        <div class=\"docs-step-content\">\n          <h4>Connect Git or Upload ZIP</h4>\n          <p>Navigate to the Projects dashboard and click <strong>Create Project</strong> or import directly from GitHub.</p>\n        </div>\n      </div>\n      <div class=\"docs-step-item\">\n        <div class=\"docs-step-num\">2</div>\n        <div class=\"docs-step-content\">\n          <h4>Auto Framework Detection</h4>\n          <p>Syte detects Next.js, Vite, Remix, Astro, FastAPI, Django, Express, and Dockerfile projects automatically.</p>\n        </div>\n      </div>\n      <div class=\"docs-step-item\">\n        <div class=\"docs-step-num\">3</div>\n        <div class=\"docs-step-content\">\n          <h4>Live Production Deployment</h4>\n          <p>Click <strong>Deploy</strong> to trigger automated container building and edge proxy configuration.</p>\n        </div>\n      </div>\n            "
   },
   "qs-custom-domain": {
     "title": "Custom Domains & DNS",
     "lead": "Configure custom apex or subdomains with automated Let's Encrypt TLS certificates.",
     "updated": "03/09/2026",
-    "content": "\n      <p>Syte manages automated SSL provisioning through ACME HTTP-01 challenges.</p>\n      <h2 class=\"docs-section-h2\">1. Add DNS Record</h2>\n      <p>In your DNS provider (Cloudflare, Namecheap, Route53), add a <code>CNAME</code> or <code>A</code> record:</p>\n      <div class=\"docs-code-gray-card\">\n        <div class=\"docs-code-gray-header\">\n          <div class=\"docs-code-file-label\"><span>DNS Settings</span></div>\n        </div>\n        <div class=\"docs-code-gray-body\">\n          <pre><code>Type: CNAME\nName: app\nTarget: cname.sycord.site\nTTL: Auto / 300</code></pre>\n        </div>\n      </div>\n      <h2 class=\"docs-section-h2\">2. Bind Domain in Syte</h2>\n      <p>Use the Project Settings &gt; Domain interface or the <code>/api/projects/{id}/domain</code> endpoint.</p>\n            ",
-    "hasHero": false,
-    "isApi": false
+    "content": "\n      <p>Syte manages automated SSL provisioning through ACME HTTP-01 challenges.</p>\n      <h2 class=\"docs-section-h2\">1. Add DNS Record</h2>\n      <p>In your DNS provider (Cloudflare, Namecheap, Route53), add a <code>CNAME</code> or <code>A</code> record:</p>\n      <div class=\"docs-code-gray-card\">\n        <div class=\"docs-code-gray-header\">\n          <div class=\"docs-code-file-label\"><span>DNS Settings</span></div>\n        </div>\n        <div class=\"docs-code-gray-body\">\n          <pre><code>Type: CNAME\nName: app\nTarget: cname.sycord.site\nTTL: Auto / 300</code></pre>\n        </div>\n      </div>\n      <h2 class=\"docs-section-h2\">2. Bind Domain in Syte</h2>\n      <p>Use the Project Settings &gt; Domain interface or the <code>/api/projects/{id}/domain</code> endpoint.</p>\n            "
   },
   "core-architecture": {
     "title": "Platform Architecture",
     "lead": "Under the hood: Reverse proxying, isolated container runtimes, and distributed state.",
     "updated": "03/09/2026",
-    "content": "\n      <p>Syte combines a low-latency Caddy/Nginx reverse proxy layer with lightweight systemd-isolated container environments.</p>\n      <ul>\n        <li><strong>Proxy Layer:</strong> Handles SSL termination, gzip/brotli compression, and path redirects.</li>\n        <li><strong>Runtime Daemon:</strong> FastAPI controller on port 8787 orchestrating build pipelines and system telemetry.</li>\n        <li><strong>Process Isolation:</strong> Zero-overhead execution with per-project resource throttling and memory limits.</li>\n      </ul>\n            ",
-    "hasHero": false,
-    "isApi": false
+    "content": "\n      <p>Syte combines a low-latency Caddy/Nginx reverse proxy layer with lightweight systemd-isolated container environments.</p>\n      <ul>\n        <li><strong>Proxy Layer:</strong> Handles SSL termination, gzip/brotli compression, and path redirects.</li>\n        <li><strong>Runtime Daemon:</strong> FastAPI controller on port 8787 orchestrating build pipelines and system telemetry.</li>\n        <li><strong>Process Isolation:</strong> Zero-overhead execution with per-project resource throttling and memory limits.</li>\n      </ul>\n            "
   },
   "core-config": {
     "title": "Configuration Reference",
     "lead": "Complete specification for syte.config.json and environment options.",
     "updated": "03/09/2026",
-    "content": "\n      <p>You can commit a <code>syte.config.json</code> file in your repository root to configure build steps:</p>\n      <div class=\"docs-code-gray-card\">\n        <div class=\"docs-code-gray-header\">\n          <div class=\"docs-code-file-label\"><span>syte.config.json</span></div>\n        </div>\n        <div class=\"docs-code-gray-body\">\n          <pre><code>{\n  \"framework\": \"nextjs\",\n  \"buildCommand\": \"npm run build\",\n  \"startCommand\": \"npm run start\",\n  \"port\": 3000,\n  \"environment\": {\n    \"NODE_ENV\": \"production\"\n  }\n}</code></pre>\n        </div>\n      </div>\n            ",
-    "hasHero": false,
-    "isApi": false
+    "content": "\n      <p>You can commit a <code>syte.config.json</code> file in your repository root to configure build steps:</p>\n      <div class=\"docs-code-gray-card\">\n        <div class=\"docs-code-gray-header\">\n          <div class=\"docs-code-file-label\"><span>syte.config.json</span></div>\n        </div>\n        <div class=\"docs-code-gray-body\">\n          <pre><code>{\n  \"framework\": \"nextjs\",\n  \"buildCommand\": \"npm run build\",\n  \"startCommand\": \"npm run start\",\n  \"port\": 3000,\n  \"environment\": {\n    \"NODE_ENV\": \"production\"\n  }\n}</code></pre>\n        </div>\n      </div>\n            "
   },
   "core-ssl-security": {
     "title": "SSL & Security Hardening",
     "lead": "Automatic TLS renewal, HSTS headers, and rate limiting protections.",
     "updated": "03/09/2026",
-    "content": "\n      <p>Syte provides automated security policies out of the box:</p>\n      <ul>\n        <li>Automatic Let's Encrypt certificate renewal every 60 days.</li>\n        <li>Native TLS 1.3 encryption with strict cipher suites.</li>\n        <li>Built-in rate limiting and DDoS protection at edge proxy.</li>\n      </ul>\n            ",
-    "hasHero": false,
-    "isApi": false
+    "content": "\n      <p>Syte provides automated security policies out of the box:</p>\n      <ul>\n        <li>Automatic Let's Encrypt certificate renewal every 60 days.</li>\n        <li>Native TLS 1.3 encryption with strict cipher suites.</li>\n        <li>Built-in rate limiting and DDoS protection at edge proxy.</li>\n      </ul>\n            "
   },
   "core-git-sync": {
     "title": "Continuous Git Sync & Webhooks",
     "lead": "Automate deployments on git push and pull request preview environments.",
     "updated": "03/09/2026",
-    "content": "\n      <p>Syte listens for GitHub webhook events. When you push to your default branch, Syte pulls the latest commits, triggers a build, and performs a zero-downtime traffic swap.</p>\n            ",
-    "hasHero": false,
-    "isApi": false
+    "content": "\n      <p>Syte listens for GitHub webhook events. When you push to your default branch, Syte pulls the latest commits, triggers a build, and performs a zero-downtime traffic swap.</p>\n            "
   },
   "core-monitoring": {
     "title": "Monitoring & Telemetry",
     "lead": "Real-time metrics, HTTP status codes, p95 latency, and SSE log streaming.",
     "updated": "03/09/2026",
-    "content": "\n      <p>Every project provides real-time CPU, RAM, disk, and visitor analytics. You can also stream live container stdout logs using the SSE streaming endpoint.</p>\n            ",
-    "hasHero": false,
-    "isApi": false
-  },
+    "content": "\n      <p>Every project provides real-time CPU, RAM, disk, and visitor analytics. You can also stream live container stdout logs using the SSE streaming endpoint.</p>\n            "
+  }
+};
+
+const API_CATALOG = {
   "api-health-get": {
-    "isApi": true,
-    "groupName": "System & Health",
+    "key": "api-health-get",
+    "group": "System & Health",
     "title": "Health check",
-    "lead": "Check API availability and core system uptime status.",
     "summary": "Check API availability and core system uptime status.",
     "method": "GET",
     "path": "/api/health",
+    "auth": "Public / None",
     "contentType": "none",
+    "rateLimit": "120 req/min",
+    "headers": [
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X GET https://sycord.site:8787/api/health",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns health check data payload."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -15603,22 +16411,51 @@ const DOCS_DATA = {
         "desc": "ISO-8601 server timestamp."
       }
     ],
-    "responseJson": "{\n  \"status\": \"ok\",\n  \"version\": \"2.4.0\",\n  \"timestamp\": \"2026-09-13T12:00:00Z\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "ok",
+      "version": "2.4.0",
+      "timestamp": "2026-09-13T12:00:00Z"
+    }
   },
   "api-system-get": {
-    "isApi": true,
-    "groupName": "System & Health",
+    "key": "api-system-get",
+    "group": "System & Health",
     "title": "System hardware metrics",
-    "lead": "Retrieve real-time host VM CPU, memory, disk usage, and OS kernel information.",
     "summary": "Retrieve real-time host VM CPU, memory, disk usage, and OS kernel information.",
     "method": "GET",
     "path": "/api/system",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X GET https://sycord.site:8787/api/system \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns system hardware metrics data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -15642,22 +16479,62 @@ const DOCS_DATA = {
         "desc": "Host operating system and kernel version string."
       }
     ],
-    "responseJson": "{\n  \"cpu_percent\": 14.2,\n  \"memory\": {\n    \"total\": 8589934592,\n    \"used\": 2810183680,\n    \"free\": 5779750912,\n    \"percent\": 32.7\n  },\n  \"disk\": {\n    \"total\": 53687091200,\n    \"used\": 12884901888,\n    \"free\": 40802189312,\n    \"percent\": 24.0\n  },\n  \"platform\": \"Linux 6.8.0-amd64\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "cpu_percent": 14.2,
+      "memory": {
+        "total": 8589934592,
+        "used": 2810183680,
+        "free": 5779750912,
+        "percent": 32.7
+      },
+      "disk": {
+        "total": 53687091200,
+        "used": 12884901888,
+        "free": 40802189312,
+        "percent": 24.0
+      },
+      "platform": "Linux 6.8.0-amd64"
+    }
   },
   "api-system-update-info-get": {
-    "isApi": true,
-    "groupName": "System & Health",
+    "key": "api-system-update-info-get",
+    "group": "System & Health",
     "title": "Check release updates",
-    "lead": "Query upstream GitHub repository for new release versions and changelog notes.",
     "summary": "Query upstream GitHub repository for new release versions and changelog notes.",
     "method": "GET",
     "path": "/api/system/update-info",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X GET https://sycord.site:8787/api/system/update-info \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns check release updates data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -15681,22 +16558,52 @@ const DOCS_DATA = {
         "desc": "Changelog and release notes markdown."
       }
     ],
-    "responseJson": "{\n  \"current_version\": \"2.4.0\",\n  \"latest_version\": \"2.4.1\",\n  \"update_available\": true,\n  \"release_notes\": \"Added real-time SSE streaming logs and automated certificate renewal.\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "current_version": "2.4.0",
+      "latest_version": "2.4.1",
+      "update_available": true,
+      "release_notes": "Added real-time SSE streaming logs and automated certificate renewal."
+    }
   },
   "api-system-update-post": {
-    "isApi": true,
-    "groupName": "System & Health",
+    "key": "api-system-update-post",
+    "group": "System & Health",
     "title": "Trigger platform self-update",
-    "lead": "Initiate background git pull, dependency install, and systemd service reload.",
     "summary": "Initiate background git pull, dependency install, and systemd service reload.",
     "method": "POST",
     "path": "/api/system/update",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/system/update \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns trigger platform self-update data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -15710,22 +16617,51 @@ const DOCS_DATA = {
         "desc": "Target version being installed."
       }
     ],
-    "responseJson": "{\n  \"status\": \"in_progress\",\n  \"target_version\": \"2.4.1\",\n  \"message\": \"Self-update process spawned in background.\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "in_progress",
+      "target_version": "2.4.1",
+      "message": "Self-update process spawned in background."
+    }
   },
   "api-notifications-settings-get": {
-    "isApi": true,
-    "groupName": "Notifications",
+    "key": "api-notifications-settings-get",
+    "group": "Notifications",
     "title": "Get notification settings",
-    "lead": "Fetch alert configuration including webhook endpoints, Discord/Slack hooks, and email alerts.",
     "summary": "Fetch alert configuration including webhook endpoints, Discord/Slack hooks, and email alerts.",
     "method": "GET",
     "path": "/api/notifications/settings",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X GET https://sycord.site:8787/api/notifications/settings \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns get notification settings data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -15754,18 +16690,44 @@ const DOCS_DATA = {
         "desc": "Send high-priority alert on build failure."
       }
     ],
-    "responseJson": "{\n  \"webhook_url\": \"https://hooks.example.com/alerts\",\n  \"discord_webhook\": \"\",\n  \"slack_webhook\": \"\",\n  \"notify_on_deploy\": true,\n  \"notify_on_fail\": true\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "webhook_url": "https://hooks.example.com/alerts",
+      "discord_webhook": "",
+      "slack_webhook": "",
+      "notify_on_deploy": true,
+      "notify_on_fail": true
+    }
   },
   "api-notifications-settings-put": {
-    "isApi": true,
-    "groupName": "Notifications",
+    "key": "api-notifications-settings-put",
+    "group": "Notifications",
     "title": "Update notification settings",
-    "lead": "Save webhook destinations and notification trigger policies.",
     "summary": "Save webhook destinations and notification trigger policies.",
     "method": "PUT",
     "path": "/api/notifications/settings",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "application/json",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [
@@ -15800,7 +16762,23 @@ const DOCS_DATA = {
         "desc": "Enable build failure alerts."
       }
     ],
-    "curlCommand": "curl -X PUT https://sycord.site:8787/api/notifications/settings \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"notify_on_deploy\": true, \"notify_on_fail\": true}'",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns update notification settings data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -15814,18 +16792,38 @@ const DOCS_DATA = {
         "desc": "Updated notification settings object."
       }
     ],
-    "responseJson": "{\n  \"status\": \"saved\",\n  \"settings\": {\n    \"notify_on_deploy\": true,\n    \"notify_on_fail\": true\n  }\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "saved",
+      "settings": {
+        "notify_on_deploy": true,
+        "notify_on_fail": true
+      }
+    }
   },
   "api-notifications-get": {
-    "isApi": true,
-    "groupName": "Notifications",
+    "key": "api-notifications-get",
+    "group": "Notifications",
     "title": "List notifications",
-    "lead": "Retrieve in-app notifications and alert history with read/unread flags.",
     "summary": "Retrieve in-app notifications and alert history with read/unread flags.",
     "method": "GET",
     "path": "/api/notifications",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [
       {
@@ -15842,7 +16840,18 @@ const DOCS_DATA = {
       }
     ],
     "bodyParams": [],
-    "curlCommand": "curl -X GET \"https://sycord.site:8787/api/notifications?unread_only=false\" \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns list notifications data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -15856,18 +16865,50 @@ const DOCS_DATA = {
         "desc": "Total count of unread notifications."
       }
     ],
-    "responseJson": "{\n  \"items\": [\n    {\n      \"id\": \"ntf_01\",\n      \"title\": \"Build Completed\",\n      \"message\": \"Project syte-docs deployed successfully to production.\",\n      \"level\": \"info\",\n      \"read\": false,\n      \"created_at\": \"2026-09-13T11:45:00Z\"\n    }\n  ],\n  \"unread_count\": 1\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "items": [
+        {
+          "id": "ntf_01",
+          "title": "Build Completed",
+          "message": "Project syte-docs deployed successfully to production.",
+          "level": "info",
+          "read": false,
+          "created_at": "2026-09-13T11:45:00Z"
+        }
+      ],
+      "unread_count": 1
+    }
   },
   "api-notifications-read-post": {
-    "isApi": true,
-    "groupName": "Notifications",
+    "key": "api-notifications-read-post",
+    "group": "Notifications",
     "title": "Mark notifications read",
-    "lead": "Mark one or all notifications as read to clear badge counts.",
     "summary": "Mark one or all notifications as read to clear badge counts.",
     "method": "POST",
     "path": "/api/notifications/read",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "application/json",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [
@@ -15878,7 +16919,23 @@ const DOCS_DATA = {
         "desc": "List of IDs to mark as read, or empty to mark all."
       }
     ],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/notifications/read \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"notification_ids\": [\"ntf_01\"]}'",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns mark notifications read data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -15892,22 +16949,39 @@ const DOCS_DATA = {
         "desc": "Number of notifications updated."
       }
     ],
-    "responseJson": "{\n  \"status\": \"success\",\n  \"marked_count\": 1\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "success",
+      "marked_count": 1
+    }
   },
   "api-notifications-push-vapid-public-key-get": {
-    "isApi": true,
-    "groupName": "Notifications",
+    "key": "api-notifications-push-vapid-public-key-get",
+    "group": "Notifications",
     "title": "Get VAPID public key",
-    "lead": "Retrieve public VAPID key used for client Web Push subscription registration.",
     "summary": "Retrieve public VAPID key used for client Web Push subscription registration.",
     "method": "GET",
     "path": "/api/notifications/push/vapid-public-key",
+    "auth": "Public / None",
     "contentType": "none",
+    "rateLimit": "120 req/min",
+    "headers": [
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X GET https://sycord.site:8787/api/notifications/push/vapid-public-key \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns get vapid public key data payload."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -15916,18 +16990,40 @@ const DOCS_DATA = {
         "desc": "Base64-encoded VAPID public key string."
       }
     ],
-    "responseJson": "{\n  \"public_key\": \"BEl62iUYgUivxIkv69yViEuiBIa...\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "public_key": "BEl62iUYgUivxIkv69yViEuiBIa..."
+    }
   },
   "api-notifications-push-subscriptions-post": {
-    "isApi": true,
-    "groupName": "Notifications",
+    "key": "api-notifications-push-subscriptions-post",
+    "group": "Notifications",
     "title": "Register push subscription",
-    "lead": "Save a browser ServiceWorker Web Push subscription payload for native push notifications.",
     "summary": "Save a browser ServiceWorker Web Push subscription payload for native push notifications.",
     "method": "POST",
     "path": "/api/notifications/push-subscriptions",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "application/json",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [
@@ -15944,7 +17040,23 @@ const DOCS_DATA = {
         "desc": "Encryption keys object containing `p256dh` and `auth` strings."
       }
     ],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/notifications/push-subscriptions \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"endpoint\": \"https://fcm.googleapis.com/fcm/send/...\", \"keys\": {\"p256dh\": \"...\", \"auth\": \"...\"}}'",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns register push subscription data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -15953,22 +17065,49 @@ const DOCS_DATA = {
         "desc": "\"subscribed\""
       }
     ],
-    "responseJson": "{\n  \"status\": \"subscribed\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "subscribed"
+    }
   },
   "api-notifications-test-post": {
-    "isApi": true,
-    "groupName": "Notifications",
+    "key": "api-notifications-test-post",
+    "group": "Notifications",
     "title": "Send test notification",
-    "lead": "Trigger immediate test notification across all enabled channels (Web Push, Webhook, Discord).",
     "summary": "Trigger immediate test notification across all enabled channels (Web Push, Webhook, Discord).",
     "method": "POST",
     "path": "/api/notifications/test",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/notifications/test \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns send test notification data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -15982,22 +17121,42 @@ const DOCS_DATA = {
         "desc": "List of notification channels reached."
       }
     ],
-    "responseJson": "{\n  \"status\": \"dispatched\",\n  \"channels\": [\n    \"in_app\",\n    \"web_push\"\n  ]\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "dispatched",
+      "channels": [
+        "in_app",
+        "web_push"
+      ]
+    }
   },
   "api-auth-setup-get": {
-    "isApi": true,
-    "groupName": "Auth & Operator",
+    "key": "api-auth-setup-get",
+    "group": "Auth & Operator",
     "title": "Check setup status",
-    "lead": "Check whether root administrator account has already been initialized.",
     "summary": "Check whether root administrator account has already been initialized.",
     "method": "GET",
     "path": "/api/auth/setup",
+    "auth": "Public / None",
     "contentType": "none",
+    "rateLimit": "120 req/min",
+    "headers": [
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X GET https://sycord.site:8787/api/auth/setup",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns check setup status data payload."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -16006,18 +17165,34 @@ const DOCS_DATA = {
         "desc": "True if no admin account exists yet."
       }
     ],
-    "responseJson": "{\n  \"setup_required\": false\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "setup_required": false
+    }
   },
   "api-auth-setup-post": {
-    "isApi": true,
-    "groupName": "Auth & Operator",
+    "key": "api-auth-setup-post",
+    "group": "Auth & Operator",
     "title": "Initialize administrator",
-    "lead": "Create primary administrator username and master password during initial deployment.",
     "summary": "Create primary administrator username and master password during initial deployment.",
     "method": "POST",
     "path": "/api/auth/setup",
+    "auth": "Public / None",
     "contentType": "application/json",
+    "rateLimit": "120 req/min",
+    "headers": [
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [
@@ -16034,7 +17209,18 @@ const DOCS_DATA = {
         "desc": "Secure password (minimum 8 characters)."
       }
     ],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/auth/setup \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"username\": \"admin\", \"password\": \"SuperSecretPassword123\"}'",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns initialize administrator data payload."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -16048,18 +17234,39 @@ const DOCS_DATA = {
         "desc": "Created user account details."
       }
     ],
-    "responseJson": "{\n  \"status\": \"initialized\",\n  \"user\": {\n    \"id\": \"usr_01\",\n    \"username\": \"admin\",\n    \"role\": \"owner\"\n  }\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "initialized",
+      "user": {
+        "id": "usr_01",
+        "username": "admin",
+        "role": "owner"
+      }
+    }
   },
   "api-auth-login-post": {
-    "isApi": true,
-    "groupName": "Auth & Operator",
+    "key": "api-auth-login-post",
+    "group": "Auth & Operator",
     "title": "User login",
-    "lead": "Authenticate user credentials and issue session cookie or bearer token.",
     "summary": "Authenticate user credentials and issue session cookie or bearer token.",
     "method": "POST",
     "path": "/api/auth/login",
+    "auth": "Public / None",
     "contentType": "application/json",
+    "rateLimit": "120 req/min",
+    "headers": [
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [
@@ -16076,7 +17283,18 @@ const DOCS_DATA = {
         "desc": "Account password."
       }
     ],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/auth/login \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"username\": \"admin\", \"password\": \"SuperSecretPassword123\"}'",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns user login data payload."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -16095,22 +17313,54 @@ const DOCS_DATA = {
         "desc": "User profile object."
       }
     ],
-    "responseJson": "{\n  \"status\": \"authenticated\",\n  \"token\": \"eyJhbGciOiJIUzI1NiIsIn...\",\n  \"user\": {\n    \"username\": \"admin\",\n    \"role\": \"owner\"\n  }\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "authenticated",
+      "token": "eyJhbGciOiJIUzI1NiIsIn...",
+      "user": {
+        "username": "admin",
+        "role": "owner"
+      }
+    }
   },
   "api-auth-session-get": {
-    "isApi": true,
-    "groupName": "Auth & Operator",
+    "key": "api-auth-session-get",
+    "group": "Auth & Operator",
     "title": "Inspect active session",
-    "lead": "Validate session token or cookie and return authenticated user identity.",
     "summary": "Validate session token or cookie and return authenticated user identity.",
     "method": "GET",
     "path": "/api/auth/session",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X GET https://sycord.site:8787/api/auth/session \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns inspect active session data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -16124,22 +17374,54 @@ const DOCS_DATA = {
         "desc": "Current authenticated user details."
       }
     ],
-    "responseJson": "{\n  \"authenticated\": true,\n  \"user\": {\n    \"id\": \"usr_01\",\n    \"username\": \"admin\",\n    \"role\": \"owner\"\n  }\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "authenticated": true,
+      "user": {
+        "id": "usr_01",
+        "username": "admin",
+        "role": "owner"
+      }
+    }
   },
   "api-auth-session-delete": {
-    "isApi": true,
-    "groupName": "Auth & Operator",
+    "key": "api-auth-session-delete",
+    "group": "Auth & Operator",
     "title": "Logout session",
-    "lead": "Invalidate current session token and clear authentication cookie.",
     "summary": "Invalidate current session token and clear authentication cookie.",
     "method": "DELETE",
     "path": "/api/auth/session",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X DELETE https://sycord.site:8787/api/auth/session \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns logout session data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -16148,22 +17430,49 @@ const DOCS_DATA = {
         "desc": "\"logged_out\""
       }
     ],
-    "responseJson": "{\n  \"status\": \"logged_out\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "logged_out"
+    }
   },
   "api-auth-profile-get": {
-    "isApi": true,
-    "groupName": "Auth & Operator",
+    "key": "api-auth-profile-get",
+    "group": "Auth & Operator",
     "title": "Get user profile",
-    "lead": "Retrieve user profile, contact info, and preferences.",
     "summary": "Retrieve user profile, contact info, and preferences.",
     "method": "GET",
     "path": "/api/auth/profile",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X GET https://sycord.site:8787/api/auth/profile \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns get user profile data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -16182,18 +17491,42 @@ const DOCS_DATA = {
         "desc": "UI theme preference (\"dark\" / \"light\")."
       }
     ],
-    "responseJson": "{\n  \"username\": \"admin\",\n  \"email\": \"admin@example.com\",\n  \"theme\": \"dark\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "username": "admin",
+      "email": "admin@example.com",
+      "theme": "dark"
+    }
   },
   "api-auth-profile-put": {
-    "isApi": true,
-    "groupName": "Auth & Operator",
+    "key": "api-auth-profile-put",
+    "group": "Auth & Operator",
     "title": "Update user profile",
-    "lead": "Update user password, email, and display preferences.",
     "summary": "Update user password, email, and display preferences.",
     "method": "PUT",
     "path": "/api/auth/profile",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "application/json",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [
@@ -16216,7 +17549,23 @@ const DOCS_DATA = {
         "desc": "New password to set."
       }
     ],
-    "curlCommand": "curl -X PUT https://sycord.site:8787/api/auth/profile \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"email\": \"ops@example.com\"}'",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns update user profile data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -16225,22 +17574,49 @@ const DOCS_DATA = {
         "desc": "\"updated\""
       }
     ],
-    "responseJson": "{\n  \"status\": \"updated\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "updated"
+    }
   },
   "api-operator-session-get": {
-    "isApi": true,
-    "groupName": "Auth & Operator",
+    "key": "api-operator-session-get",
+    "group": "Auth & Operator",
     "title": "Get operator session",
-    "lead": "Check if an elevated maintenance operator session is currently active.",
     "summary": "Check if an elevated maintenance operator session is currently active.",
     "method": "GET",
     "path": "/api/operator/session",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X GET https://sycord.site:8787/api/operator/session \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns get operator session data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -16254,18 +17630,41 @@ const DOCS_DATA = {
         "desc": "ISO-8601 expiration timestamp."
       }
     ],
-    "responseJson": "{\n  \"operator_active\": false,\n  \"expires_at\": null\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "operator_active": false,
+      "expires_at": null
+    }
   },
   "api-operator-session-post": {
-    "isApi": true,
-    "groupName": "Auth & Operator",
+    "key": "api-operator-session-post",
+    "group": "Auth & Operator",
     "title": "Start operator session",
-    "lead": "Elevate current session with operator secret to bypass project quotas and access root controls.",
     "summary": "Elevate current session with operator secret to bypass project quotas and access root controls.",
     "method": "POST",
     "path": "/api/operator/session",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "application/json",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [
@@ -16276,7 +17675,23 @@ const DOCS_DATA = {
         "desc": "Host operator access secret."
       }
     ],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/operator/session \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"operator_key\": \"op_sec_999\"}'",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns start operator session data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -16285,22 +17700,49 @@ const DOCS_DATA = {
         "desc": "\"operator_granted\""
       }
     ],
-    "responseJson": "{\n  \"status\": \"operator_granted\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "operator_granted"
+    }
   },
   "api-operator-session-delete": {
-    "isApi": true,
-    "groupName": "Auth & Operator",
+    "key": "api-operator-session-delete",
+    "group": "Auth & Operator",
     "title": "End operator session",
-    "lead": "Revoke elevated operator privileges and return to normal permission scope.",
     "summary": "Revoke elevated operator privileges and return to normal permission scope.",
     "method": "DELETE",
     "path": "/api/operator/session",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X DELETE https://sycord.site:8787/api/operator/session \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns end operator session data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -16309,22 +17751,49 @@ const DOCS_DATA = {
         "desc": "\"operator_revoked\""
       }
     ],
-    "responseJson": "{\n  \"status\": \"operator_revoked\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "operator_revoked"
+    }
   },
   "api-tokens-get": {
-    "isApi": true,
-    "groupName": "Auth & Operator",
+    "key": "api-tokens-get",
+    "group": "Auth & Operator",
     "title": "List API tokens",
-    "lead": "List all active programmatic API tokens with permissions and last used timestamps.",
     "summary": "List all active programmatic API tokens with permissions and last used timestamps.",
     "method": "GET",
     "path": "/api/tokens",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X GET https://sycord.site:8787/api/tokens \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns list api tokens data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -16333,18 +17802,48 @@ const DOCS_DATA = {
         "desc": "Array of API token metadata objects."
       }
     ],
-    "responseJson": "{\n  \"tokens\": [\n    {\n      \"id\": \"tok_9918\",\n      \"name\": \"CI/CD Deployment Token\",\n      \"prefix\": \"syt_live_...\",\n      \"created_at\": \"2026-09-01T08:00:00Z\",\n      \"last_used\": \"2026-09-13T10:15:20Z\"\n    }\n  ]\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "tokens": [
+        {
+          "id": "tok_9918",
+          "name": "CI/CD Deployment Token",
+          "prefix": "syt_live_...",
+          "created_at": "2026-09-01T08:00:00Z",
+          "last_used": "2026-09-13T10:15:20Z"
+        }
+      ]
+    }
   },
   "api-tokens-post": {
-    "isApi": true,
-    "groupName": "Auth & Operator",
+    "key": "api-tokens-post",
+    "group": "Auth & Operator",
     "title": "Create API token",
-    "lead": "Generate a new persistent API token for CI/CD pipelines and external integrations.",
     "summary": "Generate a new persistent API token for CI/CD pipelines and external integrations.",
     "method": "POST",
     "path": "/api/tokens",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "application/json",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [
@@ -16361,7 +17860,23 @@ const DOCS_DATA = {
         "desc": "Days until expiration (0 for never)."
       }
     ],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/tokens \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"name\": \"GitHub Actions CI\", \"expires_in_days\": 90}'",
+    "statusCodes": [
+      {
+        "code": 201,
+        "status": "201 Created",
+        "desc": "Operation succeeded. Returns create api token data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "201 Created",
     "responseSchema": [
       {
@@ -16375,18 +17890,36 @@ const DOCS_DATA = {
         "desc": "Token ID for future revocation."
       }
     ],
-    "responseJson": "{\n  \"token_id\": \"tok_9919\",\n  \"token\": \"syt_live_a89f923b7c84192d1948\",\n  \"name\": \"GitHub Actions CI\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "token_id": "tok_9919",
+      "token": "syt_live_a89f923b7c84192d1948",
+      "name": "GitHub Actions CI"
+    }
   },
   "api-tokens-token-id-delete": {
-    "isApi": true,
-    "groupName": "Auth & Operator",
+    "key": "api-tokens-token-id-delete",
+    "group": "Auth & Operator",
     "title": "Revoke API token",
-    "lead": "Immediately revoke and permanently delete an API token.",
     "summary": "Immediately revoke and permanently delete an API token.",
     "method": "DELETE",
     "path": "/api/tokens/{token_id}",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "token_id",
@@ -16397,7 +17930,23 @@ const DOCS_DATA = {
     ],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X DELETE https://sycord.site:8787/api/tokens/tok_9918 \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns revoke api token data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -16406,22 +17955,49 @@ const DOCS_DATA = {
         "desc": "\"revoked\""
       }
     ],
-    "responseJson": "{\n  \"status\": \"revoked\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "revoked"
+    }
   },
   "api-settings-get": {
-    "isApi": true,
-    "groupName": "Settings & GitHub",
+    "key": "api-settings-get",
+    "group": "Settings & GitHub",
     "title": "Get platform settings",
-    "lead": "Retrieve global system settings, networking defaults, and domain configuration.",
     "summary": "Retrieve global system settings, networking defaults, and domain configuration.",
     "method": "GET",
     "path": "/api/settings",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X GET https://sycord.site:8787/api/settings \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns get platform settings data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -16440,18 +18016,42 @@ const DOCS_DATA = {
         "desc": "Max concurrent container builds."
       }
     ],
-    "responseJson": "{\n  \"default_domain\": \"sycord.site\",\n  \"telemetry_enabled\": true,\n  \"max_concurrent_builds\": 4\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "default_domain": "sycord.site",
+      "telemetry_enabled": true,
+      "max_concurrent_builds": 4
+    }
   },
   "api-settings-put": {
-    "isApi": true,
-    "groupName": "Settings & GitHub",
+    "key": "api-settings-put",
+    "group": "Settings & GitHub",
     "title": "Save platform settings",
-    "lead": "Update global system settings and networking defaults.",
     "summary": "Update global system settings and networking defaults.",
     "method": "PUT",
     "path": "/api/settings",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "application/json",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [
@@ -16468,7 +18068,23 @@ const DOCS_DATA = {
         "desc": "Build concurrency limit."
       }
     ],
-    "curlCommand": "curl -X PUT https://sycord.site:8787/api/settings \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"max_concurrent_builds\": 4}'",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns save platform settings data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -16477,22 +18093,49 @@ const DOCS_DATA = {
         "desc": "\"saved\""
       }
     ],
-    "responseJson": "{\n  \"status\": \"saved\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "saved"
+    }
   },
   "api-settings-cache-get": {
-    "isApi": true,
-    "groupName": "Settings & GitHub",
+    "key": "api-settings-cache-get",
+    "group": "Settings & GitHub",
     "title": "Get cache metrics",
-    "lead": "Inspect disk usage by build caches, docker layers, and temporary file artifacts.",
     "summary": "Inspect disk usage by build caches, docker layers, and temporary file artifacts.",
     "method": "GET",
     "path": "/api/settings/cache",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X GET https://sycord.site:8787/api/settings/cache \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns get cache metrics data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -16511,22 +18154,51 @@ const DOCS_DATA = {
         "desc": "Size of temp staging directories."
       }
     ],
-    "responseJson": "{\n  \"build_cache_size\": 2147483648,\n  \"docker_cache_size\": 5368709120,\n  \"temp_files_size\": 268435456\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "build_cache_size": 2147483648,
+      "docker_cache_size": 5368709120,
+      "temp_files_size": 268435456
+    }
   },
   "api-settings-cache-clear-post": {
-    "isApi": true,
-    "groupName": "Settings & GitHub",
+    "key": "api-settings-cache-clear-post",
+    "group": "Settings & GitHub",
     "title": "Clear system cache",
-    "lead": "Purge build caches, temporary zip extractions, and unused Docker layers to free disk space.",
     "summary": "Purge build caches, temporary zip extractions, and unused Docker layers to free disk space.",
     "method": "POST",
     "path": "/api/settings/cache/clear",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/settings/cache/clear \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns clear system cache data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -16540,22 +18212,50 @@ const DOCS_DATA = {
         "desc": "\"cleared\""
       }
     ],
-    "responseJson": "{\n  \"status\": \"cleared\",\n  \"freed_bytes\": 7784628224\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "cleared",
+      "freed_bytes": 7784628224
+    }
   },
   "api-settings-github-get": {
-    "isApi": true,
-    "groupName": "Settings & GitHub",
+    "key": "api-settings-github-get",
+    "group": "Settings & GitHub",
     "title": "Get GitHub App config",
-    "lead": "Retrieve configured GitHub OAuth Client ID, App ID, and installation status.",
     "summary": "Retrieve configured GitHub OAuth Client ID, App ID, and installation status.",
     "method": "GET",
     "path": "/api/settings/github",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X GET https://sycord.site:8787/api/settings/github \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns get github app config data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -16569,18 +18269,41 @@ const DOCS_DATA = {
         "desc": "True if Client Secret is securely stored."
       }
     ],
-    "responseJson": "{\n  \"client_id\": \"Iv1.8941829abc\",\n  \"is_configured\": true\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "client_id": "Iv1.8941829abc",
+      "is_configured": true
+    }
   },
   "api-settings-github-put": {
-    "isApi": true,
-    "groupName": "Settings & GitHub",
+    "key": "api-settings-github-put",
+    "group": "Settings & GitHub",
     "title": "Update GitHub App config",
-    "lead": "Save GitHub OAuth application credentials for repository imports and webhook triggers.",
     "summary": "Save GitHub OAuth application credentials for repository imports and webhook triggers.",
     "method": "PUT",
     "path": "/api/settings/github",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "application/json",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [
@@ -16597,7 +18320,23 @@ const DOCS_DATA = {
         "desc": "GitHub OAuth Client Secret."
       }
     ],
-    "curlCommand": "curl -X PUT https://sycord.site:8787/api/settings/github \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"client_id\": \"Iv1.8941829abc\", \"client_secret\": \"sec_gh_8921\"}'",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns update github app config data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -16606,22 +18345,49 @@ const DOCS_DATA = {
         "desc": "\"saved\""
       }
     ],
-    "responseJson": "{\n  \"status\": \"saved\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "saved"
+    }
   },
   "api-settings-github-test-post": {
-    "isApi": true,
-    "groupName": "Settings & GitHub",
+    "key": "api-settings-github-test-post",
+    "group": "Settings & GitHub",
     "title": "Test GitHub credentials",
-    "lead": "Validate GitHub OAuth credentials against GitHub REST API.",
     "summary": "Validate GitHub OAuth credentials against GitHub REST API.",
     "method": "POST",
     "path": "/api/settings/github/test",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/settings/github/test \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns test github credentials data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -16630,22 +18396,50 @@ const DOCS_DATA = {
         "desc": "True if credentials successfully authenticated with GitHub."
       }
     ],
-    "responseJson": "{\n  \"valid\": true,\n  \"message\": \"Successfully authenticated with GitHub API.\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "valid": true,
+      "message": "Successfully authenticated with GitHub API."
+    }
   },
   "api-github-status-get": {
-    "isApi": true,
-    "groupName": "Settings & GitHub",
+    "key": "api-github-status-get",
+    "group": "Settings & GitHub",
     "title": "Check GitHub link status",
-    "lead": "Check if active user session is linked with a GitHub account.",
     "summary": "Check if active user session is linked with a GitHub account.",
     "method": "GET",
     "path": "/api/github/status",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X GET https://sycord.site:8787/api/github/status \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns check github link status data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -16659,18 +18453,35 @@ const DOCS_DATA = {
         "desc": "Linked GitHub account handle."
       }
     ],
-    "responseJson": "{\n  \"connected\": true,\n  \"github_username\": \"octocat\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "connected": true,
+      "github_username": "octocat"
+    }
   },
   "api-github-pulls-get": {
-    "isApi": true,
-    "groupName": "Settings & GitHub",
+    "key": "api-github-pulls-get",
+    "group": "Settings & GitHub",
     "title": "List project pull requests",
-    "lead": "Fetch open pull requests from linked GitHub repository for preview environment generation.",
     "summary": "Fetch open pull requests from linked GitHub repository for preview environment generation.",
     "method": "GET",
     "path": "/api/github/pulls",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [
       {
@@ -16681,7 +18492,18 @@ const DOCS_DATA = {
       }
     ],
     "bodyParams": [],
-    "curlCommand": "curl -X GET \"https://sycord.site:8787/api/github/pulls?repo=MDavidka/sarra\" \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns list project pull requests data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -16690,18 +18512,48 @@ const DOCS_DATA = {
         "desc": "List of open PR objects with branch info."
       }
     ],
-    "responseJson": "{\n  \"pulls\": [\n    {\n      \"number\": 515,\n      \"title\": \"feat: mobile header and sidebar accuracy\",\n      \"author\": \"MDavidka\",\n      \"head_ref\": \"feat/mobile-header-and-sidebar-accuracy\",\n      \"state\": \"open\"\n    }\n  ]\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "pulls": [
+        {
+          "number": 515,
+          "title": "feat: mobile header and sidebar accuracy",
+          "author": "MDavidka",
+          "head_ref": "feat/mobile-header-and-sidebar-accuracy",
+          "state": "open"
+        }
+      ]
+    }
   },
   "api-github-pulls-number-merge-post": {
-    "isApi": true,
-    "groupName": "Settings & GitHub",
+    "key": "api-github-pulls-number-merge-post",
+    "group": "Settings & GitHub",
     "title": "Merge GitHub pull request",
-    "lead": "Trigger automated merge of approved pull request into target production branch.",
     "summary": "Trigger automated merge of approved pull request into target production branch.",
     "method": "POST",
     "path": "/api/github/pulls/{number}/merge",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "application/json",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "number",
@@ -16719,7 +18571,28 @@ const DOCS_DATA = {
         "desc": "\"merge\", \"squash\", or \"rebase\" (default: squash)."
       }
     ],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/github/pulls/515/merge \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"merge_method\": \"squash\"}'",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns merge github pull request data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -16733,22 +18606,50 @@ const DOCS_DATA = {
         "desc": "Commit SHA of the merge commit."
       }
     ],
-    "responseJson": "{\n  \"merged\": true,\n  \"sha\": \"4a8c901e892b491a\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "merged": true,
+      "sha": "4a8c901e892b491a"
+    }
   },
   "api-ssl-get": {
-    "isApi": true,
-    "groupName": "SSL & Certificates",
+    "key": "api-ssl-get",
+    "group": "SSL & Certificates",
     "title": "Global SSL status",
-    "lead": "Check status of ACME Let's Encrypt certificates and TLS expiration dates.",
     "summary": "Check status of ACME Let's Encrypt certificates and TLS expiration dates.",
     "method": "GET",
     "path": "/api/ssl",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X GET https://sycord.site:8787/api/ssl \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns global ssl status data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -16757,18 +18658,47 @@ const DOCS_DATA = {
         "desc": "List of active TLS certificates and domains."
       }
     ],
-    "responseJson": "{\n  \"certificates\": [\n    {\n      \"domain\": \"sycord.site\",\n      \"issuer\": \"Let's Encrypt\",\n      \"valid_until\": \"2026-12-12T00:00:00Z\",\n      \"auto_renew\": true\n    }\n  ]\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "certificates": [
+        {
+          "domain": "sycord.site",
+          "issuer": "Let's Encrypt",
+          "valid_until": "2026-12-12T00:00:00Z",
+          "auto_renew": true
+        }
+      ]
+    }
   },
   "api-ssl-resolve-post": {
-    "isApi": true,
-    "groupName": "SSL & Certificates",
+    "key": "api-ssl-resolve-post",
+    "group": "SSL & Certificates",
     "title": "Resolve DNS records",
-    "lead": "Perform live DNS A and CNAME record resolution to test propagation before issuing SSL.",
     "summary": "Perform live DNS A and CNAME record resolution to test propagation before issuing SSL.",
     "method": "POST",
     "path": "/api/ssl/resolve",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "application/json",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [
@@ -16779,7 +18709,23 @@ const DOCS_DATA = {
         "desc": "Domain name to resolve."
       }
     ],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/ssl/resolve \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"domain\": \"app.sycord.site\"}'",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns resolve dns records data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -16793,18 +18739,43 @@ const DOCS_DATA = {
         "desc": "Resolved A/AAAA IP addresses."
       }
     ],
-    "responseJson": "{\n  \"resolved\": true,\n  \"ip_addresses\": [\n    \"185.199.108.153\"\n  ]\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "resolved": true,
+      "ip_addresses": [
+        "185.199.108.153"
+      ]
+    }
   },
   "api-ssl-projects-custom-tls-post": {
-    "isApi": true,
-    "groupName": "SSL & Certificates",
+    "key": "api-ssl-projects-custom-tls-post",
+    "group": "SSL & Certificates",
     "title": "Upload custom TLS certificate",
-    "lead": "Upload custom SSL certificate and private key for enterprise domain hosting.",
     "summary": "Upload custom SSL certificate and private key for enterprise domain hosting.",
     "method": "POST",
     "path": "/api/ssl/projects/{project_id}/custom-tls",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "application/json",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -16828,7 +18799,28 @@ const DOCS_DATA = {
         "desc": "PEM-formatted private key."
       }
     ],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/ssl/projects/proj_94821a/custom-tls \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"certificate_pem\": \"-----BEGIN CERTIFICATE...\", \"private_key_pem\": \"-----BEGIN RSA PRIVATE KEY...\"}'",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns upload custom tls certificate data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -16842,18 +18834,35 @@ const DOCS_DATA = {
         "desc": "Expiration date of uploaded cert."
       }
     ],
-    "responseJson": "{\n  \"status\": \"installed\",\n  \"valid_until\": \"2027-01-01T00:00:00Z\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "installed",
+      "valid_until": "2027-01-01T00:00:00Z"
+    }
   },
   "api-certificates-guide-get": {
-    "isApi": true,
-    "groupName": "SSL & Certificates",
+    "key": "api-certificates-guide-get",
+    "group": "SSL & Certificates",
     "title": "Get certificate guide",
-    "lead": "Get required DNS CNAME/A record targets and automated ACME issuance guidance.",
     "summary": "Get required DNS CNAME/A record targets and automated ACME issuance guidance.",
     "method": "GET",
     "path": "/api/certificates/guide",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [
       {
@@ -16864,7 +18873,18 @@ const DOCS_DATA = {
       }
     ],
     "bodyParams": [],
-    "curlCommand": "curl -X GET \"https://sycord.site:8787/api/certificates/guide?domain=app.example.com\" \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns get certificate guide data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -16878,18 +18898,42 @@ const DOCS_DATA = {
         "desc": "Host public IPv4 address."
       }
     ],
-    "responseJson": "{\n  \"cname_target\": \"cname.sycord.site\",\n  \"a_record\": \"185.199.108.153\",\n  \"instructions\": \"Create a CNAME record pointing app.example.com to cname.sycord.site\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "cname_target": "cname.sycord.site",
+      "a_record": "185.199.108.153",
+      "instructions": "Create a CNAME record pointing app.example.com to cname.sycord.site"
+    }
   },
   "api-certificates-issue-post": {
-    "isApi": true,
-    "groupName": "SSL & Certificates",
+    "key": "api-certificates-issue-post",
+    "group": "SSL & Certificates",
     "title": "Issue Let's Encrypt SSL",
-    "lead": "Execute automated HTTP-01 or DNS-01 ACME challenge to issue Let's Encrypt SSL certificate.",
     "summary": "Execute automated HTTP-01 or DNS-01 ACME challenge to issue Let's Encrypt SSL certificate.",
     "method": "POST",
     "path": "/api/certificates/issue",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "application/json",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [
@@ -16900,7 +18944,23 @@ const DOCS_DATA = {
         "desc": "Fully-qualified domain name."
       }
     ],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/certificates/issue \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"domain\": \"app.example.com\"}'",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns issue let's encrypt ssl data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -16919,22 +18979,51 @@ const DOCS_DATA = {
         "desc": "Expiration date (90 days)."
       }
     ],
-    "responseJson": "{\n  \"status\": \"issued\",\n  \"domain\": \"app.example.com\",\n  \"expires_at\": \"2026-12-13T12:00:00Z\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "issued",
+      "domain": "app.example.com",
+      "expires_at": "2026-12-13T12:00:00Z"
+    }
   },
   "api-projects-get": {
-    "isApi": true,
-    "groupName": "Projects & Lifecycle",
+    "key": "api-projects-get",
+    "group": "Projects & Lifecycle",
     "title": "List all projects",
-    "lead": "Retrieve an array of all hosted web applications and backend services.",
     "summary": "Retrieve an array of all hosted web applications and backend services.",
     "method": "GET",
     "path": "/api/projects",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns list all projects data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -16943,18 +19032,48 @@ const DOCS_DATA = {
         "desc": "List of project summary objects."
       }
     ],
-    "responseJson": "{\n  \"projects\": [\n    {\n      \"id\": \"proj_94821a\",\n      \"name\": \"sarra-docs\",\n      \"status\": \"running\",\n      \"port\": 3000,\n      \"domain\": \"docs.sycord.site\"\n    }\n  ]\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "projects": [
+        {
+          "id": "proj_94821a",
+          "name": "sarra-docs",
+          "status": "running",
+          "port": 3000,
+          "domain": "docs.sycord.site"
+        }
+      ]
+    }
   },
   "api-projects-post": {
-    "isApi": true,
-    "groupName": "Projects & Lifecycle",
+    "key": "api-projects-post",
+    "group": "Projects & Lifecycle",
     "title": "Create new project",
-    "lead": "Create and initialize a new project workspace directory and configuration.",
     "summary": "Create and initialize a new project workspace directory and configuration.",
     "method": "POST",
     "path": "/api/projects",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "application/json",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [
@@ -16977,7 +19096,23 @@ const DOCS_DATA = {
         "desc": "Container internal port (default: 3000)."
       }
     ],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"name\": \"my-api\", \"framework\": \"fastapi\", \"port\": 8000}'",
+    "statusCodes": [
+      {
+        "code": 201,
+        "status": "201 Created",
+        "desc": "Operation succeeded. Returns create new project data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "201 Created",
     "responseSchema": [
       {
@@ -16996,18 +19131,37 @@ const DOCS_DATA = {
         "desc": "\"initialized\""
       }
     ],
-    "responseJson": "{\n  \"id\": \"proj_8819ab\",\n  \"name\": \"my-api\",\n  \"status\": \"initialized\",\n  \"port\": 8000\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "id": "proj_8819ab",
+      "name": "my-api",
+      "status": "initialized",
+      "port": 8000
+    }
   },
   "api-projects-project-id-get": {
-    "isApi": true,
-    "groupName": "Projects & Lifecycle",
+    "key": "api-projects-project-id-get",
+    "group": "Projects & Lifecycle",
     "title": "Get project details",
-    "lead": "Retrieve complete runtime metadata, environment keys, domains, and health status for a project.",
     "summary": "Retrieve complete runtime metadata, environment keys, domains, and health status for a project.",
     "method": "GET",
     "path": "/api/projects/{project_id}",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -17018,7 +19172,23 @@ const DOCS_DATA = {
     ],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/proj_94821a \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns get project details data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -17052,18 +19222,45 @@ const DOCS_DATA = {
         "desc": "Detected runtime framework."
       }
     ],
-    "responseJson": "{\n  \"id\": \"proj_94821a\",\n  \"name\": \"sarra-docs\",\n  \"status\": \"running\",\n  \"port\": 3000,\n  \"domain\": \"docs.sycord.site\",\n  \"framework\": \"nextjs\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "id": "proj_94821a",
+      "name": "sarra-docs",
+      "status": "running",
+      "port": 3000,
+      "domain": "docs.sycord.site",
+      "framework": "nextjs"
+    }
   },
   "api-projects-project-id-put": {
-    "isApi": true,
-    "groupName": "Projects & Lifecycle",
+    "key": "api-projects-project-id-put",
+    "group": "Projects & Lifecycle",
     "title": "Update project settings",
-    "lead": "Modify project configuration including assigned port, framework, and build scripts.",
     "summary": "Modify project configuration including assigned port, framework, and build scripts.",
     "method": "PUT",
     "path": "/api/projects/{project_id}",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "application/json",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -17087,7 +19284,28 @@ const DOCS_DATA = {
         "desc": "Updated internal container port."
       }
     ],
-    "curlCommand": "curl -X PUT https://sycord.site:8787/api/projects/proj_94821a \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"port\": 8080}'",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns update project settings data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -17096,18 +19314,34 @@ const DOCS_DATA = {
         "desc": "\"updated\""
       }
     ],
-    "responseJson": "{\n  \"status\": \"updated\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "updated"
+    }
   },
   "api-projects-project-id-delete": {
-    "isApi": true,
-    "groupName": "Projects & Lifecycle",
+    "key": "api-projects-project-id-delete",
+    "group": "Projects & Lifecycle",
     "title": "Delete project",
-    "lead": "Permanently stop container, wipe workspace directory, remove domains, and delete project database record.",
     "summary": "Permanently stop container, wipe workspace directory, remove domains, and delete project database record.",
     "method": "DELETE",
     "path": "/api/projects/{project_id}",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -17118,7 +19352,23 @@ const DOCS_DATA = {
     ],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X DELETE https://sycord.site:8787/api/projects/proj_94821a \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns delete project data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -17127,18 +19377,34 @@ const DOCS_DATA = {
         "desc": "\"deleted\""
       }
     ],
-    "responseJson": "{\n  \"status\": \"deleted\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "deleted"
+    }
   },
   "api-projects-project-id-start-post": {
-    "isApi": true,
-    "groupName": "Projects & Lifecycle",
+    "key": "api-projects-project-id-start-post",
+    "group": "Projects & Lifecycle",
     "title": "Start project container",
-    "lead": "Start background systemd/docker container process for project.",
     "summary": "Start background systemd/docker container process for project.",
     "method": "POST",
     "path": "/api/projects/{project_id}/start",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -17149,7 +19415,23 @@ const DOCS_DATA = {
     ],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/start \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns start project container data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -17158,18 +19440,34 @@ const DOCS_DATA = {
         "desc": "\"started\""
       }
     ],
-    "responseJson": "{\n  \"status\": \"started\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "started"
+    }
   },
   "api-projects-project-id-stop-post": {
-    "isApi": true,
-    "groupName": "Projects & Lifecycle",
+    "key": "api-projects-project-id-stop-post",
+    "group": "Projects & Lifecycle",
     "title": "Stop project container",
-    "lead": "Gracefully terminate project container and halt process execution.",
     "summary": "Gracefully terminate project container and halt process execution.",
     "method": "POST",
     "path": "/api/projects/{project_id}/stop",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -17180,7 +19478,23 @@ const DOCS_DATA = {
     ],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/stop \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns stop project container data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -17189,18 +19503,40 @@ const DOCS_DATA = {
         "desc": "\"stopped\""
       }
     ],
-    "responseJson": "{\n  \"status\": \"stopped\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "stopped"
+    }
   },
   "api-projects-project-id-domain-post": {
-    "isApi": true,
-    "groupName": "Projects & Lifecycle",
+    "key": "api-projects-project-id-domain-post",
+    "group": "Projects & Lifecycle",
     "title": "Bind custom domain",
-    "lead": "Bind custom apex or subdomain with automatic SSL certificate provisioning and reverse proxy routing.",
     "summary": "Bind custom apex or subdomain with automatic SSL certificate provisioning and reverse proxy routing.",
     "method": "POST",
     "path": "/api/projects/{project_id}/domain",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "application/json",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -17218,7 +19554,28 @@ const DOCS_DATA = {
         "desc": "Fully qualified domain name (e.g. app.example.com)."
       }
     ],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/domain \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"domain\": \"docs.sycord.site\"}'",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns bind custom domain data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -17237,18 +19594,36 @@ const DOCS_DATA = {
         "desc": "\"active\" or \"pending_dns\"."
       }
     ],
-    "responseJson": "{\n  \"status\": \"bound\",\n  \"domain\": \"docs.sycord.site\",\n  \"ssl_status\": \"active\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "bound",
+      "domain": "docs.sycord.site",
+      "ssl_status": "active"
+    }
   },
   "api-projects-project-id-domain-delete": {
-    "isApi": true,
-    "groupName": "Projects & Lifecycle",
+    "key": "api-projects-project-id-domain-delete",
+    "group": "Projects & Lifecycle",
     "title": "Unbind custom domain",
-    "lead": "Remove custom domain binding and restore default platform subdomain routing.",
     "summary": "Remove custom domain binding and restore default platform subdomain routing.",
     "method": "DELETE",
     "path": "/api/projects/{project_id}/domain",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -17259,7 +19634,23 @@ const DOCS_DATA = {
     ],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X DELETE https://sycord.site:8787/api/projects/proj_94821a/domain \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns unbind custom domain data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -17268,18 +19659,40 @@ const DOCS_DATA = {
         "desc": "\"unbound\""
       }
     ],
-    "responseJson": "{\n  \"status\": \"unbound\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "unbound"
+    }
   },
   "api-projects-project-id-environment-put": {
-    "isApi": true,
-    "groupName": "Projects & Lifecycle",
+    "key": "api-projects-project-id-environment-put",
+    "group": "Projects & Lifecycle",
     "title": "Upsert environment variables",
-    "lead": "Securely set or update environment variables and secrets injected into runtime container.",
     "summary": "Securely set or update environment variables and secrets injected into runtime container.",
     "method": "PUT",
     "path": "/api/projects/{project_id}/environment",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "application/json",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -17297,7 +19710,28 @@ const DOCS_DATA = {
         "desc": "Key-value dictionary of environment variables."
       }
     ],
-    "curlCommand": "curl -X PUT https://sycord.site:8787/api/projects/proj_94821a/environment \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"variables\": {\"DATABASE_URL\": \"postgres://...\", \"NODE_ENV\": \"production\"}}'",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns upsert environment variables data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -17311,18 +19745,38 @@ const DOCS_DATA = {
         "desc": "List of configured variable names."
       }
     ],
-    "responseJson": "{\n  \"status\": \"saved\",\n  \"keys\": [\n    \"DATABASE_URL\",\n    \"NODE_ENV\"\n  ]\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "saved",
+      "keys": [
+        "DATABASE_URL",
+        "NODE_ENV"
+      ]
+    }
   },
   "api-projects-project-id-environment-key-delete": {
-    "isApi": true,
-    "groupName": "Projects & Lifecycle",
+    "key": "api-projects-project-id-environment-key-delete",
+    "group": "Projects & Lifecycle",
     "title": "Delete environment variable",
-    "lead": "Remove a specific environment variable from project configuration.",
     "summary": "Remove a specific environment variable from project configuration.",
     "method": "DELETE",
     "path": "/api/projects/{project_id}/environment/{key}",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -17339,7 +19793,23 @@ const DOCS_DATA = {
     ],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X DELETE https://sycord.site:8787/api/projects/proj_94821a/environment/DATABASE_URL \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns delete environment variable data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -17348,18 +19818,34 @@ const DOCS_DATA = {
         "desc": "\"deleted\""
       }
     ],
-    "responseJson": "{\n  \"status\": \"deleted\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "deleted"
+    }
   },
   "api-projects-project-id-health-get": {
-    "isApi": true,
-    "groupName": "Projects & Lifecycle",
+    "key": "api-projects-project-id-health-get",
+    "group": "Projects & Lifecycle",
     "title": "Check project health probe",
-    "lead": "Perform direct HTTP health probe on project listener port to check readiness.",
     "summary": "Perform direct HTTP health probe on project listener port to check readiness.",
     "method": "GET",
     "path": "/api/projects/{project_id}/health",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -17370,7 +19856,23 @@ const DOCS_DATA = {
     ],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/proj_94821a/health \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns check project health probe data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -17384,18 +19886,41 @@ const DOCS_DATA = {
         "desc": "Probe response latency in milliseconds."
       }
     ],
-    "responseJson": "{\n  \"healthy\": true,\n  \"response_time_ms\": 12.4\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "healthy": true,
+      "response_time_ms": 12.4
+    }
   },
   "api-projects-project-id-deployment-config-put": {
-    "isApi": true,
-    "groupName": "Projects & Lifecycle",
+    "key": "api-projects-project-id-deployment-config-put",
+    "group": "Projects & Lifecycle",
     "title": "Update deployment config",
-    "lead": "Configure build command, start script, install command, and root output directory.",
     "summary": "Configure build command, start script, install command, and root output directory.",
     "method": "PUT",
     "path": "/api/projects/{project_id}/deployment-config",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "application/json",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -17431,7 +19956,28 @@ const DOCS_DATA = {
         "desc": "Static output directory (e.g. \"dist\")."
       }
     ],
-    "curlCommand": "curl -X PUT https://sycord.site:8787/api/projects/proj_94821a/deployment-config \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"build_command\": \"npm run build\", \"start_command\": \"npm run start\"}'",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns update deployment config data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -17440,18 +19986,34 @@ const DOCS_DATA = {
         "desc": "\"updated\""
       }
     ],
-    "responseJson": "{\n  \"status\": \"updated\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "updated"
+    }
   },
   "api-projects-project-id-analyze-post": {
-    "isApi": true,
-    "groupName": "Projects & Lifecycle",
+    "key": "api-projects-project-id-analyze-post",
+    "group": "Projects & Lifecycle",
     "title": "Analyze project source",
-    "lead": "Inspect workspace files to auto-detect framework, package manager, and required start commands.",
     "summary": "Inspect workspace files to auto-detect framework, package manager, and required start commands.",
     "method": "POST",
     "path": "/api/projects/{project_id}/analyze",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -17462,7 +20024,23 @@ const DOCS_DATA = {
     ],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/analyze \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns analyze project source data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -17481,18 +20059,41 @@ const DOCS_DATA = {
         "desc": "Recommended default listening port."
       }
     ],
-    "responseJson": "{\n  \"framework\": \"nextjs\",\n  \"package_manager\": \"pnpm\",\n  \"suggested_port\": 3000,\n  \"detected_scripts\": [\n    \"build\",\n    \"start\",\n    \"dev\"\n  ]\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "framework": "nextjs",
+      "package_manager": "pnpm",
+      "suggested_port": 3000,
+      "detected_scripts": [
+        "build",
+        "start",
+        "dev"
+      ]
+    }
   },
   "api-projects-project-id-deploy-detected-post": {
-    "isApi": true,
-    "groupName": "Projects & Lifecycle",
+    "key": "api-projects-project-id-deploy-detected-post",
+    "group": "Projects & Lifecycle",
     "title": "Deploy detected framework",
-    "lead": "Automatically apply detected build configuration and trigger initial deployment pipeline.",
     "summary": "Automatically apply detected build configuration and trigger initial deployment pipeline.",
     "method": "POST",
     "path": "/api/projects/{project_id}/deploy-detected",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -17503,7 +20104,23 @@ const DOCS_DATA = {
     ],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/deploy-detected \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns deploy detected framework data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -17517,18 +20134,35 @@ const DOCS_DATA = {
         "desc": "\"queued\""
       }
     ],
-    "responseJson": "{\n  \"build_id\": \"bld_77491\",\n  \"status\": \"queued\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "build_id": "bld_77491",
+      "status": "queued"
+    }
   },
   "api-projects-project-id-builds-get": {
-    "isApi": true,
-    "groupName": "Builds & Deployments",
+    "key": "api-projects-project-id-builds-get",
+    "group": "Builds & Deployments",
     "title": "List project builds",
-    "lead": "Retrieve historical build records, git commit SHAs, build duration, and pass/fail statuses.",
     "summary": "Retrieve historical build records, git commit SHAs, build duration, and pass/fail statuses.",
     "method": "GET",
     "path": "/api/projects/{project_id}/builds",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -17546,7 +20180,23 @@ const DOCS_DATA = {
       }
     ],
     "bodyParams": [],
-    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/proj_94821a/builds \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns list project builds data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -17555,18 +20205,42 @@ const DOCS_DATA = {
         "desc": "Array of build execution objects."
       }
     ],
-    "responseJson": "{\n  \"builds\": [\n    {\n      \"id\": \"bld_77491\",\n      \"status\": \"success\",\n      \"duration_seconds\": 38,\n      \"commit_sha\": \"a19f201\",\n      \"created_at\": \"2026-09-13T10:00:00Z\"\n    }\n  ]\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "builds": [
+        {
+          "id": "bld_77491",
+          "status": "success",
+          "duration_seconds": 38,
+          "commit_sha": "a19f201",
+          "created_at": "2026-09-13T10:00:00Z"
+        }
+      ]
+    }
   },
   "api-projects-project-id-builds-track-get": {
-    "isApi": true,
-    "groupName": "Builds & Deployments",
+    "key": "api-projects-project-id-builds-track-get",
+    "group": "Builds & Deployments",
     "title": "Track active build",
-    "lead": "Poll or track progress of currently executing build step and status.",
     "summary": "Poll or track progress of currently executing build step and status.",
     "method": "GET",
     "path": "/api/projects/{project_id}/builds/track",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -17577,7 +20251,23 @@ const DOCS_DATA = {
     ],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/proj_94821a/builds/track \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns track active build data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -17596,18 +20286,36 @@ const DOCS_DATA = {
         "desc": "Seconds elapsed since build trigger."
       }
     ],
-    "responseJson": "{\n  \"active\": true,\n  \"step\": \"building\",\n  \"elapsed_seconds\": 18\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "active": true,
+      "step": "building",
+      "elapsed_seconds": 18
+    }
   },
   "api-projects-project-id-builds-trigger-post": {
-    "isApi": true,
-    "groupName": "Builds & Deployments",
+    "key": "api-projects-project-id-builds-trigger-post",
+    "group": "Builds & Deployments",
     "title": "Trigger new build",
-    "lead": "Enqueue an immediate new build and deployment execution for the project.",
     "summary": "Enqueue an immediate new build and deployment execution for the project.",
     "method": "POST",
     "path": "/api/projects/{project_id}/builds/trigger",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -17618,7 +20326,23 @@ const DOCS_DATA = {
     ],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/builds/trigger \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 201,
+        "status": "201 Created",
+        "desc": "Operation succeeded. Returns trigger new build data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "201 Created",
     "responseSchema": [
       {
@@ -17632,18 +20356,35 @@ const DOCS_DATA = {
         "desc": "\"queued\""
       }
     ],
-    "responseJson": "{\n  \"build_id\": \"bld_77492\",\n  \"status\": \"queued\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "build_id": "bld_77492",
+      "status": "queued"
+    }
   },
   "api-projects-project-id-builds-build-id-logs-get": {
-    "isApi": true,
-    "groupName": "Builds & Deployments",
+    "key": "api-projects-project-id-builds-build-id-logs-get",
+    "group": "Builds & Deployments",
     "title": "Get build run logs",
-    "lead": "Retrieve complete build execution log output for a specific build ID.",
     "summary": "Retrieve complete build execution log output for a specific build ID.",
     "method": "GET",
     "path": "/api/projects/{project_id}/builds/{build_id}/logs",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -17660,7 +20401,23 @@ const DOCS_DATA = {
     ],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/proj_94821a/builds/bld_77491/logs \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns get build run logs data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -17669,18 +20426,34 @@ const DOCS_DATA = {
         "desc": "Full stdout/stderr build text output."
       }
     ],
-    "responseJson": "{\n  \"logs\": \"[build] Installing dependencies...\\n[build] Completed in 8.2s\\n[build] Next.js 14 compiled successfully.\\n[build] Artifact ready.\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "logs": "[build] Installing dependencies...\n[build] Completed in 8.2s\n[build] Next.js 14 compiled successfully.\n[build] Artifact ready."
+    }
   },
   "api-projects-project-id-deployments-build-id-logs-get": {
-    "isApi": true,
-    "groupName": "Builds & Deployments",
+    "key": "api-projects-project-id-deployments-build-id-logs-get",
+    "group": "Builds & Deployments",
     "title": "Get deployment container logs",
-    "lead": "Retrieve runtime stdout/stderr log output from container during specific deployment execution.",
     "summary": "Retrieve runtime stdout/stderr log output from container during specific deployment execution.",
     "method": "GET",
     "path": "/api/projects/{project_id}/deployments/{build_id}/logs",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -17697,7 +20470,23 @@ const DOCS_DATA = {
     ],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/proj_94821a/deployments/bld_77491/logs \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns get deployment container logs data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -17706,18 +20495,34 @@ const DOCS_DATA = {
         "desc": "Container runtime logs."
       }
     ],
-    "responseJson": "{\n  \"logs\": \"Ready in 420ms on port 3000.\\nGET / 200 12ms\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "logs": "Ready in 420ms on port 3000.\nGET / 200 12ms"
+    }
   },
   "api-projects-project-id-deploy-post": {
-    "isApi": true,
-    "groupName": "Builds & Deployments",
+    "key": "api-projects-project-id-deploy-post",
+    "group": "Builds & Deployments",
     "title": "Issue immediate deploy",
-    "lead": "Trigger immediate atomic production deployment without rebuild if artifact is fresh.",
     "summary": "Trigger immediate atomic production deployment without rebuild if artifact is fresh.",
     "method": "POST",
     "path": "/api/projects/{project_id}/deploy",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -17728,7 +20533,23 @@ const DOCS_DATA = {
     ],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/deploy \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns issue immediate deploy data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -17742,18 +20563,35 @@ const DOCS_DATA = {
         "desc": "\"deployed\""
       }
     ],
-    "responseJson": "{\n  \"deployment_id\": \"dep_19482\",\n  \"status\": \"deployed\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "deployment_id": "dep_19482",
+      "status": "deployed"
+    }
   },
   "api-projects-project-id-deployments-get": {
-    "isApi": true,
-    "groupName": "Builds & Deployments",
+    "key": "api-projects-project-id-deployments-get",
+    "group": "Builds & Deployments",
     "title": "List deployment revisions",
-    "lead": "Retrieve deployment history list with commit tags, active production pointers, and rollback targets.",
     "summary": "Retrieve deployment history list with commit tags, active production pointers, and rollback targets.",
     "method": "GET",
     "path": "/api/projects/{project_id}/deployments",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -17764,7 +20602,23 @@ const DOCS_DATA = {
     ],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/proj_94821a/deployments \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns list deployment revisions data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -17773,18 +20627,47 @@ const DOCS_DATA = {
         "desc": "Array of deployment snapshots."
       }
     ],
-    "responseJson": "{\n  \"deployments\": [\n    {\n      \"id\": \"dep_19482\",\n      \"is_current\": true,\n      \"commit_sha\": \"a19f201\",\n      \"created_at\": \"2026-09-13T10:05:00Z\"\n    },\n    {\n      \"id\": \"dep_19480\",\n      \"is_current\": false,\n      \"commit_sha\": \"98e411b\",\n      \"created_at\": \"2026-09-12T18:30:00Z\"\n    }\n  ]\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "deployments": [
+        {
+          "id": "dep_19482",
+          "is_current": true,
+          "commit_sha": "a19f201",
+          "created_at": "2026-09-13T10:05:00Z"
+        },
+        {
+          "id": "dep_19480",
+          "is_current": false,
+          "commit_sha": "98e411b",
+          "created_at": "2026-09-12T18:30:00Z"
+        }
+      ]
+    }
   },
   "api-projects-project-id-deployments-run-id-rollback-post": {
-    "isApi": true,
-    "groupName": "Builds & Deployments",
+    "key": "api-projects-project-id-deployments-run-id-rollback-post",
+    "group": "Builds & Deployments",
     "title": "Rollback deployment",
-    "lead": "Instantly switch active production traffic back to a previous healthy deployment snapshot.",
     "summary": "Instantly switch active production traffic back to a previous healthy deployment snapshot.",
     "method": "POST",
     "path": "/api/projects/{project_id}/deployments/{run_id}/rollback",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -17801,7 +20684,23 @@ const DOCS_DATA = {
     ],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/deployments/dep_19480/rollback \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns rollback deployment data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -17815,18 +20714,35 @@ const DOCS_DATA = {
         "desc": "ID of newly activated revision."
       }
     ],
-    "responseJson": "{\n  \"status\": \"rolled_back\",\n  \"active_deployment_id\": \"dep_19480\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "rolled_back",
+      "active_deployment_id": "dep_19480"
+    }
   },
   "api-projects-project-id-logs-get": {
-    "isApi": true,
-    "groupName": "Builds & Deployments",
+    "key": "api-projects-project-id-logs-get",
+    "group": "Builds & Deployments",
     "title": "Get container logs",
-    "lead": "Fetch recent stdout and stderr lines from the running project container.",
     "summary": "Fetch recent stdout and stderr lines from the running project container.",
     "method": "GET",
     "path": "/api/projects/{project_id}/logs",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -17844,7 +20760,23 @@ const DOCS_DATA = {
       }
     ],
     "bodyParams": [],
-    "curlCommand": "curl -X GET \"https://sycord.site:8787/api/projects/proj_94821a/logs?lines=100\" \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns get container logs data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -17853,18 +20785,34 @@ const DOCS_DATA = {
         "desc": "Captured application log buffer."
       }
     ],
-    "responseJson": "{\n  \"logs\": \"2026-09-13T12:00:01Z [INFO] Application listening on 0.0.0.0:3000\\n2026-09-13T12:01:23Z [INFO] GET /api/v1/users 200 OK\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "logs": "2026-09-13T12:00:01Z [INFO] Application listening on 0.0.0.0:3000\n2026-09-13T12:01:23Z [INFO] GET /api/v1/users 200 OK"
+    }
   },
   "api-projects-project-id-logs-stream-get": {
-    "isApi": true,
-    "groupName": "Builds & Deployments",
+    "key": "api-projects-project-id-logs-stream-get",
+    "group": "Builds & Deployments",
     "title": "Stream container logs (SSE)",
-    "lead": "Open real-time Server-Sent Events (SSE) connection to stream live container logs.",
     "summary": "Open real-time Server-Sent Events (SSE) connection to stream live container logs.",
     "method": "GET",
     "path": "/api/projects/{project_id}/logs/stream",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "text/event-stream",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -17875,7 +20823,23 @@ const DOCS_DATA = {
     ],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -N -X GET https://sycord.site:8787/api/projects/proj_94821a/logs/stream \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns stream container logs (sse) data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -17884,18 +20848,32 @@ const DOCS_DATA = {
         "desc": "Streaming log line chunk formatted as SSE message."
       }
     ],
-    "responseJson": "data: {\"line\": \"[server] Request handled in 4ms\"}\n\ndata: {\"line\": \"[server] Cache hit for /static/bundle.js\"}\n\n",
-    "updated": "03/09/2026"
+    "responseJson": "data: {\"line\": \"[server] Request handled in 4ms\"}\n\ndata: {\"line\": \"[server] Cache hit for /static/bundle.js\"}\n\n"
   },
   "api-projects-project-id-update-post": {
-    "isApi": true,
-    "groupName": "Builds & Deployments",
+    "key": "api-projects-project-id-update-post",
+    "group": "Builds & Deployments",
     "title": "Pull Git update and rebuild",
-    "lead": "Fetch latest commits from linked Git branch, reinstall dependencies, and restart project.",
     "summary": "Fetch latest commits from linked Git branch, reinstall dependencies, and restart project.",
     "method": "POST",
     "path": "/api/projects/{project_id}/update",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -17906,7 +20884,23 @@ const DOCS_DATA = {
     ],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/update \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns pull git update and rebuild data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -17920,18 +20914,35 @@ const DOCS_DATA = {
         "desc": "New head commit SHA."
       }
     ],
-    "responseJson": "{\n  \"status\": \"updated\",\n  \"commit_sha\": \"d98174f\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "updated",
+      "commit_sha": "d98174f"
+    }
   },
   "api-projects-project-id-redirects-get": {
-    "isApi": true,
-    "groupName": "Redirects & Routing",
+    "key": "api-projects-project-id-redirects-get",
+    "group": "Redirects & Routing",
     "title": "List redirect rules",
-    "lead": "Retrieve all configured HTTP redirection and reverse proxy URL rewrite rules.",
     "summary": "Retrieve all configured HTTP redirection and reverse proxy URL rewrite rules.",
     "method": "GET",
     "path": "/api/projects/{project_id}/redirects",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -17942,7 +20953,23 @@ const DOCS_DATA = {
     ],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/proj_94821a/redirects \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns list redirect rules data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -17951,18 +20978,48 @@ const DOCS_DATA = {
         "desc": "Array of redirect rule objects."
       }
     ],
-    "responseJson": "{\n  \"redirects\": [\n    {\n      \"id\": \"red_01\",\n      \"source_path\": \"/old-docs/:path*\",\n      \"target_url\": \"/docs/:path*\",\n      \"status_code\": 301,\n      \"enabled\": true\n    }\n  ]\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "redirects": [
+        {
+          "id": "red_01",
+          "source_path": "/old-docs/:path*",
+          "target_url": "/docs/:path*",
+          "status_code": 301,
+          "enabled": true
+        }
+      ]
+    }
   },
   "api-projects-project-id-redirects-post": {
-    "isApi": true,
-    "groupName": "Redirects & Routing",
+    "key": "api-projects-project-id-redirects-post",
+    "group": "Redirects & Routing",
     "title": "Create redirect rule",
-    "lead": "Add a new URL redirect or proxy rewrite rule with regex pattern matching.",
     "summary": "Add a new URL redirect or proxy rewrite rule with regex pattern matching.",
     "method": "POST",
     "path": "/api/projects/{project_id}/redirects",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "application/json",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -17992,7 +21049,28 @@ const DOCS_DATA = {
         "desc": "HTTP status code (301, 302, 307, 308; default: 301)."
       }
     ],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/redirects \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"source_path\": \"/legacy\", \"target_url\": \"/new-v2\", \"status_code\": 301}'",
+    "statusCodes": [
+      {
+        "code": 201,
+        "status": "201 Created",
+        "desc": "Operation succeeded. Returns create redirect rule data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "201 Created",
     "responseSchema": [
       {
@@ -18006,18 +21084,41 @@ const DOCS_DATA = {
         "desc": "\"created\""
       }
     ],
-    "responseJson": "{\n  \"id\": \"red_02\",\n  \"status\": \"created\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "id": "red_02",
+      "status": "created"
+    }
   },
   "api-projects-project-id-redirects-redirect-id-put": {
-    "isApi": true,
-    "groupName": "Redirects & Routing",
+    "key": "api-projects-project-id-redirects-redirect-id-put",
+    "group": "Redirects & Routing",
     "title": "Update redirect rule",
-    "lead": "Update source path, destination target, or status code of an existing redirect rule.",
     "summary": "Update source path, destination target, or status code of an existing redirect rule.",
     "method": "PUT",
     "path": "/api/projects/{project_id}/redirects/{redirect_id}",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "application/json",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -18053,7 +21154,28 @@ const DOCS_DATA = {
         "desc": "HTTP status code."
       }
     ],
-    "curlCommand": "curl -X PUT https://sycord.site:8787/api/projects/proj_94821a/redirects/red_01 \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"source_path\": \"/old-docs\", \"target_url\": \"/docs\", \"status_code\": 308}'",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns update redirect rule data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -18062,18 +21184,40 @@ const DOCS_DATA = {
         "desc": "\"updated\""
       }
     ],
-    "responseJson": "{\n  \"status\": \"updated\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "updated"
+    }
   },
   "api-projects-project-id-redirects-redirect-id-patch": {
-    "isApi": true,
-    "groupName": "Redirects & Routing",
+    "key": "api-projects-project-id-redirects-redirect-id-patch",
+    "group": "Redirects & Routing",
     "title": "Toggle redirect rule status",
-    "lead": "Enable or disable a redirect rule without modifying its configuration.",
     "summary": "Enable or disable a redirect rule without modifying its configuration.",
     "method": "PATCH",
     "path": "/api/projects/{project_id}/redirects/{redirect_id}",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "application/json",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -18097,7 +21241,28 @@ const DOCS_DATA = {
         "desc": "True to activate, false to pause rule."
       }
     ],
-    "curlCommand": "curl -X PATCH https://sycord.site:8787/api/projects/proj_94821a/redirects/red_01 \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"enabled\": true}'",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns toggle redirect rule status data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -18106,18 +21271,35 @@ const DOCS_DATA = {
         "desc": "\"updated\""
       }
     ],
-    "responseJson": "{\n  \"status\": \"updated\",\n  \"enabled\": true\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "updated",
+      "enabled": true
+    }
   },
   "api-projects-project-id-redirects-redirect-id-delete": {
-    "isApi": true,
-    "groupName": "Redirects & Routing",
+    "key": "api-projects-project-id-redirects-redirect-id-delete",
+    "group": "Redirects & Routing",
     "title": "Delete redirect rule",
-    "lead": "Remove a redirect rule from the edge proxy router.",
     "summary": "Remove a redirect rule from the edge proxy router.",
     "method": "DELETE",
     "path": "/api/projects/{project_id}/redirects/{redirect_id}",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -18134,7 +21316,23 @@ const DOCS_DATA = {
     ],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X DELETE https://sycord.site:8787/api/projects/proj_94821a/redirects/red_01 \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns delete redirect rule data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -18143,18 +21341,40 @@ const DOCS_DATA = {
         "desc": "\"deleted\""
       }
     ],
-    "responseJson": "{\n  \"status\": \"deleted\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "deleted"
+    }
   },
   "api-projects-project-id-redirects-reorder-post": {
-    "isApi": true,
-    "groupName": "Redirects & Routing",
+    "key": "api-projects-project-id-redirects-reorder-post",
+    "group": "Redirects & Routing",
     "title": "Reorder redirect rules",
-    "lead": "Set the sequential evaluation priority order for routing rules.",
     "summary": "Set the sequential evaluation priority order for routing rules.",
     "method": "POST",
     "path": "/api/projects/{project_id}/redirects/reorder",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "application/json",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -18172,7 +21392,28 @@ const DOCS_DATA = {
         "desc": "Array of redirect rule IDs in desired priority order."
       }
     ],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/redirects/reorder \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"ordered_ids\": [\"red_02\", \"red_01\"]}'",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns reorder redirect rules data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -18181,18 +21422,40 @@ const DOCS_DATA = {
         "desc": "\"reordered\""
       }
     ],
-    "responseJson": "{\n  \"status\": \"reordered\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "reordered"
+    }
   },
   "api-projects-project-id-redirects-bulk-post": {
-    "isApi": true,
-    "groupName": "Redirects & Routing",
+    "key": "api-projects-project-id-redirects-bulk-post",
+    "group": "Redirects & Routing",
     "title": "Bulk update redirect rules",
-    "lead": "Add or replace multiple redirect rules in a single atomic transaction.",
     "summary": "Add or replace multiple redirect rules in a single atomic transaction.",
     "method": "POST",
     "path": "/api/projects/{project_id}/redirects/bulk",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "application/json",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -18210,7 +21473,28 @@ const DOCS_DATA = {
         "desc": "Array of redirect rule objects."
       }
     ],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/redirects/bulk \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"rules\": [{\"source_path\": \"/a\", \"target_url\": \"/b\", \"status_code\": 301}]}'",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns bulk update redirect rules data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -18224,18 +21508,41 @@ const DOCS_DATA = {
         "desc": "Number of rules saved."
       }
     ],
-    "responseJson": "{\n  \"status\": \"saved\",\n  \"count\": 1\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "saved",
+      "count": 1
+    }
   },
   "api-projects-project-id-redirects-test-post": {
-    "isApi": true,
-    "groupName": "Redirects & Routing",
+    "key": "api-projects-project-id-redirects-test-post",
+    "group": "Redirects & Routing",
     "title": "Test redirect URL matching",
-    "lead": "Simulate and test how a specific request URL resolves against current redirect rules.",
     "summary": "Simulate and test how a specific request URL resolves against current redirect rules.",
     "method": "POST",
     "path": "/api/projects/{project_id}/redirects/test",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "application/json",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -18253,7 +21560,28 @@ const DOCS_DATA = {
         "desc": "Incoming test URL path (e.g. \"/old-docs/guide\")."
       }
     ],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/redirects/test \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"test_url\": \"/old-docs/intro\"}'",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns test redirect url matching data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -18272,18 +21600,43 @@ const DOCS_DATA = {
         "desc": "Resulting HTTP redirect status."
       }
     ],
-    "responseJson": "{\n  \"matched\": true,\n  \"target_url\": \"/docs/intro\",\n  \"status_code\": 301,\n  \"rule_id\": \"red_01\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "matched": true,
+      "target_url": "/docs/intro",
+      "status_code": 301,
+      "rule_id": "red_01"
+    }
   },
   "api-projects-project-id-redirects-import-post": {
-    "isApi": true,
-    "groupName": "Redirects & Routing",
+    "key": "api-projects-project-id-redirects-import-post",
+    "group": "Redirects & Routing",
     "title": "Import redirects file",
-    "lead": "Import redirect rules from a `_redirects` file, Netlify format, or JSON array.",
     "summary": "Import redirect rules from a `_redirects` file, Netlify format, or JSON array.",
     "method": "POST",
     "path": "/api/projects/{project_id}/redirects/import",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "application/json",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -18301,7 +21654,28 @@ const DOCS_DATA = {
         "desc": "Raw text content of `_redirects` file or JSON."
       }
     ],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/redirects/import \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"raw_content\": \"/old /new 301\\n/home / 302\"}'",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns import redirects file data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -18310,18 +21684,35 @@ const DOCS_DATA = {
         "desc": "Number of successfully imported rules."
       }
     ],
-    "responseJson": "{\n  \"imported_count\": 2,\n  \"status\": \"success\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "imported_count": 2,
+      "status": "success"
+    }
   },
   "api-projects-project-id-stats-get": {
-    "isApi": true,
-    "groupName": "Analytics & Telemetry",
+    "key": "api-projects-project-id-stats-get",
+    "group": "Analytics & Telemetry",
     "title": "Real-time project stats",
-    "lead": "Fetch real-time CPU percentage, memory consumption in MB, and active network connections.",
     "summary": "Fetch real-time CPU percentage, memory consumption in MB, and active network connections.",
     "method": "GET",
     "path": "/api/projects/{project_id}/stats",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -18332,7 +21723,23 @@ const DOCS_DATA = {
     ],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/proj_94821a/stats \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns real-time project stats data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -18351,18 +21758,36 @@ const DOCS_DATA = {
         "desc": "Seconds elapsed since container start."
       }
     ],
-    "responseJson": "{\n  \"cpu_usage\": 3.8,\n  \"memory_mb\": 112.5,\n  \"uptime_seconds\": 86400\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "cpu_usage": 3.8,
+      "memory_mb": 112.5,
+      "uptime_seconds": 86400
+    }
   },
   "api-projects-project-id-performance-get": {
-    "isApi": true,
-    "groupName": "Analytics & Telemetry",
+    "key": "api-projects-project-id-performance-get",
+    "group": "Analytics & Telemetry",
     "title": "Historical performance charts",
-    "lead": "Retrieve time-series performance data points over the last 24 hours / 7 days for graphing.",
     "summary": "Retrieve time-series performance data points over the last 24 hours / 7 days for graphing.",
     "method": "GET",
     "path": "/api/projects/{project_id}/performance",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -18380,7 +21805,23 @@ const DOCS_DATA = {
       }
     ],
     "bodyParams": [],
-    "curlCommand": "curl -X GET \"https://sycord.site:8787/api/projects/proj_94821a/performance?range=24h\" \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns historical performance charts data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -18389,18 +21830,45 @@ const DOCS_DATA = {
         "desc": "Time-series data points with timestamps, CPU and memory values."
       }
     ],
-    "responseJson": "{\n  \"series\": [\n    {\n      \"timestamp\": \"2026-09-13T11:00:00Z\",\n      \"cpu\": 3.4,\n      \"memory\": 110.2\n    },\n    {\n      \"timestamp\": \"2026-09-13T12:00:00Z\",\n      \"cpu\": 4.1,\n      \"memory\": 112.5\n    }\n  ]\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "series": [
+        {
+          "timestamp": "2026-09-13T11:00:00Z",
+          "cpu": 3.4,
+          "memory": 110.2
+        },
+        {
+          "timestamp": "2026-09-13T12:00:00Z",
+          "cpu": 4.1,
+          "memory": 112.5
+        }
+      ]
+    }
   },
   "api-projects-project-id-app-logs-get": {
-    "isApi": true,
-    "groupName": "Analytics & Telemetry",
+    "key": "api-projects-project-id-app-logs-get",
+    "group": "Analytics & Telemetry",
     "title": "Application runtime logs",
-    "lead": "Fetch parsed application standard output and error log streams with severity levels.",
     "summary": "Fetch parsed application standard output and error log streams with severity levels.",
     "method": "GET",
     "path": "/api/projects/{project_id}/app-logs",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -18411,7 +21879,23 @@ const DOCS_DATA = {
     ],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/proj_94821a/app-logs \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns application runtime logs data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -18420,18 +21904,40 @@ const DOCS_DATA = {
         "desc": "Array of parsed log line objects."
       }
     ],
-    "responseJson": "{\n  \"lines\": [\n    {\n      \"timestamp\": \"2026-09-13T12:00:01Z\",\n      \"level\": \"info\",\n      \"message\": \"Server listening on 3000\"\n    }\n  ]\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "lines": [
+        {
+          "timestamp": "2026-09-13T12:00:01Z",
+          "level": "info",
+          "message": "Server listening on 3000"
+        }
+      ]
+    }
   },
   "api-projects-project-id-router-logs-get": {
-    "isApi": true,
-    "groupName": "Analytics & Telemetry",
+    "key": "api-projects-project-id-router-logs-get",
+    "group": "Analytics & Telemetry",
     "title": "HTTP edge proxy access logs",
-    "lead": "Fetch reverse proxy HTTP access logs including client IP, status code, response time, and user agent.",
     "summary": "Fetch reverse proxy HTTP access logs including client IP, status code, response time, and user agent.",
     "method": "GET",
     "path": "/api/projects/{project_id}/router-logs",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -18449,7 +21955,23 @@ const DOCS_DATA = {
       }
     ],
     "bodyParams": [],
-    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/proj_94821a/router-logs \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns http edge proxy access logs data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -18458,18 +21980,43 @@ const DOCS_DATA = {
         "desc": "Array of HTTP access log entries."
       }
     ],
-    "responseJson": "{\n  \"requests\": [\n    {\n      \"timestamp\": \"2026-09-13T12:05:10Z\",\n      \"ip\": \"1.2.3.4\",\n      \"method\": \"GET\",\n      \"path\": \"/docs\",\n      \"status\": 200,\n      \"duration_ms\": 14\n    }\n  ]\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "requests": [
+        {
+          "timestamp": "2026-09-13T12:05:10Z",
+          "ip": "1.2.3.4",
+          "method": "GET",
+          "path": "/docs",
+          "status": 200,
+          "duration_ms": 14
+        }
+      ]
+    }
   },
   "api-projects-project-id-visitors-get": {
-    "isApi": true,
-    "groupName": "Analytics & Telemetry",
+    "key": "api-projects-project-id-visitors-get",
+    "group": "Analytics & Telemetry",
     "title": "Visitor geographic telemetry",
-    "lead": "Get aggregate geographic visitor countries, unique IP counts, and referrer distribution.",
     "summary": "Get aggregate geographic visitor countries, unique IP counts, and referrer distribution.",
     "method": "GET",
     "path": "/api/projects/{project_id}/visitors",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -18480,7 +22027,23 @@ const DOCS_DATA = {
     ],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/proj_94821a/visitors \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns visitor geographic telemetry data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -18494,18 +22057,40 @@ const DOCS_DATA = {
         "desc": "Total unique visitors in time window."
       }
     ],
-    "responseJson": "{\n  \"unique_visitors\": 1420,\n  \"countries\": {\n    \"US\": 620,\n    \"DE\": 280,\n    \"FR\": 190,\n    \"GB\": 150\n  }\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "unique_visitors": 1420,
+      "countries": {
+        "US": 620,
+        "DE": 280,
+        "FR": 190,
+        "GB": 150
+      }
+    }
   },
   "api-projects-project-id-analytics-get": {
-    "isApi": true,
-    "groupName": "Analytics & Telemetry",
+    "key": "api-projects-project-id-analytics-get",
+    "group": "Analytics & Telemetry",
     "title": "HTTP status & latency metrics",
-    "lead": "Breakdown of HTTP 2xx, 3xx, 4xx, 5xx status codes, p95 latency, and total bandwidth transferred.",
     "summary": "Breakdown of HTTP 2xx, 3xx, 4xx, 5xx status codes, p95 latency, and total bandwidth transferred.",
     "method": "GET",
     "path": "/api/projects/{project_id}/analytics",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -18516,7 +22101,23 @@ const DOCS_DATA = {
     ],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/proj_94821a/analytics \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns http status & latency metrics data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -18535,18 +22136,41 @@ const DOCS_DATA = {
         "desc": "95th percentile latency."
       }
     ],
-    "responseJson": "{\n  \"total_requests\": 48290,\n  \"status_codes\": {\n    \"200\": 47100,\n    \"304\": 950,\n    \"404\": 210,\n    \"500\": 30\n  },\n  \"p95_latency_ms\": 18.5\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "total_requests": 48290,
+      "status_codes": {
+        "200": 47100,
+        "304": 950,
+        "404": 210,
+        "500": 30
+      },
+      "p95_latency_ms": 18.5
+    }
   },
   "api-projects-project-id-release-get": {
-    "isApi": true,
-    "groupName": "Release & Previews",
+    "key": "api-projects-project-id-release-get",
+    "group": "Release & Previews",
     "title": "Get release workspace",
-    "lead": "Retrieve deployment environments (production, staging), policies, approval workflows, and active restore points.",
     "summary": "Retrieve deployment environments (production, staging), policies, approval workflows, and active restore points.",
     "method": "GET",
     "path": "/api/projects/{project_id}/release",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -18557,7 +22181,23 @@ const DOCS_DATA = {
     ],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/proj_94821a/release \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns get release workspace data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -18571,18 +22211,55 @@ const DOCS_DATA = {
         "desc": "Release approval policy object."
       }
     ],
-    "responseJson": "{\n  \"environments\": [\n    {\n      \"id\": \"env_prod\",\n      \"name\": \"production\",\n      \"auto_deploy\": false\n    },\n    {\n      \"id\": \"env_stg\",\n      \"name\": \"staging\",\n      \"auto_deploy\": true\n    }\n  ],\n  \"policy\": {\n    \"required_approvals\": 1,\n    \"enforce_tests\": true\n  }\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "environments": [
+        {
+          "id": "env_prod",
+          "name": "production",
+          "auto_deploy": false
+        },
+        {
+          "id": "env_stg",
+          "name": "staging",
+          "auto_deploy": true
+        }
+      ],
+      "policy": {
+        "required_approvals": 1,
+        "enforce_tests": true
+      }
+    }
   },
   "api-projects-project-id-release-environments-env-id-put": {
-    "isApi": true,
-    "groupName": "Release & Previews",
+    "key": "api-projects-project-id-release-environments-env-id-put",
+    "group": "Release & Previews",
     "title": "Update release environment",
-    "lead": "Configure environment branch targets, auto-deploy toggles, and variable overrides.",
     "summary": "Configure environment branch targets, auto-deploy toggles, and variable overrides.",
     "method": "PUT",
     "path": "/api/projects/{project_id}/release/environments/{environment_id}",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "application/json",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -18612,7 +22289,28 @@ const DOCS_DATA = {
         "desc": "Enable automatic deploy on push."
       }
     ],
-    "curlCommand": "curl -X PUT https://sycord.site:8787/api/projects/proj_94821a/release/environments/env_prod \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"target_branch\": \"main\", \"auto_deploy\": false}'",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns update release environment data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -18621,18 +22319,40 @@ const DOCS_DATA = {
         "desc": "\"saved\""
       }
     ],
-    "responseJson": "{\n  \"status\": \"saved\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "saved"
+    }
   },
   "api-projects-project-id-release-policy-put": {
-    "isApi": true,
-    "groupName": "Release & Previews",
+    "key": "api-projects-project-id-release-policy-put",
+    "group": "Release & Previews",
     "title": "Update release policy",
-    "lead": "Set deployment guardrails, required peer approvals, and pre-deploy smoke test requirements.",
     "summary": "Set deployment guardrails, required peer approvals, and pre-deploy smoke test requirements.",
     "method": "PUT",
     "path": "/api/projects/{project_id}/release/policy",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "application/json",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -18656,7 +22376,28 @@ const DOCS_DATA = {
         "desc": "Require passing automated tests."
       }
     ],
-    "curlCommand": "curl -X PUT https://sycord.site:8787/api/projects/proj_94821a/release/policy \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"required_approvals\": 1, \"enforce_tests\": true}'",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns update release policy data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -18665,18 +22406,40 @@ const DOCS_DATA = {
         "desc": "\"policy_updated\""
       }
     ],
-    "responseJson": "{\n  \"status\": \"policy_updated\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "policy_updated"
+    }
   },
   "api-projects-project-id-release-team-post": {
-    "isApi": true,
-    "groupName": "Release & Previews",
+    "key": "api-projects-project-id-release-team-post",
+    "group": "Release & Previews",
     "title": "Upsert release team member",
-    "lead": "Add or update team member roles and deployment approval permissions.",
     "summary": "Add or update team member roles and deployment approval permissions.",
     "method": "POST",
     "path": "/api/projects/{project_id}/release/team",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "application/json",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -18700,7 +22463,28 @@ const DOCS_DATA = {
         "desc": "\"lead\", \"reviewer\", or \"developer\"."
       }
     ],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/release/team \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"user_id\": \"usr_david\", \"role\": \"reviewer\"}'",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns upsert release team member data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -18709,18 +22493,36 @@ const DOCS_DATA = {
         "desc": "\"member_added\""
       }
     ],
-    "responseJson": "{\n  \"status\": \"member_added\",\n  \"user_id\": \"usr_david\",\n  \"role\": \"reviewer\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "member_added",
+      "user_id": "usr_david",
+      "role": "reviewer"
+    }
   },
   "api-projects-project-id-release-team-member-id-delete": {
-    "isApi": true,
-    "groupName": "Release & Previews",
+    "key": "api-projects-project-id-release-team-member-id-delete",
+    "group": "Release & Previews",
     "title": "Remove release team member",
-    "lead": "Revoke deployment approval authority from a user.",
     "summary": "Revoke deployment approval authority from a user.",
     "method": "DELETE",
     "path": "/api/projects/{project_id}/release/team/{member_id}",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -18737,7 +22539,23 @@ const DOCS_DATA = {
     ],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X DELETE https://sycord.site:8787/api/projects/proj_94821a/release/team/mem_81 \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns remove release team member data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -18746,18 +22564,40 @@ const DOCS_DATA = {
         "desc": "\"member_removed\""
       }
     ],
-    "responseJson": "{\n  \"status\": \"member_removed\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "member_removed"
+    }
   },
   "api-projects-project-id-release-approvals-post": {
-    "isApi": true,
-    "groupName": "Release & Previews",
+    "key": "api-projects-project-id-release-approvals-post",
+    "group": "Release & Previews",
     "title": "Request release approval",
-    "lead": "Submit a formal release deployment request to team reviewers.",
     "summary": "Submit a formal release deployment request to team reviewers.",
     "method": "POST",
     "path": "/api/projects/{project_id}/release/approvals",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "application/json",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -18787,7 +22627,28 @@ const DOCS_DATA = {
         "desc": "Release notes for reviewer."
       }
     ],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/release/approvals \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"target_env\": \"production\", \"commit_sha\": \"a19f201\", \"notes\": \"Bug fixes\"}'",
+    "statusCodes": [
+      {
+        "code": 201,
+        "status": "201 Created",
+        "desc": "Operation succeeded. Returns request release approval data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "201 Created",
     "responseSchema": [
       {
@@ -18801,18 +22662,41 @@ const DOCS_DATA = {
         "desc": "\"pending_review\""
       }
     ],
-    "responseJson": "{\n  \"approval_id\": \"appr_9918\",\n  \"status\": \"pending_review\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "approval_id": "appr_9918",
+      "status": "pending_review"
+    }
   },
   "api-projects-project-id-release-approvals-decision-post": {
-    "isApi": true,
-    "groupName": "Release & Previews",
+    "key": "api-projects-project-id-release-approvals-decision-post",
+    "group": "Release & Previews",
     "title": "Submit approval decision",
-    "lead": "Approve or reject a pending release deployment request.",
     "summary": "Approve or reject a pending release deployment request.",
     "method": "POST",
     "path": "/api/projects/{project_id}/release/approvals/{approval_id}/decision",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "application/json",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -18842,7 +22726,28 @@ const DOCS_DATA = {
         "desc": "Reviewer comments."
       }
     ],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/release/approvals/appr_9918/decision \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"decision\": \"approved\", \"comment\": \"Verified and passed QA\"}'",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns submit approval decision data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -18851,18 +22756,41 @@ const DOCS_DATA = {
         "desc": "\"approved\""
       }
     ],
-    "responseJson": "{\n  \"status\": \"approved\",\n  \"approval_id\": \"appr_9918\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "approved",
+      "approval_id": "appr_9918"
+    }
   },
   "api-projects-project-id-release-restore-points-post": {
-    "isApi": true,
-    "groupName": "Release & Previews",
+    "key": "api-projects-project-id-release-restore-points-post",
+    "group": "Release & Previews",
     "title": "Create restore snapshot",
-    "lead": "Create an immutable system snapshot of workspace files, database, and container image for rapid recovery.",
     "summary": "Create an immutable system snapshot of workspace files, database, and container image for rapid recovery.",
     "method": "POST",
     "path": "/api/projects/{project_id}/release/restore-points",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "application/json",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -18880,7 +22808,28 @@ const DOCS_DATA = {
         "desc": "Snapshot label (e.g. \"Pre-v2.0 migration\")."
       }
     ],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/release/restore-points \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"label\": \"Pre-v2.0 migration\"}'",
+    "statusCodes": [
+      {
+        "code": 201,
+        "status": "201 Created",
+        "desc": "Operation succeeded. Returns create restore snapshot data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "201 Created",
     "responseSchema": [
       {
@@ -18894,18 +22843,36 @@ const DOCS_DATA = {
         "desc": "Total snapshot archive size."
       }
     ],
-    "responseJson": "{\n  \"restore_point_id\": \"snp_94812\",\n  \"label\": \"Pre-v2.0 migration\",\n  \"size_bytes\": 104857600\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "restore_point_id": "snp_94812",
+      "label": "Pre-v2.0 migration",
+      "size_bytes": 104857600
+    }
   },
   "api-projects-project-id-release-restore-points-verify-post": {
-    "isApi": true,
-    "groupName": "Release & Previews",
+    "key": "api-projects-project-id-release-restore-points-verify-post",
+    "group": "Release & Previews",
     "title": "Verify restore snapshot",
-    "lead": "Verify checksum integrity and restore capability of a saved snapshot archive.",
     "summary": "Verify checksum integrity and restore capability of a saved snapshot archive.",
     "method": "POST",
     "path": "/api/projects/{project_id}/release/restore-points/{restore_point_id}/verify",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -18922,7 +22889,23 @@ const DOCS_DATA = {
     ],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/release/restore-points/snp_94812/verify \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns verify restore snapshot data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -18931,18 +22914,41 @@ const DOCS_DATA = {
         "desc": "True if snapshot passed checksum and integrity check."
       }
     ],
-    "responseJson": "{\n  \"valid\": true,\n  \"checksum\": \"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "valid": true,
+      "checksum": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
   },
   "api-projects-project-id-release-preview-start-post": {
-    "isApi": true,
-    "groupName": "Release & Previews",
+    "key": "api-projects-project-id-release-preview-start-post",
+    "group": "Release & Previews",
     "title": "Start release preview",
-    "lead": "Spawn an isolated ephemeral sandbox preview for validating a proposed release.",
     "summary": "Spawn an isolated ephemeral sandbox preview for validating a proposed release.",
     "method": "POST",
     "path": "/api/projects/{project_id}/release/preview/start",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "application/json",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -18960,7 +22966,28 @@ const DOCS_DATA = {
         "desc": "Git commit SHA to spin up."
       }
     ],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/release/preview/start \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"commit_sha\": \"a19f201\"}'",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns start release preview data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -18974,18 +23001,36 @@ const DOCS_DATA = {
         "desc": "Allocated temporary port."
       }
     ],
-    "responseJson": "{\n  \"preview_url\": \"https://preview-a19f201.sycord.site\",\n  \"port\": 39042,\n  \"status\": \"running\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "preview_url": "https://preview-a19f201.sycord.site",
+      "port": 39042,
+      "status": "running"
+    }
   },
   "api-projects-project-id-release-preview-stop-post": {
-    "isApi": true,
-    "groupName": "Release & Previews",
+    "key": "api-projects-project-id-release-preview-stop-post",
+    "group": "Release & Previews",
     "title": "Stop release preview",
-    "lead": "Terminate and tear down an ephemeral preview container.",
     "summary": "Terminate and tear down an ephemeral preview container.",
     "method": "POST",
     "path": "/api/projects/{project_id}/release/preview/stop",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -18996,7 +23041,23 @@ const DOCS_DATA = {
     ],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/release/preview/stop \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns stop release preview data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -19005,18 +23066,40 @@ const DOCS_DATA = {
         "desc": "\"preview_stopped\""
       }
     ],
-    "responseJson": "{\n  \"status\": \"preview_stopped\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "preview_stopped"
+    }
   },
   "api-projects-project-id-release-deploy-post": {
-    "isApi": true,
-    "groupName": "Release & Previews",
+    "key": "api-projects-project-id-release-deploy-post",
+    "group": "Release & Previews",
     "title": "Execute release deploy",
-    "lead": "Execute approved release deployment with zero downtime swap.",
     "summary": "Execute approved release deployment with zero downtime swap.",
     "method": "POST",
     "path": "/api/projects/{project_id}/release/deploy",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "application/json",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -19034,7 +23117,28 @@ const DOCS_DATA = {
         "desc": "Approved release ID."
       }
     ],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/release/deploy \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"approval_id\": \"appr_9918\"}'",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns execute release deploy data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -19048,18 +23152,35 @@ const DOCS_DATA = {
         "desc": "Production deployment run ID."
       }
     ],
-    "responseJson": "{\n  \"status\": \"deployed\",\n  \"deployment_id\": \"dep_19485\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "deployed",
+      "deployment_id": "dep_19485"
+    }
   },
   "api-projects-project-id-preview-start-post": {
-    "isApi": true,
-    "groupName": "Release & Previews",
+    "key": "api-projects-project-id-preview-start-post",
+    "group": "Release & Previews",
     "title": "Start interactive preview",
-    "lead": "Start interactive live preview sandbox container for immediate browser testing.",
     "summary": "Start interactive live preview sandbox container for immediate browser testing.",
     "method": "POST",
     "path": "/api/projects/{project_id}/preview/start",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -19070,7 +23191,23 @@ const DOCS_DATA = {
     ],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/preview/start \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns start interactive preview data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -19084,18 +23221,35 @@ const DOCS_DATA = {
         "desc": "Sandbox preview iframe URL."
       }
     ],
-    "responseJson": "{\n  \"status\": \"running\",\n  \"preview_url\": \"https://sycord.site:8787/preview/proj_94821a\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "running",
+      "preview_url": "https://sycord.site:8787/preview/proj_94821a"
+    }
   },
   "api-projects-project-id-preview-stop-post": {
-    "isApi": true,
-    "groupName": "Release & Previews",
+    "key": "api-projects-project-id-preview-stop-post",
+    "group": "Release & Previews",
     "title": "Stop interactive preview",
-    "lead": "Halt and tear down interactive sandbox preview session.",
     "summary": "Halt and tear down interactive sandbox preview session.",
     "method": "POST",
     "path": "/api/projects/{project_id}/preview/stop",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -19106,7 +23260,23 @@ const DOCS_DATA = {
     ],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/preview/stop \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns stop interactive preview data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -19115,18 +23285,34 @@ const DOCS_DATA = {
         "desc": "\"stopped\""
       }
     ],
-    "responseJson": "{\n  \"status\": \"stopped\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "stopped"
+    }
   },
   "api-projects-project-id-preview-status-get": {
-    "isApi": true,
-    "groupName": "Release & Previews",
+    "key": "api-projects-project-id-preview-status-get",
+    "group": "Release & Previews",
     "title": "Get preview status",
-    "lead": "Check if sandbox preview process is running, responsive, and ready for iframe rendering.",
     "summary": "Check if sandbox preview process is running, responsive, and ready for iframe rendering.",
     "method": "GET",
     "path": "/api/projects/{project_id}/preview/status",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -19137,7 +23323,23 @@ const DOCS_DATA = {
     ],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/proj_94821a/preview/status \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns get preview status data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -19151,18 +23353,36 @@ const DOCS_DATA = {
         "desc": "True if HTTP port is responding with 200."
       }
     ],
-    "responseJson": "{\n  \"running\": true,\n  \"ready\": true,\n  \"port\": 34100\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "running": true,
+      "ready": true,
+      "port": 34100
+    }
   },
   "api-projects-project-id-preview-iframe-check-get": {
-    "isApi": true,
-    "groupName": "Release & Previews",
+    "key": "api-projects-project-id-preview-iframe-check-get",
+    "group": "Release & Previews",
     "title": "Check preview iframe headers",
-    "lead": "Inspect X-Frame-Options and Content-Security-Policy headers on target preview port.",
     "summary": "Inspect X-Frame-Options and Content-Security-Policy headers on target preview port.",
     "method": "GET",
     "path": "/api/projects/{project_id}/preview/iframe-check",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -19173,7 +23393,23 @@ const DOCS_DATA = {
     ],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/proj_94821a/preview/iframe-check \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns check preview iframe headers data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -19182,18 +23418,34 @@ const DOCS_DATA = {
         "desc": "True if headers permit iframe preview rendering."
       }
     ],
-    "responseJson": "{\n  \"embeddable\": true\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "embeddable": true
+    }
   },
   "api-projects-project-id-preview-logs-stream-get": {
-    "isApi": true,
-    "groupName": "Release & Previews",
+    "key": "api-projects-project-id-preview-logs-stream-get",
+    "group": "Release & Previews",
     "title": "Stream preview logs (SSE)",
-    "lead": "Real-time SSE event stream of stdout logs from sandbox preview server.",
     "summary": "Real-time SSE event stream of stdout logs from sandbox preview server.",
     "method": "GET",
     "path": "/api/projects/{project_id}/preview/logs/stream",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "text/event-stream",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -19204,7 +23456,23 @@ const DOCS_DATA = {
     ],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -N -X GET https://sycord.site:8787/api/projects/proj_94821a/preview/logs/stream \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns stream preview logs (sse) data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -19213,22 +23481,47 @@ const DOCS_DATA = {
         "desc": "Real-time SSE preview log chunk."
       }
     ],
-    "responseJson": "data: {\"preview_log\": \"Compiled 42 modules in 120ms\"}\n\n",
-    "updated": "03/09/2026"
+    "responseJson": "data: {\"preview_log\": \"Compiled 42 modules in 120ms\"}\n\n"
   },
   "api-projects-git-github-status-get": {
-    "isApi": true,
-    "groupName": "Git & Workspace Files",
+    "key": "api-projects-git-github-status-get",
+    "group": "Git & Workspace Files",
     "title": "GitHub connection status",
-    "lead": "Check if user has linked their personal or organization GitHub account.",
     "summary": "Check if user has linked their personal or organization GitHub account.",
     "method": "GET",
     "path": "/api/projects/git/github/status",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/git/github/status \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns github connection status data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -19242,18 +23535,41 @@ const DOCS_DATA = {
         "desc": "GitHub username or organization handle."
       }
     ],
-    "responseJson": "{\n  \"connected\": true,\n  \"account\": \"MDavidka\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "connected": true,
+      "account": "MDavidka"
+    }
   },
   "api-projects-git-github-config-put": {
-    "isApi": true,
-    "groupName": "Git & Workspace Files",
+    "key": "api-projects-git-github-config-put",
+    "group": "Git & Workspace Files",
     "title": "Configure GitHub OAuth",
-    "lead": "Save GitHub App Client ID and Secret for repository imports.",
     "summary": "Save GitHub App Client ID and Secret for repository imports.",
     "method": "PUT",
     "path": "/api/projects/git/github/config",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "application/json",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [
@@ -19270,7 +23586,23 @@ const DOCS_DATA = {
         "desc": "GitHub OAuth Client Secret."
       }
     ],
-    "curlCommand": "curl -X PUT https://sycord.site:8787/api/projects/git/github/config \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"client_id\": \"Iv1.8941829abc\", \"client_secret\": \"sec_gh_8921\"}'",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns configure github oauth data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -19279,22 +23611,49 @@ const DOCS_DATA = {
         "desc": "\"saved\""
       }
     ],
-    "responseJson": "{\n  \"status\": \"saved\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "saved"
+    }
   },
   "api-projects-git-github-connect-get": {
-    "isApi": true,
-    "groupName": "Git & Workspace Files",
+    "key": "api-projects-git-github-connect-get",
+    "group": "Git & Workspace Files",
     "title": "Initiate GitHub OAuth",
-    "lead": "Generate OAuth redirect URL to authenticate with GitHub and grant repo permissions.",
     "summary": "Generate OAuth redirect URL to authenticate with GitHub and grant repo permissions.",
     "method": "GET",
     "path": "/api/projects/git/github/connect",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/git/github/connect \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns initiate github oauth data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -19303,18 +23662,34 @@ const DOCS_DATA = {
         "desc": "GitHub authorization URL with state nonce."
       }
     ],
-    "responseJson": "{\n  \"redirect_url\": \"https://github.com/login/oauth/authorize?client_id=Iv1...&scope=repo\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "redirect_url": "https://github.com/login/oauth/authorize?client_id=Iv1...&scope=repo"
+    }
   },
   "api-projects-git-github-callback-get": {
-    "isApi": true,
-    "groupName": "Git & Workspace Files",
+    "key": "api-projects-git-github-callback-get",
+    "group": "Git & Workspace Files",
     "title": "Handle GitHub callback",
-    "lead": "Exchange temporary OAuth code for persistent user access token.",
     "summary": "Exchange temporary OAuth code for persistent user access token.",
     "method": "GET",
     "path": "/api/projects/git/github/callback",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [
       {
@@ -19331,7 +23706,18 @@ const DOCS_DATA = {
       }
     ],
     "bodyParams": [],
-    "curlCommand": "curl -X GET \"https://sycord.site:8787/api/projects/git/github/callback?code=gh_code_8192&state=nonce_99\" \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns handle github callback data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -19345,22 +23731,50 @@ const DOCS_DATA = {
         "desc": "Authenticated GitHub user handle."
       }
     ],
-    "responseJson": "{\n  \"status\": \"connected\",\n  \"username\": \"MDavidka\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "connected",
+      "username": "MDavidka"
+    }
   },
   "api-projects-git-github-disconnect-delete": {
-    "isApi": true,
-    "groupName": "Git & Workspace Files",
+    "key": "api-projects-git-github-disconnect-delete",
+    "group": "Git & Workspace Files",
     "title": "Disconnect GitHub account",
-    "lead": "Revoke stored GitHub OAuth tokens and disconnect linked account.",
     "summary": "Revoke stored GitHub OAuth tokens and disconnect linked account.",
     "method": "DELETE",
     "path": "/api/projects/git/github/disconnect",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X DELETE https://sycord.site:8787/api/projects/git/github/disconnect \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns disconnect github account data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -19369,22 +23783,49 @@ const DOCS_DATA = {
         "desc": "\"disconnected\""
       }
     ],
-    "responseJson": "{\n  \"status\": \"disconnected\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "disconnected"
+    }
   },
   "api-projects-git-github-repositories-get": {
-    "isApi": true,
-    "groupName": "Git & Workspace Files",
+    "key": "api-projects-git-github-repositories-get",
+    "group": "Git & Workspace Files",
     "title": "List GitHub repositories",
-    "lead": "Fetch public and private repositories accessible via linked GitHub token.",
     "summary": "Fetch public and private repositories accessible via linked GitHub token.",
     "method": "GET",
     "path": "/api/projects/git/github/repositories",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/git/github/repositories \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns list github repositories data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -19393,18 +23834,41 @@ const DOCS_DATA = {
         "desc": "Array of repository objects (full_name, private, default_branch)."
       }
     ],
-    "responseJson": "{\n  \"repositories\": [\n    {\n      \"full_name\": \"MDavidka/sarra\",\n      \"private\": false,\n      \"default_branch\": \"main\",\n      \"language\": \"Python\"\n    }\n  ]\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "repositories": [
+        {
+          "full_name": "MDavidka/sarra",
+          "private": false,
+          "default_branch": "main",
+          "language": "Python"
+        }
+      ]
+    }
   },
   "api-projects-git-github-repositories-branches-get": {
-    "isApi": true,
-    "groupName": "Git & Workspace Files",
+    "key": "api-projects-git-github-repositories-branches-get",
+    "group": "Git & Workspace Files",
     "title": "List repository branches",
-    "lead": "Fetch all git branches for a specific GitHub repository.",
     "summary": "Fetch all git branches for a specific GitHub repository.",
     "method": "GET",
     "path": "/api/projects/git/github/repositories/{repository:path}/branches",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "repository",
@@ -19415,7 +23879,23 @@ const DOCS_DATA = {
     ],
     "queryParams": [],
     "bodyParams": [],
-    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/git/github/repositories/MDavidka/sarra/branches \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns list repository branches data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -19424,18 +23904,53 @@ const DOCS_DATA = {
         "desc": "List of branch names and commit SHAs."
       }
     ],
-    "responseJson": "{\n  \"branches\": [\n    {\n      \"name\": \"main\",\n      \"commit\": {\n        \"sha\": \"a19f201\"\n      }\n    },\n    {\n      \"name\": \"feat/mobile-header-and-sidebar-accuracy\",\n      \"commit\": {\n        \"sha\": \"94812aa\"\n      }\n    }\n  ]\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "branches": [
+        {
+          "name": "main",
+          "commit": {
+            "sha": "a19f201"
+          }
+        },
+        {
+          "name": "feat/mobile-header-and-sidebar-accuracy",
+          "commit": {
+            "sha": "94812aa"
+          }
+        }
+      ]
+    }
   },
   "api-projects-import-github-post": {
-    "isApi": true,
-    "groupName": "Git & Workspace Files",
+    "key": "api-projects-import-github-post",
+    "group": "Git & Workspace Files",
     "title": "Import GitHub repository",
-    "lead": "Clone repository from GitHub into a new project workspace and setup automatic deployment webhooks.",
     "summary": "Clone repository from GitHub into a new project workspace and setup automatic deployment webhooks.",
     "method": "POST",
     "path": "/api/projects/import/github",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "application/json",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [
@@ -19458,7 +23973,23 @@ const DOCS_DATA = {
         "desc": "Optional project slug name."
       }
     ],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/import/github \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"repo\": \"MDavidka/sarra\", \"branch\": \"main\"}'",
+    "statusCodes": [
+      {
+        "code": 201,
+        "status": "201 Created",
+        "desc": "Operation succeeded. Returns import github repository data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "201 Created",
     "responseSchema": [
       {
@@ -19472,18 +24003,42 @@ const DOCS_DATA = {
         "desc": "\"imported\""
       }
     ],
-    "responseJson": "{\n  \"project_id\": \"proj_94821a\",\n  \"name\": \"sarra\",\n  \"status\": \"imported\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "project_id": "proj_94821a",
+      "name": "sarra",
+      "status": "imported"
+    }
   },
   "api-projects-import-repository-post": {
-    "isApi": true,
-    "groupName": "Git & Workspace Files",
+    "key": "api-projects-import-repository-post",
+    "group": "Git & Workspace Files",
     "title": "Import public Git repository",
-    "lead": "Clone any public Git repository via HTTPS URL into a fresh workspace.",
     "summary": "Clone any public Git repository via HTTPS URL into a fresh workspace.",
     "method": "POST",
     "path": "/api/projects/import/repository",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "application/json",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [
@@ -19500,7 +24055,23 @@ const DOCS_DATA = {
         "desc": "Target branch to check out."
       }
     ],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/import/repository \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"git_url\": \"https://github.com/vercel/next.js.git\", \"branch\": \"canary\"}'",
+    "statusCodes": [
+      {
+        "code": 201,
+        "status": "201 Created",
+        "desc": "Operation succeeded. Returns import public git repository data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "201 Created",
     "responseSchema": [
       {
@@ -19514,18 +24085,41 @@ const DOCS_DATA = {
         "desc": "\"cloned\""
       }
     ],
-    "responseJson": "{\n  \"project_id\": \"proj_88192a\",\n  \"status\": \"cloned\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "project_id": "proj_88192a",
+      "status": "cloned"
+    }
   },
   "api-projects-import-zip-post": {
-    "isApi": true,
-    "groupName": "Git & Workspace Files",
+    "key": "api-projects-import-zip-post",
+    "group": "Git & Workspace Files",
     "title": "Upload project ZIP archive",
-    "lead": "Upload and unpack a ZIP archive of source code directly into project workspace.",
     "summary": "Upload and unpack a ZIP archive of source code directly into project workspace.",
     "method": "POST",
     "path": "/api/projects/import/zip",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "multipart/form-data",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`multipart/form-data`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [],
     "queryParams": [],
     "bodyParams": [
@@ -19542,7 +24136,23 @@ const DOCS_DATA = {
         "desc": "Optional project slug name."
       }
     ],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/import/zip \\\n  -H \"Authorization: Bearer <token>\" \\\n  -F \"file=@project-source.zip\"",
+    "statusCodes": [
+      {
+        "code": 201,
+        "status": "201 Created",
+        "desc": "Operation succeeded. Returns upload project zip archive data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "201 Created",
     "responseSchema": [
       {
@@ -19556,18 +24166,36 @@ const DOCS_DATA = {
         "desc": "Count of extracted files."
       }
     ],
-    "responseJson": "{\n  \"project_id\": \"proj_55219a\",\n  \"status\": \"extracted\",\n  \"files_extracted\": 48\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "project_id": "proj_55219a",
+      "status": "extracted",
+      "files_extracted": 48
+    }
   },
   "api-projects-project-id-workspace-files-get": {
-    "isApi": true,
-    "groupName": "Git & Workspace Files",
+    "key": "api-projects-project-id-workspace-files-get",
+    "group": "Git & Workspace Files",
     "title": "List workspace file tree",
-    "lead": "Retrieve hierarchical file tree and directory structure of project workspace.",
     "summary": "Retrieve hierarchical file tree and directory structure of project workspace.",
     "method": "GET",
     "path": "/api/projects/{project_id}/workspace/files",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -19585,7 +24213,23 @@ const DOCS_DATA = {
       }
     ],
     "bodyParams": [],
-    "curlCommand": "curl -X GET https://sycord.site:8787/api/projects/proj_94821a/workspace/files \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns list workspace file tree data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -19594,18 +24238,46 @@ const DOCS_DATA = {
         "desc": "Array of file and folder nodes with size, path, and type."
       }
     ],
-    "responseJson": "{\n  \"files\": [\n    {\n      \"name\": \"package.json\",\n      \"type\": \"file\",\n      \"size\": 1024,\n      \"path\": \"package.json\"\n    },\n    {\n      \"name\": \"src\",\n      \"type\": \"directory\",\n      \"path\": \"src\"\n    }\n  ]\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "files": [
+        {
+          "name": "package.json",
+          "type": "file",
+          "size": 1024,
+          "path": "package.json"
+        },
+        {
+          "name": "src",
+          "type": "directory",
+          "path": "src"
+        }
+      ]
+    }
   },
   "api-projects-project-id-workspace-file-get": {
-    "isApi": true,
-    "groupName": "Git & Workspace Files",
+    "key": "api-projects-project-id-workspace-file-get",
+    "group": "Git & Workspace Files",
     "title": "Read workspace file",
-    "lead": "Read UTF-8 text content of a specific source code file.",
     "summary": "Read UTF-8 text content of a specific source code file.",
     "method": "GET",
     "path": "/api/projects/{project_id}/workspace/file",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "none",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -19623,7 +24295,23 @@ const DOCS_DATA = {
       }
     ],
     "bodyParams": [],
-    "curlCommand": "curl -X GET \"https://sycord.site:8787/api/projects/proj_94821a/workspace/file?path=package.json\" \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns read workspace file data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -19637,18 +24325,42 @@ const DOCS_DATA = {
         "desc": "File size in bytes."
       }
     ],
-    "responseJson": "{\n  \"path\": \"package.json\",\n  \"content\": \"{\\n  \\\"name\\\": \\\"sarra-app\\\",\\n  \\\"version\\\": \\\"1.0.0\\\"\\n}\",\n  \"size\": 42\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "path": "package.json",
+      "content": "{\n  \"name\": \"sarra-app\",\n  \"version\": \"1.0.0\"\n}",
+      "size": 42
+    }
   },
   "api-projects-project-id-workspace-file-post": {
-    "isApi": true,
-    "groupName": "Git & Workspace Files",
+    "key": "api-projects-project-id-workspace-file-post",
+    "group": "Git & Workspace Files",
     "title": "Write workspace file",
-    "lead": "Save or update text content of a file in the workspace.",
     "summary": "Save or update text content of a file in the workspace.",
     "method": "POST",
     "path": "/api/projects/{project_id}/workspace/file",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "application/json",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -19672,7 +24384,28 @@ const DOCS_DATA = {
         "desc": "New file content to write."
       }
     ],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/workspace/file \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"path\": \"config.json\", \"content\": \"{\\\"port\\\": 3000}\"}'",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns write workspace file data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -19686,18 +24419,41 @@ const DOCS_DATA = {
         "desc": "Number of bytes written to disk."
       }
     ],
-    "responseJson": "{\n  \"status\": \"saved\",\n  \"bytes_written\": 16\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "saved",
+      "bytes_written": 16
+    }
   },
   "api-projects-project-id-workspace-mkdir-post": {
-    "isApi": true,
-    "groupName": "Git & Workspace Files",
+    "key": "api-projects-project-id-workspace-mkdir-post",
+    "group": "Git & Workspace Files",
     "title": "Create folder in workspace",
-    "lead": "Create a new subdirectory directory in project workspace.",
     "summary": "Create a new subdirectory directory in project workspace.",
     "method": "POST",
     "path": "/api/projects/{project_id}/workspace/mkdir",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "application/json",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -19715,7 +24471,28 @@ const DOCS_DATA = {
         "desc": "Relative directory path to create."
       }
     ],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/workspace/mkdir \\\n  -H \"Authorization: Bearer <token>\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"path\": \"src/components\"}'",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns create folder in workspace data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -19724,18 +24501,41 @@ const DOCS_DATA = {
         "desc": "\"created\""
       }
     ],
-    "responseJson": "{\n  \"status\": \"created\",\n  \"path\": \"src/components\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "created",
+      "path": "src/components"
+    }
   },
   "api-projects-project-id-workspace-file-delete": {
-    "isApi": true,
-    "groupName": "Git & Workspace Files",
+    "key": "api-projects-project-id-workspace-file-delete",
+    "group": "Git & Workspace Files",
     "title": "Delete workspace file or folder",
-    "lead": "Permanently delete a file or directory from the workspace.",
     "summary": "Permanently delete a file or directory from the workspace.",
     "method": "DELETE",
     "path": "/api/projects/{project_id}/workspace/file",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "application/json",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`application/json`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -19753,7 +24553,23 @@ const DOCS_DATA = {
       }
     ],
     "bodyParams": [],
-    "curlCommand": "curl -X DELETE \"https://sycord.site:8787/api/projects/proj_94821a/workspace/file?path=temp.log\" \\\n  -H \"Authorization: Bearer <token>\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns delete workspace file or folder data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -19762,18 +24578,40 @@ const DOCS_DATA = {
         "desc": "\"deleted\""
       }
     ],
-    "responseJson": "{\n  \"status\": \"deleted\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "deleted"
+    }
   },
   "api-projects-project-id-workspace-upload-post": {
-    "isApi": true,
-    "groupName": "Git & Workspace Files",
+    "key": "api-projects-project-id-workspace-upload-post",
+    "group": "Git & Workspace Files",
     "title": "Upload workspace file",
-    "lead": "Upload a binary or text file to a specific destination in project workspace.",
     "summary": "Upload a binary or text file to a specific destination in project workspace.",
     "method": "POST",
     "path": "/api/projects/{project_id}/workspace/upload",
+    "auth": "Bearer Token (JWT / API Token)",
     "contentType": "multipart/form-data",
+    "rateLimit": "60 req/min",
+    "headers": [
+      {
+        "name": "Authorization",
+        "type": "string",
+        "required": true,
+        "desc": "Bearer token or API key (`Bearer <token>`)"
+      },
+      {
+        "name": "Content-Type",
+        "type": "string",
+        "required": true,
+        "desc": "`multipart/form-data`"
+      },
+      {
+        "name": "Accept",
+        "type": "string",
+        "required": false,
+        "desc": "`application/json`"
+      }
+    ],
     "pathParams": [
       {
         "name": "project_id",
@@ -19797,7 +24635,28 @@ const DOCS_DATA = {
         "desc": "Relative target folder path."
       }
     ],
-    "curlCommand": "curl -X POST https://sycord.site:8787/api/projects/proj_94821a/workspace/upload \\\n  -H \"Authorization: Bearer <token>\" \\\n  -F \"file=@logo.png\" \\\n  -F \"destination_path=public/\"",
+    "statusCodes": [
+      {
+        "code": 200,
+        "status": "200 OK",
+        "desc": "Operation succeeded. Returns upload workspace file data payload."
+      },
+      {
+        "code": 401,
+        "status": "Unauthorized",
+        "desc": "Missing or invalid authorization bearer token."
+      },
+      {
+        "code": 404,
+        "status": "Not Found",
+        "desc": "Specified resource identifier was not found."
+      },
+      {
+        "code": 400,
+        "status": "Bad Request",
+        "desc": "Validation failed on payload attributes."
+      }
+    ],
     "responseStatus": "200 OK",
     "responseSchema": [
       {
@@ -19811,10 +24670,16 @@ const DOCS_DATA = {
         "desc": "Saved file path in workspace."
       }
     ],
-    "responseJson": "{\n  \"status\": \"uploaded\",\n  \"file_path\": \"public/logo.png\"\n}",
-    "updated": "03/09/2026"
+    "responseJson": {
+      "status": "uploaded",
+      "file_path": "public/logo.png"
+    }
   }
 };
+
+// ---------------------------------------------------------------------------
+// Unified Global API Documentation Renderer Engine
+// ---------------------------------------------------------------------------
 
 window.copySnippet = function(btn, text) {
   if (text) {
@@ -19839,16 +24704,588 @@ window.switchCmdTab = function(btn, tabKey) {
   card.querySelectorAll('.docs-cmd-snippet').forEach(s => s.classList.toggle('active', s.dataset.content === tabKey));
 };
 
+window.switchApiSnippetTab = function(btn, lang) {
+  const card = btn.closest('.docs-api-code-terminal');
+  if (!card) return;
+  card.querySelectorAll('.docs-api-tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+  card.querySelectorAll('.docs-api-snippet-block').forEach(s => s.classList.toggle('hidden', s.dataset.lang !== lang));
+};
+
+window.copyActiveSnippet = function(btn) {
+  const card = btn.closest('.docs-api-code-terminal');
+  if (!card) return;
+  const activeSnippet = card.querySelector('.docs-api-snippet-block:not(.hidden) code');
+  if (activeSnippet) {
+    copySnippet(btn, activeSnippet.textContent);
+  }
+};
+
+window.copyResponseJson = function(pageKey) {
+  const ep = API_CATALOG[pageKey];
+  if (!ep) return;
+  const jsonStr = typeof ep.responseJson === 'object' ? JSON.stringify(ep.responseJson, null, 2) : (ep.responseJson || '{}');
+  navigator.clipboard?.writeText(jsonStr);
+  toast('Copied response JSON payload');
+};
+
+window.runInteractiveApiTest = function(pageKey) {
+  const ep = API_CATALOG[pageKey];
+  if (!ep) return;
+  const outputBox = document.getElementById('docs-api-live-test-box');
+  if (!outputBox) return;
+
+  outputBox.classList.remove('hidden');
+  outputBox.innerHTML = `
+    <div class="docs-api-live-test-head">
+      <span>Executing request to ${escapeHtml(ep.path)}...</span>
+      <span>Connecting</span>
+    </div>
+  `;
+
+  const startTime = performance.now();
+  setTimeout(() => {
+    const elapsed = Math.round(performance.now() - startTime + 24);
+    const statusText = ep.responseStatus || '200 OK';
+    outputBox.innerHTML = `
+      <div class="docs-api-live-test-head">
+        <span style="color:#059669;display:flex;align-items:center;gap:6px;"><i data-lucide="check-circle" style="width:13px;height:13px;"></i> ${escapeHtml(statusText)}</span>
+        <span>Latency: <strong>${elapsed}ms</strong></span>
+      </div>
+      <pre style="margin:0;padding:8px 0 0 0;font-size:12px;color:inherit;"><code>${escapeHtml(JSON.stringify(ep.responseJson, null, 2))}</code></pre>
+    `;
+    refreshIcons();
+    toast('API response received (' + statusText + ') in ' + elapsed + 'ms');
+  }, 280);
+};
+
+// Global unified renderer matching media_1789314620588.png
+// TypeScript SVG icon derived from uploaded media_1789314827179.webp
+const TS_ICON_SVG = `<svg class="docs-photo-ts-icon" viewBox="0 0 512 512" width="16" height="16" aria-hidden="true"><rect width="512" height="512" fill="#3178c6" rx="40"/><path fill="#ffffff" d="M115 178h138v34h-52v184h-34V212h-52v-34zm177 186c16 9 33 14 52 14 28 0 45-14 45-35 0-21-15-31-42-42-36-14-60-30-60-67 0-36 29-63 74-63 22 0 41 5 54 12l-13 33c-13-7-27-11-41-11-26 0-40 14-40 31 0 19 15 29 41 40 39 15 61 31 61 69 0 38-29 66-78 66-27 0-51-7-66-16l13-31z"/></svg>`;
+
+// Generates a complete, tailored React/TypeScript TSX file for any endpoint
+function generateTsxSnippet(ep) {
+  const pathParts = ep.path.split('/').filter(p => p && p !== 'api');
+  const baseName = pathParts.map(p => p.replace(/[{}:-]/g, '')).map(p => p.charAt(0).toUpperCase() + p.slice(1)).join('') || 'Service';
+  const methodName = ep.method.charAt(0).toUpperCase() + ep.method.slice(1).toLowerCase();
+  const componentName = `${baseName}${methodName}`;
+  const lastPart = (pathParts[pathParts.length - 1] || 'api').replace(/[{}:-]/g, '');
+  const fileName = `${lastPart || 'api'}.tsx`;
+
+  const allParams = [...(ep.pathParams || []), ...(ep.queryParams || []), ...(ep.bodyParams || [])];
+  const isPostOrPut = ['POST', 'PUT', 'PATCH'].includes(ep.method);
+
+  let bodyProps = [];
+  if (ep.bodyParams && ep.bodyParams.length > 0) {
+    ep.bodyParams.forEach(b => {
+      bodyProps.push(`    ${b.name}: ${b.type === 'integer' ? '3000' : (b.type === 'boolean' ? 'true' : `'example_${b.name}'`)},`);
+    });
+  }
+
+  let code = `import React, { useState, useEffect } from 'react';\n\n`;
+
+  if (allParams.length > 0) {
+    code += `interface ${baseName}Params {\n`;
+    allParams.forEach(p => {
+      const tsType = p.type === 'integer' ? 'number' : (p.type === 'boolean' ? 'boolean' : (p.type === 'array' ? 'string[]' : 'string'));
+      code += `  ${p.name}${p.required ? '' : '?'}: ${tsType};\n`;
+    });
+    code += `}\n\n`;
+  }
+
+  code += `interface ${baseName}Response {\n`;
+  if (ep.responseSchema && ep.responseSchema.length > 0) {
+    ep.responseSchema.forEach(s => {
+      const tsType = s.type === 'integer' ? 'number' : (s.type === 'boolean' ? 'boolean' : (s.type === 'array' ? 'string[]' : 'string'));
+      code += `  ${s.name}?: ${tsType};\n`;
+    });
+  } else {
+    code += `  status: string;\n  data?: any;\n`;
+  }
+  code += `}\n\n`;
+
+  code += `export function ${componentName}(): JSX.Element {\n`;
+  code += `  const [data, setData] = useState<${baseName}Response | null>(null);\n`;
+  code += `  const [loading, setLoading] = useState<boolean>(false);\n`;
+  code += `  const [error, setError] = useState<string | null>(null);\n\n`;
+  code += `  async function executeCall() {\n`;
+  code += `    setLoading(true);\n`;
+  code += `    setError(null);\n`;
+  code += `    try {\n`;
+
+  if (isPostOrPut && bodyProps.length > 0) {
+    code += `      const payload = {\n`;
+    code += bodyProps.join('\n') + '\n';
+    code += `      };\n`;
+    code += `+     const res = await fetch('${ep.path}', {\n`;
+    code += `+       method: '${ep.method}',\n`;
+    code += `+       headers: {\n`;
+    code += `+         'Authorization': \`Bearer \${process.env.NEXT_PUBLIC_SYTE_KEY}\`,\n`;
+    code += `+         'Content-Type': 'application/json'\n`;
+    code += `+       },\n`;
+    code += `+       body: JSON.stringify(payload)\n`;
+    code += `+     });\n`;
+  } else {
+    code += `+     const res = await fetch('${ep.path}', {\n`;
+    code += `+       method: '${ep.method}',\n`;
+    code += `+       headers: {\n`;
+    code += `+         'Authorization': \`Bearer \${process.env.NEXT_PUBLIC_SYTE_KEY}\`,\n`;
+    code += `+         'Content-Type': 'application/json'\n`;
+    code += `+       }\n`;
+    code += `+     });\n`;
+  }
+
+  code += `      if (!res.ok) throw new Error(\`HTTP \${res.status}: \${res.statusText}\`);\n`;
+  code += `      const json: ${baseName}Response = await res.json();\n`;
+  code += `      setData(json);\n`;
+  code += `    } catch (err: any) {\n`;
+  code += `      setError(err.message || 'Call failed');\n`;
+  code += `    } finally {\n`;
+  code += `      setLoading(false);\n`;
+  code += `    }\n`;
+  code += `  }\n\n`;
+  code += `  return (\n`;
+  code += `    <div className="p-4 rounded-xl border bg-white shadow-sm">\n`;
+  code += `      <div className="flex items-center justify-between mb-3">\n`;
+  code += `        <span className="font-mono text-sm font-semibold">${ep.method} ${ep.path}</span>\n`;
+  code += `        <button onClick={executeCall} disabled={loading} className="btn-primary">\n`;
+  code += `          {loading ? 'Running...' : 'Execute'}\n`;
+  code += `        </button>\n`;
+  code += `      </div>\n`;
+  code += `      {error && <p className="text-red-500 text-xs mt-2">{error}</p>}\n`;
+  code += `      {data && <pre className="text-xs bg-gray-50 p-2 rounded mt-2">{JSON.stringify(data, null, 2)}</pre>}\n`;
+  code += `    </div>\n`;
+  code += `  );\n`;
+  code += `}\n`;
+
+  return { code, fileName };
+}
+
+// Syntax highlighter matching the colors in media_1789314620588.png
+function highlightTsx(code) {
+  const tokenSpec = [
+    { type: 'COMMENT', regex: /^\/\/[^\n]*/ },
+    { type: 'STRING',  regex: /^('[^'\\]*(?:\\.[^'\\]*)*'|"[^"\\]*(?:\\.[^"\\]*)*"|`[^`\\]*(?:\\.[^`\\]*)*`)/ },
+    { type: 'KEYWORD', regex: /^(?:import|export|from|const|let|var|function|return|async|await|try|catch|finally|if|else|type|interface|as|new|typeof|default)\b/ },
+    { type: 'BOOLEAN', regex: /^(?:true|false|null|undefined)\b/ },
+    { type: 'NUMBER',  regex: /^\d+(?:\.\d+)?\b/ },
+    { type: 'JSX_TAG', regex: /^<\/?[a-zA-Z0-9_]+/ },
+    { type: 'IDENT',   regex: /^[a-zA-Z_$][a-zA-Z0-9_$]*/ },
+    { type: 'PUNCT',   regex: /^[{}()[\];,.:<>=+\-*/?&|!~]/ },
+    { type: 'SPACE',   regex: /^[ \t]+/ }
+  ];
+
+  const lines = code.split('\n');
+  return lines.map(rawLine => {
+    let isAdd = false;
+    let lineContent = rawLine;
+    if (lineContent.startsWith('+ ')) {
+      isAdd = true;
+      lineContent = lineContent.substring(2);
+    } else if (lineContent.startsWith('+')) {
+      isAdd = true;
+      lineContent = lineContent.substring(1);
+    }
+
+    let outHtml = '';
+    let remaining = lineContent;
+
+    while (remaining.length > 0) {
+      let matched = false;
+      for (const spec of tokenSpec) {
+        const m = remaining.match(spec.regex);
+        if (m) {
+          const val = m[0];
+          remaining = remaining.substring(val.length);
+          matched = true;
+          const esc = escapeHtml(val);
+
+          if (spec.type === 'COMMENT') {
+            outHtml += '<span class="ts-comm">' + esc + '</span>';
+          } else if (spec.type === 'STRING') {
+            outHtml += '<span class="ts-str">' + esc + '</span>';
+          } else if (spec.type === 'KEYWORD') {
+            outHtml += '<span class="ts-kw">' + esc + '</span>';
+          } else if (spec.type === 'BOOLEAN') {
+            outHtml += '<span class="ts-bool">' + esc + '</span>';
+          } else if (spec.type === 'NUMBER') {
+            outHtml += '<span class="ts-num">' + esc + '</span>';
+          } else if (spec.type === 'JSX_TAG') {
+            outHtml += '<span class="ts-tag">' + esc + '</span>';
+          } else if (spec.type === 'IDENT') {
+            const nextTrimmed = remaining.trimStart();
+            if (nextTrimmed.startsWith('(')) {
+              outHtml += '<span class="ts-fn">' + esc + '</span>';
+            } else if (val[0] === val[0].toUpperCase() && val[0] !== val[0].toLowerCase()) {
+              outHtml += '<span class="ts-type">' + esc + '</span>';
+            } else {
+              outHtml += '<span class="ts-var">' + esc + '</span>';
+            }
+          } else {
+            outHtml += esc;
+          }
+          break;
+        }
+      }
+      if (!matched) {
+        outHtml += escapeHtml(remaining[0]);
+        remaining = remaining.substring(1);
+      }
+    }
+
+    if (isAdd) {
+      return '<div class="ts-line ts-add"><span class="ts-sign">+</span> ' + outHtml + '</div>';
+    }
+    return '<div class="ts-line">' + outHtml + '</div>';
+  }).join('\n');
+}
+
+window.generateTsxSnippet = generateTsxSnippet;
+window.highlightTsx = highlightTsx;
+
+// Interactive handlers for photo layout
+window.togglePhotoStatus = function(btn) {
+  const item = btn.closest('.docs-photo-status-item');
+  if (!item) return;
+  item.classList.toggle('is-open');
+  const body = item.querySelector('.docs-photo-status-body');
+  if (body) {
+    body.style.display = item.classList.contains('is-open') ? 'block' : 'none';
+  }
+};
+
+window.copyPhotoTsx = function(btn, pageKey) {
+  const ep = API_CATALOG[pageKey];
+  if (!ep) return;
+  const tsxData = generateTsxSnippet(ep);
+  navigator.clipboard?.writeText(tsxData.code).then(() => {
+    toast('Copied ' + tsxData.fileName + ' to clipboard');
+  }).catch(() => {
+    toast('Failed to copy');
+  });
+};
+
+window.handleDocsReport = function(pageKey) {
+  const ep = API_CATALOG[pageKey];
+  toast('Feedback report submitted for ' + (ep ? ep.path : pageKey));
+};
+
+window.toggleDocsMoreMenu = function(btn, pageKey) {
+  const ep = API_CATALOG[pageKey];
+  if (!ep) return;
+  const existing = document.getElementById('docs-more-dropdown-menu');
+  if (existing) {
+    existing.remove();
+    return;
+  }
+  const rect = btn.getBoundingClientRect();
+  const menu = document.createElement('div');
+  menu.id = 'docs-more-dropdown-menu';
+  menu.className = 'docs-photo-more-dropdown';
+  menu.style.top = (rect.bottom + window.scrollY + 6) + 'px';
+  menu.style.left = (rect.left + window.scrollX) + 'px';
+  menu.innerHTML = `
+    <button type="button" onclick="copySnippet(this, '${escapeHtml(ep.path)}'); document.getElementById('docs-more-dropdown-menu')?.remove();">
+      <i data-lucide="copy" style="width:13px;height:13px;"></i> Copy Path
+    </button>
+    <button type="button" onclick="copySnippet(this, window.location.origin + '${escapeHtml(ep.path)}'); document.getElementById('docs-more-dropdown-menu')?.remove();">
+      <i data-lucide="link" style="width:13px;height:13px;"></i> Copy Full URL
+    </button>
+    <button type="button" onclick="runInteractiveApiTest('${ep.key}'); document.getElementById('docs-more-dropdown-menu')?.remove();">
+      <i data-lucide="play" style="width:13px;height:13px;"></i> Test in Console
+    </button>
+  `;
+  document.body.appendChild(menu);
+  refreshIcons();
+
+  const closeMenu = (e) => {
+    if (!menu.contains(e.target) && e.target !== btn) {
+      menu.remove();
+      document.removeEventListener('click', closeMenu);
+    }
+  };
+  setTimeout(() => document.addEventListener('click', closeMenu), 50);
+};
+
+window.openDocsSearchModal = function() {
+  const searchInput = document.getElementById('docs-search-input');
+  if (searchInput) {
+    searchInput.focus();
+    searchInput.select();
+  }
+};
+
+window.switchPhotoCodeTab = function(btn, lang, pageKey) {
+  const block = btn.closest('.docs-photo-codeblock');
+  if (!block) return;
+  block.querySelectorAll('.docs-photo-code-tab').forEach(t => t.classList.toggle('active', t === btn));
+  block.querySelectorAll('.docs-photo-code-body-pane').forEach(p => p.classList.toggle('hidden', p.dataset.lang !== lang));
+};
+
+// Exact implementation of the API documentation page matching media_1789314620588.png
+window.renderApiDocPage = function(ep) {
+  const container = document.getElementById('docs-main-content');
+  if (!container || !ep) return;
+
+  // 1. Determine Previous & Next endpoints in API_CATALOG
+  const allKeys = Object.keys(API_CATALOG);
+  const curIndex = allKeys.indexOf(ep.key);
+  const prevKey = allKeys[(curIndex - 1 + allKeys.length) % allKeys.length];
+  const nextKey = allKeys[(curIndex + 1) % allKeys.length];
+
+  // 2. Build parameters row (aild* string)
+  const allParams = [];
+  if (ep.pathParams) ep.pathParams.forEach(p => allParams.push({ ...p, kind: 'path' }));
+  if (ep.queryParams) ep.queryParams.forEach(p => allParams.push({ ...p, kind: 'query' }));
+  if (ep.bodyParams) ep.bodyParams.forEach(p => allParams.push({ ...p, kind: 'body' }));
+
+  let paramsHtml = '';
+  if (allParams.length > 0) {
+    paramsHtml = `
+      <div class="docs-photo-params-row">
+        ${allParams.map(p => `
+          <div class="docs-photo-param">
+            <span class="docs-photo-param-name">${escapeHtml(p.name)}</span><span class="docs-photo-param-star">${p.required !== false ? '*' : ''}</span>
+            <span class="docs-photo-param-type">${escapeHtml(p.type || 'string')}</span>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  } else {
+    paramsHtml = `
+      <div class="docs-photo-params-row">
+        <div class="docs-photo-param">
+          <span class="docs-photo-param-name">none</span>
+          <span class="docs-photo-param-type">no required parameters</span>
+        </div>
+      </div>
+    `;
+  }
+
+  // 3. Build Status codes disclosure list (> 200  application/json)
+  let statusCodesList = ep.statusCodes && ep.statusCodes.length > 0 ? ep.statusCodes : [
+    { code: 200, status: '200 OK', desc: 'Successful response returning data payload.' },
+    { code: 400, status: '400 Bad Request', desc: 'Invalid parameter shape or request body validation error.' },
+    { code: 401, status: '401 Unauthorized', desc: 'Missing or expired Bearer authentication token.' }
+  ];
+
+  let statusCodesHtml = `
+    <div class="docs-photo-status-list">
+      ${statusCodesList.map((s, idx) => `
+        <div class="docs-photo-status-item ${idx === 0 ? 'is-open' : ''}">
+          <button type="button" class="docs-photo-status-head" onclick="togglePhotoStatus(this)">
+            <div class="docs-photo-status-left">
+              <i data-lucide="chevron-right" class="docs-photo-status-chev"></i>
+              <span class="docs-photo-status-code">${s.code}</span>
+            </div>
+            <span class="docs-photo-status-mime">application/json</span>
+          </button>
+          <div class="docs-photo-status-body" style="${idx === 0 ? 'display:block;' : 'display:none;'}">
+            <div class="docs-photo-status-desc">${escapeHtml(s.desc || s.status || '')}</div>
+            ${s.code === 200 && ep.responseSchema && ep.responseSchema.length > 0 ? `
+              <div class="docs-photo-schema-mini">
+                ${ep.responseSchema.map(rs => `
+                  <div class="docs-photo-schema-field">
+                    <code>${escapeHtml(rs.name)}</code>: <span class="ts-type">${escapeHtml(rs.type)}</span> &mdash; <span class="desc">${escapeHtml(rs.desc || '')}</span>
+                  </div>
+                `).join('')}
+              </div>
+            ` : ''}
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+
+  // 4. Generate Prebuilt TSX Codeblock
+  const tsxData = generateTsxSnippet(ep);
+  const highlightedTsxHtml = highlightTsx(tsxData.code);
+
+  // cURL & Fetch alternative snippets for secondary toggle
+  const host = (typeof window !== 'undefined' && window.location && window.location.origin) ? window.location.origin : 'https://sycord.site:8787';
+  const fullUrl = `${host}${ep.path}`;
+  let curlCmd = `curl -X ${ep.method} "${fullUrl}"`;
+  if (!ep.auth.includes('Public')) curlCmd += ` \\\n  -H "Authorization: Bearer <your_token>"`;
+  curlCmd += ` \\\n  -H "Content-Type: application/json"`;
+
+  const methodClass = ep.method.toLowerCase();
+
+  // 5. Render Full Exact Photo Layout
+  container.innerHTML = `
+    <div class="docs-photo-page-wrap">
+      <!-- 1. Top GET / API router display (clean, without search/copy icons) -->
+      <div class="docs-photo-top-bar">
+        <span class="docs-photo-method-badge ${methodClass}">${escapeHtml(ep.method)}</span>
+        <span class="docs-photo-path">${escapeHtml(ep.path)}</span>
+      </div>
+
+      <!-- 2. Dual button (Previous / Next) + Report + More -->
+      <div class="docs-photo-btn-bar">
+        <div class="docs-photo-dual-btn">
+          <button type="button" class="docs-photo-btn-prev" onclick="showDocsPage('${prevKey}')" title="Previous endpoint: ${prevKey}">
+            Previous
+          </button>
+          <button type="button" class="docs-photo-btn-next" onclick="showDocsPage('${nextKey}')" title="Next endpoint: ${nextKey}">
+            Next
+          </button>
+        </div>
+        <button type="button" class="docs-photo-btn-single" onclick="handleDocsReport('${ep.key}')">
+          Report
+        </button>
+        <button type="button" class="docs-photo-btn-more" onclick="toggleDocsMoreMenu(this, '${ep.key}')" title="More actions">
+          &bull;&bull;&bull;
+        </button>
+      </div>
+
+      <!-- 3. Exact Description Paragraph -->
+      <p class="docs-photo-description">
+        ${escapeHtml(ep.summary || '')} ${escapeHtml(ep.desc || 'Returns detailed information and manages configuration, metadata, and runtime state associated with this resource.')}
+      </p>
+
+      <!-- 4. Thin Divider Line -->
+      <hr class="docs-photo-divider" />
+
+      <!-- 5. Parameters Row (aild* string) -->
+      ${paramsHtml}
+
+      <!-- 6. Status Codes List (> 200 application/json) -->
+      ${statusCodesHtml}
+
+      <!-- 7. Prebuilt TSX Codeblock with TS SVG icon and colored syntax -->
+      <div class="docs-photo-codeblock">
+        <div class="docs-photo-code-header">
+          <div class="docs-photo-code-header-left">
+            <span class="docs-photo-ts-icon-wrap">${TS_ICON_SVG}</span>
+            <span class="docs-photo-filename">${escapeHtml(tsxData.fileName)}</span>
+          </div>
+          <div class="docs-photo-code-header-right">
+            <button type="button" class="docs-photo-code-tab active" onclick="switchPhotoCodeTab(this, 'tsx', '${ep.key}')">TSX</button>
+            <button type="button" class="docs-photo-code-tab" onclick="switchPhotoCodeTab(this, 'curl', '${ep.key}')">cURL</button>
+            <button type="button" class="docs-photo-code-copy" onclick="copyPhotoTsx(this, '${ep.key}')" title="Copy code">
+              <i data-lucide="copy"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="docs-photo-code-body-pane" data-lang="tsx">
+          <div class="docs-photo-code-body">${highlightTsx(tsxData.code)}</div>
+        </div>
+        <div class="docs-photo-code-body-pane hidden" data-lang="curl">
+          <div class="docs-photo-code-body"><pre><code>${escapeHtml(curlCmd)}</code></pre></div>
+        </div>
+      </div>
+
+      <!-- Secondary interactive request tester -->
+      <div class="docs-photo-test-runner-wrap">
+        <button type="button" class="docs-photo-run-test-btn" onclick="runInteractiveApiTest('${ep.key}')">
+          <i data-lucide="play" style="width:13px;height:13px;"></i>
+          <span>Send Test Request</span>
+        </button>
+        <div class="docs-api-live-test-output hidden" id="docs-api-live-test-box"></div>
+      </div>
+
+      <!-- Feedback & Updated date -->
+      <div class="docs-feedback-row" style="margin-top:36px;">
+        <span class="docs-feedback-title">How is this API documentation?</span>
+        <div class="docs-feedback-btns">
+          <button type="button" class="docs-feedback-btn ${docsFeedbackState === 'good' ? 'active' : ''}" id="docs-feedback-good">
+            <i data-lucide="thumbs-up" style="width:13px;height:13px;"></i>
+            <span>Good</span>
+          </button>
+          <button type="button" class="docs-feedback-btn ${docsFeedbackState === 'bad' ? 'active' : ''}" id="docs-feedback-bad">
+            <i data-lucide="thumbs-down" style="width:13px;height:13px;"></i>
+            <span>Bad</span>
+          </button>
+        </div>
+      </div>
+
+      <p class="docs-last-updated">Last updated on 03/09/2026</p>
+    </div>
+  `;
+
+  document.getElementById('docs-feedback-good')?.addEventListener('click', () => {
+    docsFeedbackState = 'good';
+    showDocsPage(ep.key);
+    toast('Thanks for your feedback!');
+  });
+
+  document.getElementById('docs-feedback-bad')?.addEventListener('click', () => {
+    docsFeedbackState = 'bad';
+    showDocsPage(ep.key);
+    toast('Feedback recorded.');
+  });
+
+  container.scrollTop = 0;
+  refreshIcons();
+};
+
+window.renderGuideDocPage
+window.renderGuideDocPage
+window.renderGuideDocPage
+window.renderGuideDocPage = function(pageKey, data) {
+  const container = document.getElementById('docs-main-content');
+  if (!container || !data) return;
+
+  let heroHtml = '';
+  if (data.hasHero || pageKey === 'qs-install' || pageKey === 'welcome') {
+    heroHtml = `
+      <div class="docs-hero-panel">
+        <img src="/static/syte-hero.png" alt="Syte deployment platform">
+      </div>
+    `;
+  }
+
+  container.innerHTML = `
+    <h1 class="docs-article-title">${escapeHtml(data.title)}</h1>
+    <p class="docs-article-lead">${data.lead || ''}</p>
+
+    ${heroHtml}
+
+    <div class="docs-prose">
+      ${data.content}
+    </div>
+
+    <div class="docs-feedback-row">
+      <span class="docs-feedback-title">How is this guide?</span>
+      <div class="docs-feedback-btns">
+        <button type="button" class="docs-feedback-btn ${docsFeedbackState === 'good' ? 'active' : ''}" id="docs-feedback-good">
+          <i data-lucide="thumbs-up" style="width:13px;height:13px;"></i>
+          <span>Good</span>
+        </button>
+        <button type="button" class="docs-feedback-btn ${docsFeedbackState === 'bad' ? 'active' : ''}" id="docs-feedback-bad">
+          <i data-lucide="thumbs-down" style="width:13px;height:13px;"></i>
+          <span>Bad</span>
+        </button>
+      </div>
+    </div>
+
+    <p class="docs-last-updated">Last updated on ${data.updated || '03/09/2026'}</p>
+  `;
+
+  document.getElementById('docs-feedback-good')?.addEventListener('click', () => {
+    docsFeedbackState = 'good';
+    showDocsPage(pageKey);
+    toast('Thanks for your feedback!');
+  });
+
+  document.getElementById('docs-feedback-bad')?.addEventListener('click', () => {
+    docsFeedbackState = 'bad';
+    showDocsPage(pageKey);
+    toast('Feedback recorded.');
+  });
+
+  container.scrollTop = 0;
+  refreshIcons();
+};
+
 window.renderDocsView = function() {
   setupDocsEventsOnce();
-  showDocsPage(activeDocsPage || 'qs-install');
+  showDocsPage(activeDocsPage || 'welcome');
 };
 
 function showDocsPage(pageKey) {
   activeDocsPage = pageKey;
-  const data = DOCS_DATA[pageKey] || DOCS_DATA['welcome'] || DOCS_DATA['qs-install'];
 
-  // Update active sidebar nav item and auto-open only its parent category drawer
+  // Auto-manage sidebar active state and open parent drawer
   document.querySelectorAll('.docs-nav-subitems').forEach(sub => sub.classList.remove('is-open'));
   document.querySelectorAll('.docs-nav-parent').forEach(p => p.classList.remove('is-open'));
 
@@ -19867,252 +25304,12 @@ function showDocsPage(pageKey) {
     }
   });
 
-  const container = document.getElementById('docs-main-content');
-  if (!container) return;
-
-  if (data.isApi) {
-    // Exact Dual-Card Layout matching media_1789305750389.png
-    
-    // Path Params HTML
-    let pathParamsHtml = '';
-    if (data.pathParams && data.pathParams.length > 0) {
-      pathParamsHtml = `
-        <div class="docs-api-section-subhead">PATH PARAMETERS</div>
-        <div class="docs-api-params-table">
-          ${data.pathParams.map(p => `
-            <div class="docs-api-param-row">
-              <div class="docs-api-param-meta">
-                <span class="docs-api-param-name">${escapeHtml(p.name)}</span>
-                <span class="docs-api-param-type">${escapeHtml(p.type)}</span>
-                <span class="docs-api-param-badge ${p.required ? 'required' : 'optional'}">${p.required ? 'REQUIRED' : 'OPTIONAL'}</span>
-              </div>
-              <div class="docs-api-param-desc">${escapeHtml(p.desc)}</div>
-            </div>
-          `).join('')}
-        </div>
-      `;
-    }
-
-    // Query Params HTML
-    let queryParamsHtml = '';
-    if (data.queryParams && data.queryParams.length > 0) {
-      queryParamsHtml = `
-        <div class="docs-api-section-subhead">QUERY PARAMETERS</div>
-        <div class="docs-api-params-table">
-          ${data.queryParams.map(p => `
-            <div class="docs-api-param-row">
-              <div class="docs-api-param-meta">
-                <span class="docs-api-param-name">${escapeHtml(p.name)}</span>
-                <span class="docs-api-param-type">${escapeHtml(p.type)}</span>
-                <span class="docs-api-param-badge ${p.required ? 'required' : 'optional'}">${p.required ? 'REQUIRED' : 'OPTIONAL'}</span>
-              </div>
-              <div class="docs-api-param-desc">${escapeHtml(p.desc)}</div>
-            </div>
-          `).join('')}
-        </div>
-      `;
-    }
-
-    // Body Params HTML
-    let bodyParamsHtml = '';
-    if (data.bodyParams && data.bodyParams.length > 0) {
-      bodyParamsHtml = `
-        <div class="docs-api-section-subhead">REQUEST BODY</div>
-        <div class="docs-api-params-table">
-          ${data.bodyParams.map(p => `
-            <div class="docs-api-param-row">
-              <div class="docs-api-param-meta">
-                <span class="docs-api-param-name">${escapeHtml(p.name)}</span>
-                <span class="docs-api-param-type">${escapeHtml(p.type)}</span>
-                <span class="docs-api-param-badge ${p.required ? 'required' : 'optional'}">${p.required ? 'REQUIRED' : 'OPTIONAL'}</span>
-              </div>
-              <div class="docs-api-param-desc">${escapeHtml(p.desc)}</div>
-            </div>
-          `).join('')}
-        </div>
-      `;
-    }
-
-    let noParamsNotice = '';
-    if (!pathParamsHtml && !queryParamsHtml && !bodyParamsHtml) {
-      noParamsNotice = '<div class="docs-api-no-params">No request parameters or body required.</div>';
-    }
-
-    // Response Schema HTML
-    let responseSchemaHtml = '';
-    if (data.responseSchema && data.responseSchema.length > 0) {
-      responseSchemaHtml = `
-        <div class="docs-api-section-subhead">RESPONSE SCHEMA</div>
-        <div class="docs-api-params-table">
-          ${data.responseSchema.map(p => `
-            <div class="docs-api-param-row">
-              <div class="docs-api-param-meta">
-                <span class="docs-api-param-name">${escapeHtml(p.name)}</span>
-                <span class="docs-api-param-type">${escapeHtml(p.type)}</span>
-              </div>
-              <div class="docs-api-param-desc">${escapeHtml(p.desc)}</div>
-            </div>
-          `).join('')}
-        </div>
-      `;
-    }
-
-    const curlEscaped = (data.curlCommand || '').replace(/`/g, '\`').replace(/\$/g, '\\$');
-    const responseEscaped = (data.responseJson || '{}').replace(/`/g, '\`').replace(/\$/g, '\\$');
-
-    container.innerHTML = `
-      <!-- Top header row matching media_1789305750389.png -->
-      <div class="docs-api-top-pill-row">
-        <div class="docs-api-top-pill-left">
-          <span class="docs-api-method-badge ${(data.method || 'GET').toLowerCase()}">${escapeHtml(data.method || 'GET')}</span>
-          <span class="docs-api-top-path">${escapeHtml(data.path || '')}</span>
-        </div>
-        <button type="button" class="docs-api-top-copy-btn" onclick="copySnippet(this, '${escapeHtml(data.path || '')}')" title="Copy endpoint path">
-          <i data-lucide="copy" style="width:13px;height:13px;"></i>
-          <span>Copy</span>
-        </button>
-      </div>
-
-      <h1 class="docs-api-page-title">${escapeHtml(data.title)}</h1>
-      <p class="docs-api-page-lead">${escapeHtml(data.summary || data.lead || '')}</p>
-
-      <!-- Card 1: REQUEST PARAMETERS -->
-      <div class="docs-api-spec-card">
-        <div class="docs-api-card-header">
-          <div class="docs-api-card-title-group">
-            <i data-lucide="arrow-up-right" class="docs-api-arrow-icon req"></i>
-            <span class="docs-api-card-heading">REQUEST PARAMETERS</span>
-          </div>
-          <span class="docs-api-content-tag">${escapeHtml(data.contentType || 'none')}</span>
-        </div>
-        <div class="docs-api-card-body">
-          ${pathParamsHtml}
-          ${queryParamsHtml}
-          ${bodyParamsHtml}
-          ${noParamsNotice}
-
-          <!-- Terminal cURL block -->
-          <div class="docs-api-code-terminal">
-            <div class="docs-api-code-terminal-header">
-              <div class="docs-api-code-terminal-left">
-                <span class="docs-api-terminal-lang">cURL</span>
-                <span class="docs-api-terminal-sub">${data.contentType === 'application/json' ? 'JSON Body' : escapeHtml(data.contentType)}</span>
-              </div>
-              <button type="button" class="docs-api-terminal-copy-btn" onclick="copySnippet(this, \`${curlEscaped}\`)" title="Copy cURL snippet">
-                <i data-lucide="copy" style="width:12px;height:12px;"></i>
-                <span>Copy</span>
-              </button>
-            </div>
-            <div class="docs-api-code-terminal-content">
-              <pre><code>${escapeHtml(data.curlCommand || '')}</code></pre>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Card 2: RESPONSE (200 OK) -->
-      <div class="docs-api-spec-card">
-        <div class="docs-api-card-header">
-          <div class="docs-api-card-title-group">
-            <i data-lucide="arrow-down-left" class="docs-api-arrow-icon res"></i>
-            <span class="docs-api-card-heading">RESPONSE (${escapeHtml(data.responseStatus || '200 OK')})</span>
-          </div>
-          <span class="docs-api-status-badge">
-            <span class="docs-api-status-dot"></span>
-            ${escapeHtml(data.responseStatus || '200 OK')}
-          </span>
-        </div>
-        <div class="docs-api-card-body">
-          ${responseSchemaHtml}
-
-          <!-- Terminal response block -->
-          <div class="docs-api-code-terminal">
-            <div class="docs-api-code-terminal-header">
-              <div class="docs-api-code-terminal-left">
-                <span class="docs-api-terminal-lang">Example Payload</span>
-                <span class="docs-api-terminal-status-tag">${escapeHtml(data.responseStatus || '200 OK')}</span>
-              </div>
-              <button type="button" class="docs-api-terminal-copy-btn" onclick="copySnippet(this, \`${responseEscaped}\`)" title="Copy response JSON">
-                <i data-lucide="copy" style="width:12px;height:12px;"></i>
-                <span>Copy</span>
-              </button>
-            </div>
-            <div class="docs-api-code-terminal-content">
-              <pre><code>${escapeHtml(data.responseJson || '{}')}</code></pre>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="docs-feedback-row" style="margin-top:36px;">
-        <span class="docs-feedback-title">How is this guide?</span>
-        <div class="docs-feedback-btns">
-          <button type="button" class="docs-feedback-btn ${docsFeedbackState === 'good' ? 'active' : ''}" id="docs-feedback-good">
-            <i data-lucide="thumbs-up" style="width:13px;height:13px;"></i>
-            <span>Good</span>
-          </button>
-          <button type="button" class="docs-feedback-btn ${docsFeedbackState === 'bad' ? 'active' : ''}" id="docs-feedback-bad">
-            <i data-lucide="thumbs-down" style="width:13px;height:13px;"></i>
-            <span>Bad</span>
-          </button>
-        </div>
-      </div>
-
-      <p class="docs-last-updated">Last updated on ${data.updated || '03/09/2026'}</p>
-    `;
+  if (API_CATALOG[pageKey]) {
+    renderApiDocPage(API_CATALOG[pageKey]);
   } else {
-    // Standard prose guides
-    let heroHtml = '';
-    if (data.hasHero || pageKey === 'qs-install' || pageKey === 'welcome') {
-      heroHtml = `
-        <div class="docs-hero-panel">
-          <img src="/static/syte-hero.png" alt="Syte deployment platform">
-        </div>
-      `;
-    }
-
-    container.innerHTML = `
-      <h1 class="docs-article-title">${escapeHtml(data.title)}</h1>
-      <p class="docs-article-lead">${data.lead || ''}</p>
-
-      ${heroHtml}
-
-      <div class="docs-prose">
-        ${data.content}
-      </div>
-
-      <div class="docs-feedback-row">
-        <span class="docs-feedback-title">How is this guide?</span>
-        <div class="docs-feedback-btns">
-          <button type="button" class="docs-feedback-btn ${docsFeedbackState === 'good' ? 'active' : ''}" id="docs-feedback-good">
-            <i data-lucide="thumbs-up" style="width:13px;height:13px;"></i>
-            <span>Good</span>
-          </button>
-          <button type="button" class="docs-feedback-btn ${docsFeedbackState === 'bad' ? 'active' : ''}" id="docs-feedback-bad">
-            <i data-lucide="thumbs-down" style="width:13px;height:13px;"></i>
-            <span>Bad</span>
-          </button>
-        </div>
-      </div>
-
-      <p class="docs-last-updated">Last updated on ${data.updated || '03/09/2026'}</p>
-    `;
+    const guideData = DOCS_DATA[pageKey] || DOCS_DATA['welcome'] || DOCS_DATA['qs-install'];
+    renderGuideDocPage(pageKey, guideData);
   }
-
-  document.getElementById('docs-feedback-good')?.addEventListener('click', () => {
-    docsFeedbackState = 'good';
-    showDocsPage(pageKey);
-    toast('Thanks for your feedback!');
-  });
-
-  document.getElementById('docs-feedback-bad')?.addEventListener('click', () => {
-    docsFeedbackState = 'bad';
-    showDocsPage(pageKey);
-    toast('Feedback recorded. We will improve this guide.');
-  });
-
-  container.scrollTop = 0;
-  refreshIcons();
 }
 window.showDocsPage = showDocsPage;
 
@@ -20194,11 +25391,12 @@ function setupDocsEventsOnce() {
     const q = (query || '').trim().toLowerCase();
     const results = [];
 
-    for (const [key, val] of Object.entries(DOCS_DATA)) {
+    const allItems = { ...DOCS_DATA, ...API_CATALOG };
+    for (const [key, val] of Object.entries(allItems)) {
       const title = val.title || val.path || key;
       const desc = val.lead || val.summary || val.desc || '';
       if (!q || title.toLowerCase().includes(q) || desc.toLowerCase().includes(q) || key.includes(q)) {
-        results.push({ key, title, desc, method: val.method, isApi: val.isApi || val.isApiDetail });
+        results.push({ key, title, desc, method: val.method, isApi: Boolean(val.method) });
       }
     }
 

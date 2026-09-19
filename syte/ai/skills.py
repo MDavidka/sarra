@@ -397,3 +397,114 @@ def get_skill_content(skill_name: str) -> Optional[str]:
     # Default fallback
     return SKILLS_REGISTRY["website-create"]["content"]
 
+
+async def list_available_skills_for_project(project_id: str = "global") -> List[Dict[str, Any]]:
+    """Return summary list of all registered skills including project custom skills by responsibility."""
+    from syte.database import list_project_skills
+    skills: List[Dict[str, Any]] = []
+
+    # 1. Custom project skills
+    if project_id and project_id != "global":
+        custom_skills = await list_project_skills(project_id)
+        for cs in custom_skills:
+            skills.append({
+                "id": cs["id"],
+                "name": cs["name"],
+                "responsibility": cs.get("responsibility") or "general",
+                "category": (cs.get("responsibility") or "General").capitalize(),
+                "description": cs.get("description") or f"Custom {cs.get('responsibility', 'general')} skill.",
+                "content": cs.get("content", ""),
+                "active": cs.get("active", True),
+                "custom": True,
+                "builtin": False,
+            })
+
+    # 2. Built-in registry
+    for key, skill in SKILLS_REGISTRY.items():
+        skills.append({
+            "id": key,
+            "name": skill["name"],
+            "aliases": skill.get("aliases", []),
+            "responsibility": "building" if "architecture" in key or "website" in key else "designing" if "design" in key else "integrating",
+            "category": skill.get("category", "General"),
+            "description": skill["description"],
+            "active": False,
+            "custom": False,
+            "builtin": True,
+        })
+    return skills
+
+
+async def get_skill_content_for_project(skill_name: str, project_id: str = "global") -> Optional[str]:
+    """Retrieve full skill blueprint, checking custom project skills first."""
+    from syte.database import list_project_skills
+    query = (skill_name or "").lower().strip()
+    if not query:
+        return None
+
+    if project_id and project_id != "global":
+        custom_skills = await list_project_skills(project_id)
+        for cs in custom_skills:
+            if query in (cs["id"].lower(), cs["name"].lower()) or query == cs.get("responsibility", "").lower():
+                return f"# Custom Project Skill: {cs['name']} (Responsibility: {cs.get('responsibility', 'general')})\n\n{cs.get('description', '')}\n\n## Instructions & Guidelines:\n{cs.get('content', '')}"
+
+    return get_skill_content(skill_name)
+
+
+async def format_project_skills_for_prompt(project_id: str = "global") -> str:
+    """Format active project skills grouped by responsibility for system prompt injection."""
+    from syte.database import list_project_skills
+    if not project_id or project_id == "global":
+        return ""
+
+    custom_skills = await list_project_skills(project_id, active_only=True)
+    if not custom_skills:
+        return (
+            "\n\n--- SKILLS BY RESPONSIBILITY ---\n"
+            "No custom project skills currently uploaded. When designing, integrating, and building, follow universal best practices.\n"
+            "The user can upload or toggle custom skills in the Skills tab at any time.\n"
+            "---------------------------------\n"
+        )
+
+    by_resp: Dict[str, List[Dict[str, Any]]] = {}
+    for cs in custom_skills:
+        resp = (cs.get("responsibility") or "general").lower()
+        by_resp.setdefault(resp, []).append(cs)
+
+    lines = [
+        "\n\n--- ACTIVE SKILLS BY RESPONSIBILITY (STRICT GUIDELINES) ---",
+        "The user has assigned specialized skills to guide your execution across phases.",
+        "You MUST strictly understand and follow these skills while designing, integrating, building, and testing:\n",
+    ]
+
+    responsibility_titles = {
+        "designing": "🎨 DESIGNING RESPONSIBILITY (UI/UX, Styling, Typography, Layout)",
+        "integrating": "🔌 INTEGRATING RESPONSIBILITY (APIs, Databases, Auth, External Services)",
+        "building": "🏗️ BUILDING RESPONSIBILITY (Architecture, Components, Code Standards)",
+        "testing": "🧪 TESTING RESPONSIBILITY (Validation, Linting, Quality Checks)",
+        "security": "🔒 SECURITY RESPONSIBILITY (Permissions, Env Vars, Safe Practices)",
+        "general": "📋 GENERAL EXECUTION GUIDELINES",
+    }
+
+    for resp, title in responsibility_titles.items():
+        if resp in by_resp:
+            lines.append(f"### {title}")
+            for sk in by_resp[resp]:
+                lines.append(f"• **Skill: {sk['name']}**")
+                if sk.get("description"):
+                    lines.append(f"  *Summary*: {sk['description']}")
+                content_snip = sk.get("content", "").strip()
+                if content_snip:
+                    lines.append(f"  *Instructions*:\n{content_snip}\n")
+
+    for resp, skills_list in by_resp.items():
+        if resp not in responsibility_titles:
+            lines.append(f"### ⚙️ {resp.upper()} RESPONSIBILITY")
+            for sk in skills_list:
+                lines.append(f"• **Skill: {sk['name']}**")
+                lines.append(f"  *Instructions*:\n{sk.get('content', '').strip()}\n")
+
+    lines.append("--------------------------------------------------------------------\n")
+    return "\n".join(lines)
+
+

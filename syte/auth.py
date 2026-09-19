@@ -145,6 +145,14 @@ async def verify_api_token(
                 "message": "Provide X-API-Key header or Authorization: Bearer <token>",
             },
         )
+    bootstrap_token = settings.bootstrap_api_token.strip()
+    if bootstrap_token and hmac.compare_digest(token, bootstrap_token):
+        return {
+            "id": "bootstrap-operator",
+            "name": "bootstrap",
+            "scopes": json.dumps(list(TOKEN_SCOPES)),
+            "rate_limit_per_minute": 1000,
+        }
     token_hash = hash_token(token)
     row = await get_api_token_by_hash(token_hash)
     if not row:

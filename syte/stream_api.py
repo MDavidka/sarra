@@ -130,46 +130,18 @@ async def stream_api_catalog() -> Dict[str, Any]:
 
 
 def get_normalized_models_catalog(settings_data: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Build a unified, deduplicated list of available model profiles for Syte and external clients."""
-    curated = [
-        {"id": "gpt-4o", "name": "GPT-4o (Omni)", "profile": "gpt-4o", "provider": "openai", "enabled": True, "active": True},
-        {"id": "gpt-4o-mini", "name": "GPT-4o Mini", "profile": "gpt-4o-mini", "provider": "openai", "enabled": True, "active": True},
-        {"id": "o3-mini", "name": "o3-mini (Reasoning)", "profile": "o3-mini", "provider": "openai", "enabled": True, "active": True},
-        {"id": "claude-3-5-sonnet-20241022", "name": "Claude 3.5 Sonnet", "profile": "claude-3-5-sonnet-20241022", "provider": "anthropic", "enabled": True, "active": True},
-        {"id": "claude-3-5-haiku-20241022", "name": "Claude 3.5 Haiku", "profile": "claude-3-5-haiku-20241022", "provider": "anthropic", "enabled": True, "active": True},
-        {"id": "gemini-2.0-flash", "name": "Gemini 2.0 Flash", "profile": "gemini-2.0-flash", "provider": "google", "enabled": True, "active": True},
-        {"id": "gemini-1.5-pro", "name": "Gemini 1.5 Pro", "profile": "gemini-1.5-pro", "provider": "google", "enabled": True, "active": True},
-        {"id": "deepseek-chat", "name": "DeepSeek V3", "profile": "deepseek-chat", "provider": "deepseek", "enabled": True, "active": True},
-        {"id": "deepseek-reasoner", "name": "DeepSeek R1 (Reasoner)", "profile": "deepseek-reasoner", "provider": "deepseek", "enabled": True, "active": True},
-        {"id": "qwen2.5-coder", "name": "Qwen 2.5 Coder", "profile": "qwen2.5-coder", "provider": "qwen", "enabled": True, "active": True},
-        {"id": "qwen3.8-flash", "name": "Qwen 3.8 Flash", "profile": "qwen3.8-flash", "provider": "custom", "enabled": True, "active": True},
-        {"id": "syra-base", "name": "Syra Base (Autonomous)", "profile": "syra-base", "provider": "syra", "enabled": True, "active": True},
-        {"id": "syra-nano", "name": "Syra Nano (Fast)", "profile": "syra-nano", "provider": "syra", "enabled": True, "active": True},
-        {"id": "syra-havy", "name": "Syra Heavy (Deep)", "profile": "syra-havy", "provider": "syra", "enabled": True, "active": True},
-        {"id": "syra-ultra", "name": "Syra Ultra (Full-Stack)", "profile": "syra-ultra", "provider": "syra", "enabled": True, "active": True},
-    ]
+    """Build a unified, deduplicated list of available model profiles for Syte and external clients.
+    Only includes models that are actually saved/configured or turned on at Syra."""
+    models: List[Dict[str, Any]] = []
 
-    custom_str = settings_data.get("custom_models") or ""
-    if custom_str:
-        for m in custom_str.split(","):
-            m = m.strip()
-            if m and not any(c["id"] == m or c["profile"] == m for c in curated):
-                curated.append({
-                    "id": m,
-                    "name": m,
-                    "profile": m,
-                    "provider": settings_data.get("provider", "custom"),
-                    "enabled": True,
-                    "active": True,
-                })
-
+    # Include turned-on models from saved providers
     for sp in settings_data.get("saved_providers") or []:
         if isinstance(sp, dict):
             p_name = sp.get("name") or sp.get("provider") or "Custom"
             models_sub = sp.get("models_list") or ([sp.get("model")] if sp.get("model") else [])
             for m in models_sub:
-                if m and not any(c["id"] == m or c["profile"] == m for c in curated):
-                    curated.append({
+                if m and not any(c["id"] == m or c["profile"] == m for c in models):
+                    models.append({
                         "id": m,
                         "name": f"{m} ({p_name})",
                         "profile": m,
@@ -178,18 +150,46 @@ def get_normalized_models_catalog(settings_data: Dict[str, Any]) -> List[Dict[st
                         "active": sp.get("active", True),
                     })
 
+    # Gemini Enterprise Agent Platform models configured with Google Vertex
+    gcp_project = settings_data.get("gcp_project") or ""
+    if gcp_project or settings_data.get("provider") == "google":
+        gemini_enterprise_models = [
+            {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro (Google Vertex)", "profile": "gemini-2.5-pro", "provider": "google", "enabled": True, "active": True},
+            {"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash (Google Vertex)", "profile": "gemini-2.5-flash", "provider": "google", "enabled": True, "active": True},
+            {"id": "gemini-3.8-flash", "name": "Gemini 3.8 Flash (Google Vertex)", "profile": "gemini-3.8-flash", "provider": "google", "enabled": True, "active": True},
+            {"id": "gemini-2.5-flash-lite", "name": "Gemini 2.5 Flash-Lite (Google Vertex)", "profile": "gemini-2.5-flash-lite", "provider": "google", "enabled": True, "active": True},
+            {"id": "gemini-2.5-computer-use", "name": "Gemini 2.5 Computer Use (Google Vertex)", "profile": "gemini-2.5-computer-use", "provider": "google", "enabled": True, "active": True},
+        ]
+        for m in gemini_enterprise_models:
+            if not any(c["id"] == m["id"] or c["profile"] == m["profile"] for c in models):
+                models.append(m)
+
+    custom_str = settings_data.get("custom_models") or ""
+    if custom_str:
+        for m in custom_str.split(","):
+            m = m.strip()
+            if m and not any(c["id"] == m or c["profile"] == m for c in models):
+                models.append({
+                    "id": m,
+                    "name": m,
+                    "profile": m,
+                    "provider": settings_data.get("provider", "custom"),
+                    "enabled": True,
+                    "active": True,
+                })
+
     active_m = str(settings_data.get("model") or "").strip()
-    if active_m and not any(c["id"] == active_m or c["profile"] == active_m for c in curated):
-        curated.insert(0, {
+    if active_m and not any(c["id"] == active_m or c["profile"] == active_m for c in models):
+        models.insert(0, {
             "id": active_m,
             "name": f"{active_m} (Active)",
             "profile": active_m,
-            "provider": settings_data.get("provider", "custom"),
+            "provider": settings_data.get("provider", "google"),
             "enabled": True,
             "active": True,
         })
 
-    return curated
+    return models
 
 
 @router.get("/health")
@@ -200,12 +200,34 @@ async def stream_health() -> Dict[str, Any]:
 @router.get("/models")
 async def stream_models(
     request: Request,
+    project_id: Optional[str] = Query(None, description="Project ID to load active model for"),
+    active_only: bool = Query(False, description="Stream only the model activated in the AI tab"),
     stream: bool = Query(False, description="Stream models as Server-Sent Events"),
 ):
-    """List available AI models or stream them over Better-SSE."""
+    """List available AI models or stream the model activated in the AI tab."""
     from syte.database import get_ai_builder_settings
-    settings_data = await get_ai_builder_settings("global")
+    pid = project_id or "global"
+    settings_data = await get_ai_builder_settings(pid)
     models_list = get_normalized_models_catalog(settings_data)
+
+    active_model_name = str(settings_data.get("model") or "gpt-4o").strip()
+    active_provider = str(settings_data.get("provider") or "openai").strip()
+
+    # Mark active model flag
+    active_model_obj = None
+    for m in models_list:
+        is_active = (m.get("id") == active_model_name or m.get("profile") == active_model_name)
+        m["active"] = is_active
+        m["is_active_in_ai_tab"] = is_active
+        if is_active:
+            active_model_obj = m
+
+    if not active_model_obj and models_list:
+        active_model_obj = models_list[0]
+        active_model_obj["active"] = True
+        active_model_obj["is_active_in_ai_tab"] = True
+
+    models_to_serve = [active_model_obj] if active_only else models_list
 
     accept = request.headers.get("accept", "")
     wants_stream = stream or ("text/event-stream" in accept)
@@ -213,8 +235,15 @@ async def stream_models(
     if wants_stream:
         async def _stream_models_gen():
             yield f"retry: {RETRY_MS}\n\n".encode("ascii")
-            for m in models_list:
-                payload = json.dumps({"model": m}, separators=(",", ":"))
+            for m in models_to_serve:
+                payload = json.dumps({
+                    "event": "model_stream",
+                    "model": m,
+                    "active": m.get("active", False),
+                    "is_active_in_ai_tab": m.get("is_active_in_ai_tab", False),
+                    "active_model": active_model_name,
+                    "active_provider": active_provider,
+                }, separators=(",", ":"))
                 yield f"event: model_stream\ndata: {payload}\n\n".encode("utf-8")
             yield b"event: done\ndata: [DONE]\n\n"
 
@@ -222,12 +251,14 @@ async def stream_models(
 
     return {
         "ok": True,
+        "active_model": active_model_name,
+        "active_provider": active_provider,
+        "current_model": active_model_name,
+        "current_provider": active_provider,
+        "active_model_profile": active_model_obj,
+        "models": models_to_serve,
         "available_models": models_list,
-        "models": models_list,
-        "ai_tab_models": models_list,
         "saved_providers": settings_data.get("saved_providers", []),
-        "current_model": settings_data.get("model", "gpt-4o"),
-        "current_provider": settings_data.get("provider", "openai"),
     }
 
 
@@ -247,12 +278,13 @@ async def stream_chat(
     overrides = {k: v for k, v in body.items() if k != "message" and v is not None}
     session = session_manager.get_or_create_session(project_id)
     since_id = session.last_event_id
-
+    req_id = str(body.get("request_id") or "").strip() or None
     # Start the agent turn
     await session_manager.start_turn(
         project_id=project_id,
         user_message=message,
         settings_override=overrides if overrides else None,
+        request_id=req_id,
     )
 
     async def frames():
