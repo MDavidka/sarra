@@ -32,6 +32,8 @@ DEFAULT_BASE_URLS = {
     "anthropic": "https://api.anthropic.com/v1",
     "deepseek": "https://api.deepseek.com/v1",
     "openrouter": "https://openrouter.ai/api/v1",
+    "nvidia": "https://integrate.api.nvidia.com/v1",
+    "nim": "https://integrate.api.nvidia.com/v1",
     "ollama": "http://localhost:11434/v1",
 }
 
@@ -46,6 +48,8 @@ ENV_KEY_MAP = {
     ],
     "gemini": ["GEMINI_API_KEY", "GOOGLE_API_KEY", "GCP_API_KEY"],
     "google": ["GEMINI_API_KEY", "GOOGLE_API_KEY", "GCP_API_KEY", "VERTEX_API_KEY"],
+    "nvidia": ["NVIDIA_NIM_API_KEY", "NIM_API_KEY", "NVIDIA_API_KEY"],
+    "nim": ["NVIDIA_NIM_API_KEY", "NIM_API_KEY", "NVIDIA_API_KEY"],
     "openai": ["OPENAI_API_KEY"],
     "anthropic": ["ANTHROPIC_API_KEY", "CLAUDE_API_KEY"],
     "deepseek": ["DEEPSEEK_API_KEY"],
@@ -106,6 +110,8 @@ def infer_provider_for_model(model: str) -> str:
         return "deepseek"
     if "glm" in m or "zai" in m or "zhipu" in m:
         return "zai"
+    if "nvidia" in m or "nemotron" in m or m.startswith("nim/") or m.startswith("nim:"):
+        return "nvidia"
     return ""
 
 
@@ -605,12 +611,11 @@ def sanitize_openai_messages(messages: List[Dict[str, Any]], system_prompt: Opti
                         },
                     })
                     pending_tool_ids.add(t_id)
-                    pending_tool_ids.add(tc_id)
 
                 cleaned_msg = {
                     "role": "assistant",
                     "content": m.get("content") or "",
-                    "tool_calls": valid_calls,
+                    "tool_calls": valid_tcs,
                 }
                 sanitized.append(cleaned_msg)
             else:
@@ -691,6 +696,10 @@ class UnifiedAIClient:
                 raw_base_url = "https://openrouter.ai/api/v1"
             else:
                 self.provider = raw_provider or "openrouter"
+        elif inferred in ("nvidia", "nim") or raw_provider in ("nvidia", "nim"):
+            self.provider = "nvidia"
+            if not raw_base_url or "api.b.ai" in raw_base_url:
+                raw_base_url = "https://integrate.api.nvidia.com/v1"
         elif inferred and (raw_provider in ("custom", "") and "api.b.ai" in raw_base_url):
             self.provider = inferred
             raw_base_url = ""
@@ -1040,6 +1049,17 @@ class UnifiedAIClient:
         effective_model = self.model
         if self.provider in ("gemini", "google") or "generativelanguage.googleapis.com" in (self.base_url or ""):
             effective_model = _normalize_google_model(self.model, is_vertex=False)
+        elif self.provider in ("nvidia", "nim") or "api.nvidia.com" in (self.base_url or ""):
+            m_clean = self.model.strip()
+            if m_clean.startswith("nim/"):
+                m_clean = m_clean[4:]
+            elif m_clean.startswith("nim:"):
+                m_clean = m_clean[4:]
+            elif m_clean.startswith("nvidia:"):
+                m_clean = f"nvidia/{m_clean[7:]}"
+            if m_clean in ("nemotron-3-super", "nvidia/nemotron-3-super"):
+                m_clean = "nvidia/nemotron-4-340b-instruct"
+            effective_model = m_clean
 
         url = f"{(self.base_url or '').rstrip('/')}/chat/completions"
         headers = {
@@ -1105,13 +1125,14 @@ class UnifiedAIClient:
 
         for cand_model in candidates:
             payload["model"] = cand_model
-            max_retries = 2 if is_auto_free else 3
+            max_retries = 2 if is_auto_free else (5 if self.provider in ("nvidia", "nim") else 3)
             for attempt in range(max_retries):
                 response, last_err_msg, err_code = await _open_stream(url, payload)
                 if response is not None:
                     break
                 if err_code in (429, 502, 503, 504) and attempt < (max_retries - 1):
-                    await asyncio.sleep(1.0)
+                    backoff = min(1.0 * (2 ** attempt), 8.0)
+                    await asyncio.sleep(backoff)
                     continue
                 if "Connection failed" in last_err_msg and attempt < (max_retries - 1):
                     await asyncio.sleep(1.0)
