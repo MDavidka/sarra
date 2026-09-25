@@ -28,6 +28,8 @@ DEFAULT_BASE_URLS = {
     "vertex": "https://{LOCATION}-aiplatform.googleapis.com/v1/projects/{PROJECT}/locations/{LOCATION}/publishers/google",
     "gemini": "https://generativelanguage.googleapis.com/v1beta/openai",
     "google": "https://generativelanguage.googleapis.com/v1beta/openai",
+    "vercel": "https://ai-gateway.vercel.sh/v1",
+    "vercel_ai_gateway": "https://ai-gateway.vercel.sh/v1",
     "openai": "https://api.openai.com/v1",
     "anthropic": "https://api.anthropic.com/v1",
     "deepseek": "https://api.deepseek.com/v1",
@@ -48,6 +50,8 @@ ENV_KEY_MAP = {
     ],
     "gemini": ["GEMINI_API_KEY", "GOOGLE_API_KEY", "GCP_API_KEY"],
     "google": ["GEMINI_API_KEY", "GOOGLE_API_KEY", "GCP_API_KEY", "VERTEX_API_KEY"],
+    "vercel": ["VERCEL_AI", "VERCEL_AI_KEY", "AI_GATEWAY_API_KEY", "VERCEL_API_KEY"],
+    "vercel_ai_gateway": ["VERCEL_AI", "VERCEL_AI_KEY", "AI_GATEWAY_API_KEY", "VERCEL_API_KEY"],
     "nvidia": ["NVIDIA_NIM_API_KEY", "NIM_API_KEY", "NVIDIA_API_KEY"],
     "nim": ["NVIDIA_NIM_API_KEY", "NIM_API_KEY", "NVIDIA_API_KEY"],
     "openai": ["OPENAI_API_KEY"],
@@ -112,6 +116,8 @@ def infer_provider_for_model(model: str) -> str:
         return "zai"
     if "nvidia" in m or "nemotron" in m or m.startswith("nim/") or m.startswith("nim:"):
         return "nvidia"
+    if "/" in m and not m.startswith("z-ai/"):
+        return "vercel_ai_gateway"
     return ""
 
 
@@ -161,13 +167,16 @@ def extract_error_message(err_code: int, err_body: str, provider: str = "AI") ->
         except Exception:
             err_msg = f"{prov_name} HTTP {err_code}: {err_body[:300]}"
     if err_code in (401, 403):
-        if "API_KEY_SERVICE_BLOCKED" in err_body or "API keys are not supported" in err_body:
-            err_msg = (
-                f"{err_msg} — Native Vertex AI requires a Google Cloud Service Account JSON or OAuth2 token "
-                "(API keys are blocked on Vertex PredictionService unless Vertex AI Express mode is enabled, or use Google AI Studio 'Gemini' provider for API key authentication)."
-            )
-        else:
-            err_msg = f"{err_msg} — Please verify your Google Cloud IAM permissions (Vertex AI User role / roles/aiplatform.user) and billing status."
+        if (provider or "").lower() in ("vertex", "google"):
+            if "API_KEY_SERVICE_BLOCKED" in err_body or "API keys are not supported" in err_body:
+                err_msg = (
+                    f"{err_msg} — Native Vertex AI requires a Google Cloud Service Account JSON or OAuth2 token "
+                    "(API keys are blocked on Vertex PredictionService unless Vertex AI Express mode is enabled, or use Google AI Studio 'Gemini' provider for API key authentication)."
+                )
+            else:
+                err_msg = f"{err_msg} — Please verify your Google Cloud IAM permissions (Vertex AI User role / roles/aiplatform.user) and billing status."
+        elif (provider or "").lower() in ("vercel", "vercel_ai_gateway"):
+            err_msg = f"{err_msg} — Please verify your Vercel AI Gateway key (VERCEL_AI) or model permissions."
     elif err_code == 429:
         err_msg = f"{err_msg} — Rate limit or quota reached. Please check your project billing and quota limits."
     return err_msg
@@ -700,6 +709,9 @@ class UnifiedAIClient:
             self.provider = "nvidia"
             if not raw_base_url or "api.b.ai" in raw_base_url:
                 raw_base_url = "https://integrate.api.nvidia.com/v1"
+        elif inferred == "vercel_ai_gateway" or raw_provider in ("vercel", "vercel_ai_gateway", "alibaba", "qwen", "perplexity", "bfl"):
+            self.provider = "vercel_ai_gateway"
+            raw_base_url = "https://ai-gateway.vercel.sh/v1"
         elif inferred and (raw_provider in ("custom", "") and "api.b.ai" in raw_base_url):
             self.provider = inferred
             raw_base_url = ""
@@ -707,11 +719,13 @@ class UnifiedAIClient:
             self.provider = raw_provider or "openai"
 
         self.api_key = _resolve_api_key(self.provider, api_key)
-        # If switching away from poisoned custom key to vertex or openrouter, resolve proper key
-        if not self.api_key or (self.provider in ("google", "vertex", "openrouter") and self.api_key.startswith("sk-1ea")):
+        # If switching away from poisoned custom key to vertex, openrouter, or vercel, resolve proper key
+        if not self.api_key or (self.provider in ("google", "vertex", "openrouter", "vercel_ai_gateway", "vercel") and (self.api_key.startswith("sk-1ea") or (self.provider in ("vercel_ai_gateway", "vercel") and (self.api_key.startswith("AQ.") or self.api_key.startswith("AIza"))))):
             self.api_key = _resolve_api_key(self.provider) or (
                 _resolve_api_key("gemini") if self.provider == "vertex" else ""
             )
+        if not self.api_key and self.provider in ("vercel_ai_gateway", "vercel"):
+            self.api_key = _resolve_api_key("vercel") or _resolve_api_key("vercel_ai_gateway")
         if not self.api_key and self.provider == "vertex":
             # Auto-hydrate with presaved Vertex handshake
             self.api_key = json.dumps(PRESAVED_VERTEX_SA_INFO)

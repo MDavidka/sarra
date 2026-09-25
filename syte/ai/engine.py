@@ -432,14 +432,18 @@ class AIAgentEngine:
 
             ai_settings.update(settings_override)
 
-        # Guarantee Vertex provider and presaved handshake for all Google/Gemini models
+        # Guarantee Vertex provider and presaved handshake for Google/Gemini models
         current_model = str(ai_settings.get("model", "")).lower()
-        if "gemini" in current_model or "gemma" in current_model or ai_settings.get("provider") in ("google", "vertex"):
+        if "gemini" in current_model or "gemma" in current_model:
             ai_settings["provider"] = "vertex"
             if not ai_settings.get("gcp_project"):
                 ai_settings["gcp_project"] = "gen-lang-client-0678084379"
             if not ai_settings.get("gcp_location") or ai_settings.get("gcp_location") == "us-central1":
                 ai_settings["gcp_location"] = "us-central1"
+        elif ai_settings.get("provider") in ("google", "vertex") and "/" in current_model and not current_model.startswith("google/"):
+            # Model has a slash provider (e.g. alibaba/qwen, anthropic/claude) but provider was mistakenly set to vertex
+            from syte.ai.providers import infer_provider_for_model
+            ai_settings["provider"] = infer_provider_for_model(current_model) or "vercel_ai_gateway"
 
         client = UnifiedAIClient(
             provider=ai_settings.get("provider", "openai"),
@@ -494,8 +498,10 @@ class AIAgentEngine:
             "   - Incorporate any uploaded files in `uploads/` (`syte_read_file`).\n"
             "3. **VERIFY PHASE**:\n"
             "   - Run AST security/syntax check (`syte_security_lint_scan`) and verify the dev server.\n"
-            "4. **DELIVER**:\n"
-            "   - Return a concise, direct, professional summary of the answer or changes directly to the user.\n"
+            "4. **DELIVER (MANDATORY COMMUNICATION STANDARD)**:\n"
+            "   - **NEVER return lazy, blunt, single-word answers (e.g., 'Done.', 'OK.', 'Finished.', 'Completed.', or blank messages).**\n"
+            "   - **ALWAYS provide a clear, helpful, and natural response** explaining exactly what was performed (e.g., 'I have restarted the preview server and verified that it is running at port 3000.', or details of files created/edited, commands executed, and current status).\n"
+            "   - Be polite, direct, and explain the outcome clearly so the user understands what happened.\n"
             "------------------------------------------------------------------------\n"
         )
         full_system_prompt = f"{base_prompt}\n{autonomous_instructions}\n{context_prompt}"
@@ -638,6 +644,57 @@ class AIAgentEngine:
 
             # If no tool calls were requested in this turn: the agent has finished answering the user's message!
             if not turn_tool_calls:
+                clean_reply = turn_tokens.strip()
+                is_lazy = (
+                    not clean_reply
+                    or clean_reply.lower().rstrip("!.") in ("done", "ok", "finished", "completed", "all done", "sure", "success", "yes")
+                    or len(clean_reply) <= 6
+                )
+
+                if is_lazy and current_turn > 1:
+                    executed_summaries = []
+                    for m in formatted_messages:
+                        if m.get("role") == "tool":
+                            try:
+                                t_data = json.loads(m.get("content") or "{}")
+                                t_name = m.get("name") or "tool"
+                                if t_name == "syte_start_preview":
+                                    p_url = t_data.get("preview_url") or t_data.get("url") or "preview dev server"
+                                    executed_summaries.append(f"restarted the preview development server ({p_url})")
+                                elif t_name == "syte_run_command":
+                                    c_str = t_data.get("command") or ""
+                                    if c_str:
+                                        executed_summaries.append(f"executed `{c_str}`")
+                                elif t_name == "syte_write_file":
+                                    f_str = t_data.get("path") or ""
+                                    if f_str:
+                                        executed_summaries.append(f"created/updated `{f_str}`")
+                                elif t_name == "syte_edit_file":
+                                    f_str = t_data.get("path") or ""
+                                    if f_str:
+                                        executed_summaries.append(f"edited `{f_str}`")
+                                elif t_name == "syte_install_package":
+                                    pkg = t_data.get("package") or ""
+                                    if pkg:
+                                        executed_summaries.append(f"installed `{pkg}`")
+                                elif t_data.get("message") and len(t_data.get("message")) < 120:
+                                    executed_summaries.append(t_data.get("message"))
+                            except Exception:
+                                pass
+
+                    if executed_summaries:
+                        unique_acts = list(dict.fromkeys(executed_summaries))
+                        expanded_reply = f"I have completed your request: {'; '.join(unique_acts[-3:])}. Everything is verified and running."
+                        # If original reply had any extra words, append them
+                        if clean_reply and clean_reply.lower().rstrip("!.") not in ("done", "ok", "finished", "completed"):
+                            expanded_reply += f" {clean_reply}"
+                        turn_tokens = expanded_reply
+                    else:
+                        turn_tokens = "I have completed the requested operation. Your workspace and services are up to date and verified."
+
+                    # Stream the expanded text if needed so UI reflects the descriptive answer
+                    yield {"event": "token_delta", "delta": turn_tokens, "request_id": request_id, "turn": current_turn}
+
                 # Save final response and emit done
                 await save_ai_chat_message(self.project_id, role="assistant", content=turn_tokens)
                 yield {

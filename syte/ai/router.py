@@ -877,11 +877,13 @@ async def select_omni_model(body: OmniSelectModelRequest):
             p = model_info.get("provider", "vertex").lower()
             inferred_provider = "vertex" if p in ("google", "vertex") else p
         else:
-            inferred_provider = "openrouter" if ("openrouter" in body.model_id.lower() or ":free" in body.model_id.lower()) else ("vertex" if ("gemini" in body.model_id.lower() or "gemma" in body.model_id.lower()) else "openai")
+            inferred_provider = "openrouter" if ("openrouter" in body.model_id.lower() or ":free" in body.model_id.lower()) else ("vertex" if ("gemini" in body.model_id.lower() or "gemma" in body.model_id.lower()) else ("vercel_ai_gateway" if ("/" in body.model_id and not body.model_id.startswith("z-ai/")) else "openai"))
     elif "openrouter" in body.model_id.lower() or ":free" in body.model_id.lower():
         inferred_provider = "openrouter"
-    elif "gemini" in body.model_id.lower() or "gemma" in body.model_id.lower() or inferred_provider in ("google", "vertex"):
+    elif "gemini" in body.model_id.lower() or "gemma" in body.model_id.lower() or (inferred_provider in ("google", "vertex") and ("/" not in body.model_id or body.model_id.startswith("google/"))):
         inferred_provider = "vertex"
+    elif "/" in body.model_id and not body.model_id.startswith("z-ai/") and inferred_provider in ("google", "vertex", "alibaba", "qwen", "perplexity", "bfl", "vercel"):
+        inferred_provider = "vercel_ai_gateway"
 
     current = await get_ai_builder_settings(target_project_id)
     saved_providers = current.get("saved_providers") or []
@@ -897,13 +899,17 @@ async def select_omni_model(body: OmniSelectModelRequest):
             global_s = await get_ai_builder_settings("global")
             matching = next((p for p in (global_s.get("saved_providers") or []) if p.get("provider") == inferred_provider), None)
 
-        default_base_url = "https://openrouter.ai/api/v1" if inferred_provider == "openrouter" else ""
+        default_base_url = "https://openrouter.ai/api/v1" if inferred_provider == "openrouter" else ("https://ai-gateway.vercel.sh/v1" if inferred_provider in ("vercel", "vercel_ai_gateway") else "")
         resolved_base_url = matching.get("base_url") if (matching and matching.get("base_url")) else default_base_url
         if inferred_provider in ("google", "vertex") and "api.b.ai" in str(resolved_base_url):
             resolved_base_url = ""
+        elif inferred_provider in ("vercel", "vercel_ai_gateway") and not resolved_base_url:
+            resolved_base_url = "https://ai-gateway.vercel.sh/v1"
 
         resolved_api_key = matching.get("api_key") if matching else current.get("api_key", "")
         if inferred_provider in ("google", "vertex", "openrouter") and str(resolved_api_key).startswith("sk-1ea"):
+            resolved_api_key = ""
+        elif inferred_provider in ("vercel", "vercel_ai_gateway") and (str(resolved_api_key).startswith("AQ.") or str(resolved_api_key).startswith("AIza") or str(resolved_api_key).startswith("sk-1ea")):
             resolved_api_key = ""
 
         resolved_gcp_project = matching.get("gcp_project") if (matching and matching.get("gcp_project")) else (current.get("gcp_project") or "gen-lang-client-0678084379")

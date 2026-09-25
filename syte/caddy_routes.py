@@ -67,20 +67,20 @@ def collect_project_routes(
     projects: list[dict],
 ) -> tuple[list[CaddyRoute], list[CaddyRoute]]:
     """Split production and preview routes from project records."""
-    production: list[CaddyRoute] = []
-    preview: list[CaddyRoute] = []
+    production_map: dict[str, CaddyRoute] = {}
+    preview_map: dict[str, CaddyRoute] = {}
     for project in projects:
         name = sanitize_caddy_label(project.get("name") or project.get("id", "project"))
         domain = normalize_domain(project.get("domain") or "")
         port = project.get("port")
         if domain and port and is_safe_caddy_hostname(domain):
-            production.append(CaddyRoute(domain, int(port), name, "production"))
+            production_map[domain] = CaddyRoute(domain, int(port), name, "production")
 
         preview_domain = normalize_domain(project.get("preview_domain") or "")
         preview_port = project.get("preview_port")
         if preview_domain and preview_port and is_safe_caddy_hostname(preview_domain):
-            preview.append(CaddyRoute(preview_domain, int(preview_port), name, "preview"))
-    return production, preview
+            preview_map[preview_domain] = CaddyRoute(preview_domain, int(preview_port), name, "preview")
+    return list(production_map.values()), list(preview_map.values())
 
 
 def collect_custom_tls_routes(projects: list[dict]) -> list[CaddyRoute]:
@@ -89,15 +89,15 @@ def collect_custom_tls_routes(projects: list[dict]) -> list[CaddyRoute]:
     These render as standalone host blocks so an app can pin its own custom
     domain + certificate independently of the shared wildcard zone.
     """
-    custom: list[CaddyRoute] = []
+    custom_map: dict[str, CaddyRoute] = {}
     for project in projects:
         domain = normalize_domain(project.get("custom_tls_domain") or "")
         port = project.get("port")
         enabled = project.get("custom_tls_enabled")
         if domain and port and is_safe_caddy_hostname(domain) and enabled:
             name = sanitize_caddy_label(project.get("name") or project.get("id", "project"))
-            custom.append(CaddyRoute(domain, int(port), name, "custom"))
-    return custom
+            custom_map[domain] = CaddyRoute(domain, int(port), name, "custom")
+    return list(custom_map.values())
 
 
 def render_custom_tls_block(route: CaddyRoute) -> list[str]:
