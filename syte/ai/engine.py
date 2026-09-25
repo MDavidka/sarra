@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 import time
 import uuid
@@ -432,17 +433,17 @@ class AIAgentEngine:
 
             ai_settings.update(settings_override)
 
-        # Guarantee Vertex provider and presaved handshake for Google/Gemini models
-        current_model = str(ai_settings.get("model", "")).lower()
-        if "gemini" in current_model or "gemma" in current_model:
-            ai_settings["provider"] = "vertex"
-            if not ai_settings.get("gcp_project"):
-                ai_settings["gcp_project"] = "gen-lang-client-0678084379"
-            if not ai_settings.get("gcp_location") or ai_settings.get("gcp_location") == "us-central1":
-                ai_settings["gcp_location"] = "us-central1"
-        elif ai_settings.get("provider") in ("google", "vertex") and "/" in current_model and not current_model.startswith("google/"):
-            # Model has a slash provider (e.g. alibaba/qwen, anthropic/claude) but provider was mistakenly set to vertex
-            from syte.ai.providers import infer_provider_for_model
+        # Provider resolution - route all models via Vercel AI Gateway when configured on the host VM
+        current_model = str(ai_settings.get("model", "")).strip()
+        from syte.ai.providers import infer_provider_for_model
+        has_gateway = bool(os.environ.get("VERCEL_AI") or os.environ.get("VERCEL_AI_KEY") or os.environ.get("AI_GATEWAY_API_KEY"))
+        if has_gateway or ai_settings.get("provider") in ("vercel", "vercel_ai_gateway"):
+            ai_settings["provider"] = "vercel_ai_gateway"
+            if not ai_settings.get("base_url"):
+                ai_settings["base_url"] = "https://ai-gateway.vercel.sh/v1"
+            if not ai_settings.get("api_key"):
+                ai_settings["api_key"] = os.environ.get("VERCEL_AI") or os.environ.get("VERCEL_AI_KEY") or os.environ.get("AI_GATEWAY_API_KEY") or ""
+        elif not ai_settings.get("provider") or ai_settings.get("provider") in ("custom", "openai"):
             ai_settings["provider"] = infer_provider_for_model(current_model) or "vercel_ai_gateway"
 
         client = UnifiedAIClient(
@@ -708,7 +709,11 @@ class AIAgentEngine:
                 }
                 yield {
                     "event": "done",
+                    "event_type": "done",
                     "reply": turn_tokens,
+                    "text": turn_tokens,
+                    "content": turn_tokens,
+                    "message": turn_tokens,
                     "request_id": request_id,
                     "turn": current_turn,
                     "turn_duration_ms": int((time.monotonic() - turn_started) * 1000),
@@ -825,8 +830,11 @@ class AIAgentEngine:
 
                 yield {
                     "event": "tool_call_start",
+                    "event_type": "tool_call_start",
                     "tool_call_id": call_id,
                     "tool_name": tool_name,
+                    "title": tool_name,
+                    "detail": status_msg or file_target or cmd_target,
                     "arguments": _brief_arguments(args),
                     "file_path": file_target,
                     "command": cmd_target,
@@ -999,8 +1007,11 @@ class AIAgentEngine:
                 if not tool_result.get("requires_user_input") or not self.session:
                     yield {
                         "event": "tool_call_result",
+                        "event_type": "tool_call_result",
                         "tool_call_id": call_id,
                         "tool_name": tool_name,
+                        "title": tool_name,
+                        "detail": f"Completed {tool_name}" if tool_result.get("ok", True) else f"Failed {tool_name}",
                         "result": _brief_stream_result(tool_result),
                         "file_path": file_target,
                         "command": cmd_target,

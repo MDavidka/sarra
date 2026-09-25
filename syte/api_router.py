@@ -798,6 +798,7 @@ async def api_agent_sessions(
     session = session_manager.get_or_create_session(uuid)
     sess_id = f"sess_{uuid[:8]}"
     turso_url = await get_setting("turso_database_url", "")
+    is_open = bool(session.is_running)
     return {
         "ok": True,
         "uuid": uuid,
@@ -806,11 +807,11 @@ async def api_agent_sessions(
             {
                 "id": sess_id,
                 "session_url": f"/api/agent_session/{sess_id}",
-                "status": "open" if session.is_running else "closed",
+                "status": "open" if is_open else "closed",
                 "turns": session.current_turn,
             }
         ],
-        "open_session": sess_id,
+        "open_session": sess_id if is_open else None,
         "resume_session": sess_id,
     }
 
@@ -840,12 +841,63 @@ async def api_get_agent_session(
     session = session_manager.get_or_create_session(target_uuid)
     raw_events = [evt for evt in session.event_buffer if (evt.get("id") or 0) > since_id]
     next_id = max([evt.get("id", 0) for evt in raw_events] or [since_id])
+
+    normalized_events = []
+    for evt in raw_events:
+        e = dict(evt)
+        et = e.get("event_type") or e.get("event") or "status"
+        e["event_type"] = et
+        e["event"] = et
+        if "payload" not in e or not isinstance(e["payload"], dict):
+            e["payload"] = dict(e)
+        if "title" not in e and "tool_name" in e:
+            e["title"] = e["tool_name"]
+        if "detail" not in e and "message" in e:
+            e["detail"] = e["message"]
+        normalized_events.append(e)
+
+    # When the agent is actively executing in background, inject accumulated text snapshot
+    if session.is_running and session.accumulated_text:
+        snapshot_id = next_id + 1
+        normalized_events.append({
+            "id": snapshot_id,
+            "event": "message_snapshot",
+            "event_type": "message_snapshot",
+            "text": session.accumulated_text,
+            "reply": session.accumulated_text,
+            "content": session.accumulated_text,
+            "payload": {
+                "text": session.accumulated_text,
+                "reply": session.accumulated_text,
+                "content": session.accumulated_text,
+            },
+        })
+
+    # If the session completed and has last_reply, ensure a done event is in the list
+    has_done = any(e.get("event_type") in ("done", "completed") for e in normalized_events)
+    if not session.is_running and session.last_reply and not has_done:
+        done_id = next_id + 1
+        normalized_events.append({
+            "id": done_id,
+            "event": "done",
+            "event_type": "done",
+            "reply": session.last_reply,
+            "text": session.last_reply,
+            "content": session.last_reply,
+            "message": session.last_reply,
+            "payload": {
+                "reply": session.last_reply,
+                "text": session.last_reply,
+                "content": session.last_reply,
+            },
+        })
+
     return {
         "ok": True,
         "id": session_id,
         "project_id": target_uuid,
         "status": "open" if session.is_running else "closed",
-        "events": raw_events,
+        "events": normalized_events,
         "next_since_id": next_id,
     }
 

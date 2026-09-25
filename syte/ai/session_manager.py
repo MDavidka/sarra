@@ -72,6 +72,8 @@ class ProjectAISession:
         self.credentials: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None
         self.last_activity = time.time()
         self.lock = asyncio.Lock()
+        self.accumulated_text = ""
+        self.last_reply = ""
 
         # Monotonic per-session event id (starts at 1; 0 means "no events seen").
         self._next_seq = 0
@@ -113,7 +115,19 @@ class ProjectAISession:
         self._broadcast(event)
 
     def _broadcast(self, event: Dict[str, Any]) -> None:
-        evt_type = str(event.get("event") or "message")
+        evt_type = str(event.get("event_type") or event.get("event") or "message")
+        event["event"] = evt_type
+        event["event_type"] = evt_type
+        if "payload" not in event or not isinstance(event["payload"], dict):
+            event["payload"] = dict(event)
+
+        if evt_type == "token_delta":
+            delta_str = str(event.get("delta") or "")
+            self.accumulated_text += delta_str
+        elif evt_type in ("done", "stopped", "cancelled", "error"):
+            reply_candidate = event.get("reply") or event.get("text") or event.get("content") or self.accumulated_text or ""
+            if reply_candidate:
+                self.last_reply = str(reply_candidate)
 
         if "timestamp" not in event:
             event["timestamp"] = utc_now_iso()
@@ -397,6 +411,8 @@ class AIAgentSessionManager:
 
             session.is_running = True
             session.current_turn += 1
+            session.accumulated_text = ""
+            session.last_reply = ""
             # Filter out old transient token/status chatter from the replay
             # window to prevent reconnect bloat on the next subscriber.
             session._ring = deque(

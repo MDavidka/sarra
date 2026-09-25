@@ -15,6 +15,7 @@ import datetime
 import json
 import logging
 import os
+from pathlib import Path
 import time
 from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
 
@@ -104,6 +105,11 @@ def infer_provider_for_model(model: str) -> str:
     m = _clean_string(model).lower()
     if m.startswith("openrouter") or ":free" in m:
         return "openrouter"
+    # When Vercel AI Gateway is configured (the primary gateway on the VM), route through it
+    if os.environ.get("VERCEL_AI") or os.environ.get("VERCEL_AI_KEY") or os.environ.get("AI_GATEWAY_API_KEY"):
+        return "vercel_ai_gateway"
+    if "/" in m and not m.startswith("z-ai/"):
+        return "vercel_ai_gateway"
     if "gemini" in m or "gemma" in m or "vertex" in m:
         return "vertex"
     if "claude" in m or "sonnet" in m or "haiku" in m or "opus" in m:
@@ -116,9 +122,7 @@ def infer_provider_for_model(model: str) -> str:
         return "zai"
     if "nvidia" in m or "nemotron" in m or m.startswith("nim/") or m.startswith("nim:"):
         return "nvidia"
-    if "/" in m and not m.startswith("z-ai/"):
-        return "vercel_ai_gateway"
-    return ""
+    return "vercel_ai_gateway"
 
 
 def _clean_string(s: str) -> str:
@@ -484,6 +488,16 @@ def _resolve_api_key(provider: str, explicit_key: str = "") -> str:
         val = _clean_api_key(os.environ.get(var, ""))
         if val:
             return val
+    if p in ("vercel", "vercel_ai_gateway"):
+        for path_str in ("/var/lib/syte/vercel_key", "/etc/syte/vercel_key"):
+            try:
+                p_path = Path(path_str)
+                if p_path.is_file():
+                    key_file = _clean_api_key(p_path.read_text())
+                    if key_file:
+                        return key_file
+            except Exception:
+                pass
     return ""
 
 
@@ -738,6 +752,26 @@ class UnifiedAIClient:
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.thinking_level = thinking_level
+
+        # Model alias normalization for Vercel AI Gateway
+        if self.provider in ("vercel", "vercel_ai_gateway"):
+            m_lower = self.model.lower().strip()
+            if m_lower in ("gemma4", "gemma-4", "google/gemma-4", "gemma-4-26b", "google/gemma4", "google/gemma-4-26b-a4b-it", "gemma"):
+                self.model = "google/gemma-4-26b-a4b-it"
+            elif m_lower in ("syra-base", "syra-nano", "gemini-2.5-flash", "gemini-flash", "google/gemini-2.5-flash"):
+                self.model = "google/gemini-2.5-flash"
+            elif m_lower in ("syra-ultra", "qwen", "qwen3", "qwen-plus", "alibaba/qwen3-coder-plus"):
+                self.model = "alibaba/qwen3-coder-plus"
+            elif m_lower in ("syra-havy", "claude", "claude-sonnet", "claude-3-5-sonnet", "claude-3.5-sonnet", "anthropic/claude-sonnet-4.5", "anthropic/claude-3.5-sonnet"):
+                self.model = "anthropic/claude-sonnet-4.5"
+            elif "/" not in self.model:
+                # Default non-slash models on Vercel AI Gateway
+                if "gemini" in m_lower or "gemma" in m_lower:
+                    self.model = f"google/{self.model}"
+                elif "claude" in m_lower:
+                    self.model = f"anthropic/{self.model}"
+                elif "gpt" in m_lower or "o1" in m_lower or "o3" in m_lower:
+                    self.model = f"openai/{self.model}"
 
     async def test_connection(self) -> dict[str, Any]:
         """Test API connectivity and model availability."""
@@ -1099,12 +1133,14 @@ class UnifiedAIClient:
             "stream": True,
         }
         if self.thinking_level and self.thinking_level != "none":
-            if self.thinking_level == "low":
-                payload["reasoning_effort"] = "low"
-            elif self.thinking_level == "medium":
-                payload["reasoning_effort"] = "medium"
-            elif self.thinking_level in ("high", "extra_high", "max"):
-                payload["reasoning_effort"] = "high"
+            m_lower = effective_model.lower()
+            if any(k in m_lower for k in ("o1", "o3", "reasoning", "deepseek-r1", "qwq")):
+                if self.thinking_level == "low":
+                    payload["reasoning_effort"] = "low"
+                elif self.thinking_level == "medium":
+                    payload["reasoning_effort"] = "medium"
+                elif self.thinking_level in ("high", "extra_high", "max"):
+                    payload["reasoning_effort"] = "high"
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
@@ -1144,6 +1180,12 @@ class UnifiedAIClient:
                 response, last_err_msg, err_code = await _open_stream(url, payload)
                 if response is not None:
                     break
+                if err_code == 400 and "reasoning_effort" in payload:
+                    payload.pop("reasoning_effort", None)
+                    continue
+                if err_code == 400 and "temperature" in payload and any(m in str(payload.get("model", "")).lower() for m in ("o1", "o3")):
+                    payload.pop("temperature", None)
+                    continue
                 if err_code in (429, 502, 503, 504) and attempt < (max_retries - 1):
                     backoff = min(1.0 * (2 ** attempt), 8.0)
                     await asyncio.sleep(backoff)

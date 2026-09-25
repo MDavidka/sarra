@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import re
 import time
@@ -871,18 +872,21 @@ async def select_omni_model(body: OmniSelectModelRequest):
     target_project_id = body.project_id or "global"
     model_info = await get_omni_model(body.model_id)
 
+    has_gateway = bool(os.environ.get("VERCEL_AI") or os.environ.get("VERCEL_AI_KEY") or os.environ.get("AI_GATEWAY_API_KEY"))
     inferred_provider = body.provider
-    if not inferred_provider:
-        if model_info:
-            p = model_info.get("provider", "vertex").lower()
-            inferred_provider = "vertex" if p in ("google", "vertex") else p
-        else:
-            inferred_provider = "openrouter" if ("openrouter" in body.model_id.lower() or ":free" in body.model_id.lower()) else ("vertex" if ("gemini" in body.model_id.lower() or "gemma" in body.model_id.lower()) else ("vercel_ai_gateway" if ("/" in body.model_id and not body.model_id.startswith("z-ai/")) else "openai"))
-    elif "openrouter" in body.model_id.lower() or ":free" in body.model_id.lower():
+    if "openrouter" in body.model_id.lower() or ":free" in body.model_id.lower():
         inferred_provider = "openrouter"
-    elif "gemini" in body.model_id.lower() or "gemma" in body.model_id.lower() or (inferred_provider in ("google", "vertex") and ("/" not in body.model_id or body.model_id.startswith("google/"))):
-        inferred_provider = "vertex"
-    elif "/" in body.model_id and not body.model_id.startswith("z-ai/") and inferred_provider in ("google", "vertex", "alibaba", "qwen", "perplexity", "bfl", "vercel"):
+    elif not inferred_provider:
+        if has_gateway or "/" in body.model_id:
+            inferred_provider = "vercel_ai_gateway"
+        elif model_info:
+            p = model_info.get("provider", "vercel_ai_gateway").lower()
+            inferred_provider = "vercel_ai_gateway" if (has_gateway or "/" in body.model_id) else p
+        else:
+            inferred_provider = "vercel_ai_gateway" if has_gateway else "openai"
+    elif inferred_provider in ("vercel", "vercel_ai_gateway") or has_gateway:
+        inferred_provider = "vercel_ai_gateway"
+    elif "/" in body.model_id and not body.model_id.startswith("z-ai/"):
         inferred_provider = "vercel_ai_gateway"
 
     current = await get_ai_builder_settings(target_project_id)
