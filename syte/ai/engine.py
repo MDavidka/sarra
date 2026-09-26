@@ -489,19 +489,20 @@ class AIAgentEngine:
             "- **Component Library**: Use modern styled components (Cards, Pills, Action Buttons, Badges, Hero banners, Feature grids, Responsive navbar with mobile sheet) and clean icons.\n"
             "- **Zero-Placeholder Guarantee**: When modifying code, ALWAYS write complete, production-ready code. Never leave `// TODO`, `/* implement later */`, or truncated mock functions.\n"
             "- **Responsive**: Mobile-first fluid layouts (`grid-cols-1 md:grid-cols-2 lg:grid-cols-3`), touch targets >= 44px, zero horizontal overflow.\n\n"
-            "## 4. STRICT PHASE PROGRESSION: PLAN -> BUILD -> VERIFY (FOR BUILD REQUESTS)\n"
-            "1. **PLAN PHASE (Mandatory for non-trivial changes)**:\n"
-            "   - Before executing code edits, formulate an explicit implementation plan using `syte_create_plan`.\n"
+            "## 4. STRICT PHASE PROGRESSION: PLAN -> BUILD -> VERIFY (FOR ALL TASKS & CODE MODIFICATIONS)\n"
+            "1. **PLAN PHASE (MANDATORY FIRST ACTION)**:\n"
+            "   - For ANY user request that involves writing code, modifying files, debugging, installing dependencies, or building features, YOUR VERY FIRST ACTION MUST BE TO CALL `syte_create_plan`.\n"
+            "   - Break the task into 2 to 5 clear, actionable steps with title, id, and status ('in_progress' for the 1st step, 'pending' for remaining steps).\n"
             "   - Consult active skills by responsibility (Designing, Integrating, Building).\n"
-            "   - If requirements or choices are ambiguous, call `syte_ask_question` to align with the user.\n"
+            "   - If user requirements or secret keys are ambiguous, call `syte_ask_question` or `syte_ask_env_var` to align with the user.\n"
             "2. **BUILD PHASE**:\n"
-            "   - Follow the plan step-by-step, updating plan step status with `syte_update_plan_step`.\n"
+            "   - Follow the plan step-by-step. As you begin each step, call `syte_update_plan_step` with status='in_progress'. When finished, call `syte_update_plan_step` with status='completed'.\n"
             "   - Incorporate any uploaded files in `uploads/` (`syte_read_file`).\n"
             "3. **VERIFY PHASE**:\n"
-            "   - Run AST security/syntax check (`syte_security_lint_scan`) and verify the dev server.\n"
+            "   - Run AST security/syntax check (`syte_security_lint_scan`) and verify the preview server.\n"
             "4. **DELIVER (MANDATORY COMMUNICATION STANDARD)**:\n"
             "   - **NEVER return lazy, blunt, single-word answers (e.g., 'Done.', 'OK.', 'Finished.', 'Completed.', or blank messages).**\n"
-            "   - **ALWAYS provide a clear, helpful, and natural response** explaining exactly what was performed (e.g., 'I have restarted the preview server and verified that it is running at port 3000.', or details of files created/edited, commands executed, and current status).\n"
+            "   - **ALWAYS provide a clear, helpful, and natural response** explaining exactly what was performed (e.g., 'I have created the plan, implemented the requested components, and verified that the preview server is running.', details of files created/edited, commands executed, and outcome).\n"
             "   - Be polite, direct, and explain the outcome clearly so the user understands what happened.\n"
             "------------------------------------------------------------------------\n"
         )
@@ -1083,6 +1084,30 @@ class AIAgentEngine:
                             "turn": current_turn,
                             "timestamp": datetime.now(timezone.utc).isoformat(),
                         }
+
+                # Auto-initialize and broadcast active plan if agent is modifying files without having created one
+                if self.session and not getattr(self.session, "active_plan", None) and tool_name in ("syte_write_file", "syte_edit_file", "syte_run_command", "syte_create_deployment"):
+                    auto_plan = {
+                        "title": "Implementation & Verification",
+                        "steps": [
+                            {"id": "1", "title": "Analyze requirements & plan architecture", "status": "completed"},
+                            {"id": "2", "title": f"Execute code changes ({file_target or cmd_target or tool_name})", "status": "in_progress"},
+                            {"id": "3", "title": "Verify preview and check linting", "status": "pending"},
+                        ],
+                        "rationale": "Auto-initialized plan to guarantee visual progress tracking.",
+                    }
+                    self.session.active_plan = auto_plan
+                    yield {
+                        "event": "plan",
+                        "event_type": "plan",
+                        "plan": auto_plan,
+                        "title": auto_plan["title"],
+                        "steps": auto_plan["steps"],
+                        "payload": {"plan": auto_plan},
+                        "request_id": request_id,
+                        "turn": current_turn,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
 
                 # Save tool result in DB & conversation messages
                 await save_ai_chat_message(

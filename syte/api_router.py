@@ -965,6 +965,12 @@ async def api_agent_change(
         overrides["thinking_level"] = str(body.thinking_level)
     if body.api_key:
         overrides["api_key"] = body.api_key
+    if body.plan_mode:
+        overrides["plan_mode"] = body.plan_mode
+    else:
+        overrides["plan_mode"] = "auto"
+    if body.agent_mode:
+        overrides["agent_mode"] = body.agent_mode
 
     await session_manager.start_turn(
         project_id=body.uuid,
