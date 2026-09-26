@@ -1022,19 +1022,67 @@ class AIAgentEngine:
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     }
 
-                # Sync active plan in session
-                if tool_name == "syte_create_plan" and tool_result.get("plan") and self.session:
-                    self.session.active_plan = tool_result.get("plan")
-                elif tool_name == "syte_update_plan_step" and self.session and getattr(self.session, "active_plan", None):
+                # Sync active plan in session and broadcast live plan event
+                if tool_name == "syte_create_plan" and tool_result.get("plan"):
+                    if self.session:
+                        self.session.active_plan = tool_result.get("plan")
+                    yield {
+                        "event": "plan",
+                        "event_type": "plan",
+                        "plan": tool_result.get("plan"),
+                        "title": (tool_result.get("plan") or {}).get("title", "plan"),
+                        "steps": (tool_result.get("plan") or {}).get("steps", []),
+                        "payload": {
+                            "plan": tool_result.get("plan"),
+                            "title": (tool_result.get("plan") or {}).get("title", "plan"),
+                            "steps": (tool_result.get("plan") or {}).get("steps", []),
+                        },
+                        "request_id": request_id,
+                        "turn": current_turn,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+                elif tool_name == "syte_update_plan_step":
                     step_id = str(args.get("step_id") or "")
                     new_status = str(args.get("status") or "completed")
                     notes = str(args.get("notes") or "")
-                    plan_steps = self.session.active_plan.get("steps") if isinstance(self.session.active_plan, dict) else None
-                    for stp in (plan_steps or []):
-                        if isinstance(stp, dict) and str(stp.get("id")) == step_id:
-                            stp["status"] = new_status
-                            if notes:
-                                stp["notes"] = notes
+                    if self.session and getattr(self.session, "active_plan", None):
+                        plan_steps = self.session.active_plan.get("steps") if isinstance(self.session.active_plan, dict) else None
+                        for stp in (plan_steps or []):
+                            if isinstance(stp, dict) and str(stp.get("id")) == step_id:
+                                stp["status"] = new_status
+                                if notes:
+                                    stp["notes"] = notes
+                        yield {
+                            "event": "plan_update",
+                            "event_type": "plan_update",
+                            "plan": self.session.active_plan,
+                            "step_id": step_id,
+                            "status": new_status,
+                            "payload": {
+                                "plan": self.session.active_plan,
+                                "step_id": step_id,
+                                "status": new_status,
+                            },
+                            "request_id": request_id,
+                            "turn": current_turn,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        }
+                    else:
+                        yield {
+                            "event": "plan_step",
+                            "event_type": "plan_step",
+                            "step_id": step_id,
+                            "status": new_status,
+                            "notes": notes,
+                            "payload": {
+                                "step_id": step_id,
+                                "status": new_status,
+                                "notes": notes,
+                            },
+                            "request_id": request_id,
+                            "turn": current_turn,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        }
 
                 # Save tool result in DB & conversation messages
                 await save_ai_chat_message(
