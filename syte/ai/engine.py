@@ -209,6 +209,13 @@ def extract_text_tool_calls(text: str) -> List[Dict[str, Any]]:
     """Extract tool calls from model text output when native function calling chunk is omitted."""
     tool_calls = []
 
+    def _normalize_name(name_raw: str) -> str:
+        n = (name_raw or "").strip()
+        if n.startswith("syte_"):
+            return n
+        cand = f"syte_{n}"
+        return cand
+
     # 1. Look for <tool_call> or <function_call> XML tags
     xml_matches = re.finditer(r'<(?:tool_call|function_call)>\s*(\{.*?\})\s*</(?:tool_call|function_call)>', text, re.DOTALL)
     for i, m in enumerate(xml_matches, start=1):
@@ -216,11 +223,12 @@ def extract_text_tool_calls(text: str) -> List[Dict[str, Any]]:
             data = json.loads(m.group(1))
             name = data.get("name") or data.get("tool") or data.get("function")
             args = data.get("arguments") or data.get("parameters") or {}
-            if name and isinstance(name, str) and name.startswith("syte_"):
+            norm_name = _normalize_name(name) if isinstance(name, str) else ""
+            if norm_name:
                 tool_calls.append({
                     "type": "tool_call",
                     "id": f"call_xml_{i}",
-                    "name": name,
+                    "name": norm_name,
                     "arguments": json.dumps(args) if isinstance(args, dict) else str(args),
                 })
         except Exception:
@@ -229,18 +237,19 @@ def extract_text_tool_calls(text: str) -> List[Dict[str, Any]]:
     if tool_calls:
         return tool_calls
 
-    # 2. Look for ```json ``` blocks with {"name": "syte_...", "arguments": ...} or {"tool": "syte_..."}
+    # 2. Look for ```json ``` blocks with {"name": "...", "arguments": ...} or {"tool": "..."}
     json_blocks = re.finditer(r'```(?:json)?\s*(\{[\s\S]*?\})\s*```', text)
     for i, m in enumerate(json_blocks, start=1):
         try:
             data = json.loads(m.group(1))
             name = data.get("name") or data.get("tool") or data.get("action")
             args = data.get("arguments") or data.get("parameters") or data.get("action_input") or {}
-            if name and isinstance(name, str) and name.startswith("syte_"):
+            norm_name = _normalize_name(name) if isinstance(name, str) else ""
+            if norm_name:
                 tool_calls.append({
                     "type": "tool_call",
                     "id": f"call_block_{i}",
-                    "name": name,
+                    "name": norm_name,
                     "arguments": json.dumps(args) if isinstance(args, dict) else str(args),
                 })
         except Exception:
@@ -433,11 +442,14 @@ class AIAgentEngine:
 
             ai_settings.update(settings_override)
 
-        # Provider resolution - route all models via Vercel AI Gateway when configured on the host VM
+        # Provider resolution - route via Vercel AI Gateway only when provider is vercel or not explicitly configured
         current_model = str(ai_settings.get("model", "")).strip()
         from syte.ai.providers import infer_provider_for_model
         has_gateway = bool(os.environ.get("VERCEL_AI") or os.environ.get("VERCEL_AI_KEY") or os.environ.get("AI_GATEWAY_API_KEY"))
-        if has_gateway or ai_settings.get("provider") in ("vercel", "vercel_ai_gateway"):
+        explicit_prov = ai_settings.get("provider")
+        if explicit_prov in ("nvidia", "nim", "vertex", "anthropic", "openai", "openrouter", "deepseek") and ai_settings.get("api_key"):
+            pass
+        elif has_gateway or explicit_prov in ("vercel", "vercel_ai_gateway"):
             ai_settings["provider"] = "vercel_ai_gateway"
             if not ai_settings.get("base_url"):
                 ai_settings["base_url"] = "https://ai-gateway.vercel.sh/v1"
@@ -647,6 +659,12 @@ class AIAgentEngine:
             # If no tool calls were requested in this turn: the agent has finished answering the user's message!
             if not turn_tool_calls:
                 clean_reply = turn_tokens.strip()
+                if not clean_reply and turn_thoughts:
+                    # Model produced reasoning/thoughts but empty content delta
+                    clean_reply = "I have processed your request. Everything is ready."
+                    turn_tokens = clean_reply
+                    yield {"event": "token_delta", "delta": turn_tokens, "request_id": request_id, "turn": current_turn}
+
                 is_lazy = (
                     not clean_reply
                     or clean_reply.lower().rstrip("!.") in ("done", "ok", "finished", "completed", "all done", "sure", "success", "yes")

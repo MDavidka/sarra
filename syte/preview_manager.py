@@ -479,7 +479,20 @@ def stop_preview(project_id: str) -> tuple[bool, str]:
         return True, "Preview not running."
     try:
         pid = int(pf.read_text().strip())
-        os.killpg(os.getpgid(pid), signal.SIGTERM)
+        try:
+            pgid = os.getpgid(pid)
+            os.killpg(pgid, signal.SIGTERM)
+            time.sleep(0.15)
+            # Escalate if still alive
+            try:
+                os.killpg(pgid, signal.SIGKILL)
+            except OSError:
+                pass
+        except OSError:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except OSError:
+                pass
     except (OSError, ValueError):
         pass
     pf.unlink(missing_ok=True)
@@ -627,8 +640,10 @@ async def start_preview(project_id: str) -> tuple[bool, str, dict]:
         return False, "Python preview required but python3 is not installed.", {}
 
     preview_port = project.get("preview_port")
-    if not preview_port:
+    if not preview_port or _port_listening(int(preview_port)):
         preview_port = await next_preview_port()
+        await update_project(project_id, {"preview_port": int(preview_port)})
+        project["preview_port"] = int(preview_port)
 
     preview_domain = normalize_domain(project.get("preview_domain") or "")
     if not is_preview_hostname(preview_domain):
