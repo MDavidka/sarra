@@ -687,48 +687,62 @@ class AIAgentEngine:
                 continuation_intent_match = re.search(
                     r'(?i)\b('
                     r'i\s+am\s+continuing|'
+                    r'i\'m\s+continuing|'
                     r'i\s+will\s+now|'
-                    r'proceeding\s+to|'
+                    r'proceeding\s+(?:at|to|with)|'
                     r'continuing\s+(?:at|with|to)|'
-                    r'let\s*(?:\'s|us|me)\s+now\s+(?:proceed|continue|implement|create|edit|run)|'
-                    r'now\s+i\s+(?:will|am\s+going\s+to)|'
-                    r'next\s+(?:step|i\s+will|we\s+will)|'
+                    r'let\s*(?:\'s|us|me)\s+now\s+(?:proceed|continue|implement|create|edit|run|build|start)|'
+                    r'now\s+(?:i\s+will|i\'m\s+going\s+to|i\s+am\s+going\s+to|let\'s|we\s+will)|'
+                    r'next\s+(?:step|i\s+will|we\s+will|,\s*i\s+will)|'
                     r'moving\s+on\s+to\s+step|'
-                    r'step\s+\d+:\s*(?:proceeding|starting|continuing)|'
+                    r'step\s+\d+:\s*(?:proceeding|starting|continuing|implementing|creating|editing|running)|'
                     r'in\s+the\s+next\s+turn|'
-                    r'i\s+am\s+going\s+to\s+execute'
+                    r'i\s+am\s+going\s+to\s+execute|'
+                    r'now\s+(?:implementing|creating|editing|running|updating)'
                     r')\b',
                     clean_reply,
                 )
 
                 has_pending_plan_steps = False
+                next_pending_step_title = ""
                 active_plan_obj = getattr(self.session, "active_plan", None) if self.session else None
                 if active_plan_obj and isinstance(active_plan_obj, dict):
                     plan_steps = active_plan_obj.get("steps") or []
                     for stp in plan_steps:
                         if isinstance(stp, dict) and stp.get("status") in ("in_progress", "pending"):
                             has_pending_plan_steps = True
+                            if not next_pending_step_title:
+                                next_pending_step_title = str(stp.get("title") or stp.get("id") or "next step")
                             break
 
                 # If continuation language was emitted or plan has pending steps, and we haven't exhausted turns:
                 # Do NOT cut off the stream! Seamlessly advance to the next turn to execute the tool actions.
-                if (continuation_intent_match or (has_pending_plan_steps and current_turn == 1)) and current_turn < max_turns:
+                if (continuation_intent_match or has_pending_plan_steps) and current_turn < max_turns:
                     logger.info(
-                        "Continuation intent detected on turn %d (intent=%s, pending_steps=%s). Advancing turn to execute tools.",
+                        "Autonomous continuation detected on turn %d (intent=%s, pending_steps=%s, next_step=%s). Advancing turn.",
                         current_turn,
                         bool(continuation_intent_match),
                         has_pending_plan_steps,
+                        next_pending_step_title,
                     )
                     formatted_messages.append({"role": "assistant", "content": turn_tokens})
-                    directive = (
-                        "[Autonomous Execution Directive]: You indicated you are continuing with the next step. "
-                        "Execute the necessary tool calls immediately (e.g., syte_write_file, syte_edit_file, syte_run_command, "
-                        "syte_update_plan_step). Do not output narrative promises without invoking the required tools."
-                    )
+                    if has_pending_plan_steps and next_pending_step_title:
+                        directive = (
+                            f"[Autonomous Execution Directive]: Incomplete plan steps remain. "
+                            f"Proceed immediately with executing: '{next_pending_step_title}'. "
+                            "Call the required tool (e.g., syte_write_file, syte_edit_file, syte_run_command, "
+                            "syte_update_plan_step). Do not output narrative promises without invoking the required tools."
+                        )
+                    else:
+                        directive = (
+                            "[Autonomous Execution Directive]: You indicated you are continuing with the next step. "
+                            "Execute the necessary tool calls immediately (e.g., syte_write_file, syte_edit_file, syte_run_command, "
+                            "syte_update_plan_step). Do not output narrative promises without invoking the required tools."
+                        )
                     formatted_messages.append({"role": "user", "content": directive})
                     yield {
                         "event": "status",
-                        "message": "Continuing execution with tools…",
+                        "message": f"Continuing execution: {next_pending_step_title or 'next step'}…",
                         "turn": current_turn,
                         "request_id": request_id,
                     }
@@ -773,13 +787,19 @@ class AIAgentEngine:
 
                     if executed_summaries:
                         unique_acts = list(dict.fromkeys(executed_summaries))
-                        expanded_reply = f"I have completed your request: {'; '.join(unique_acts[-3:])}. Everything is verified and running."
+                        if has_pending_plan_steps:
+                            expanded_reply = f"Current phase completed ({'; '.join(unique_acts[-2:])}). Incomplete plan steps remain. Click Continue to proceed with the remaining steps."
+                        else:
+                            expanded_reply = f"I have completed your request: {'; '.join(unique_acts[-3:])}. Everything is verified and running."
                         # If original reply had any extra words, append them
                         if clean_reply and clean_reply.lower().rstrip("!.") not in ("done", "ok", "finished", "completed"):
                             expanded_reply += f" {clean_reply}"
                         turn_tokens = expanded_reply
                     else:
-                        turn_tokens = "I have completed the requested operation. Your workspace and services are up to date and verified."
+                        if has_pending_plan_steps:
+                            turn_tokens = "Turn limit reached. Pending plan steps remain. Click Continue to proceed."
+                        else:
+                            turn_tokens = "I have completed the requested operation. Your workspace and services are up to date and verified."
 
                     # Stream the expanded text if needed so UI reflects the descriptive answer
                     yield {"event": "token_delta", "delta": turn_tokens, "request_id": request_id, "turn": current_turn}
