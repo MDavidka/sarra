@@ -635,6 +635,23 @@ class AIAgentEngine:
                 if parsed_calls:
                     turn_tool_calls = parsed_calls
 
+            # If no active plan exists yet and the model generated a numbered markdown plan, parse it and broadcast
+            if self.session and not getattr(self.session, "active_plan", None):
+                extracted_plan = extract_plan_from_markdown_text("Implementation Plan", turn_tokens)
+                if extracted_plan:
+                    self.session.active_plan = extracted_plan
+                    yield {
+                        "event": "plan",
+                        "event_type": "plan",
+                        "plan": extracted_plan,
+                        "title": extracted_plan.get("title", "Implementation Plan"),
+                        "steps": extracted_plan.get("steps", []),
+                        "payload": {"plan": extracted_plan},
+                        "request_id": request_id,
+                        "turn": current_turn,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+
             # Calculate tokens and deduct from user credit balance ($5.00 starter)
             prompt_chars = sum(len(str(m.get("content") or "")) for m in formatted_messages)
             prompt_tokens_est = max(1, prompt_chars // 4)
@@ -656,7 +673,8 @@ class AIAgentEngine:
                 cost_usd=turn_cost,
             )
 
-            # If no tool calls were requested in this turn: the agent has finished answering the user's message!
+            # If no tool calls were requested in this turn: check whether the model intended to continue
+            # or if the task is genuinely completed!
             if not turn_tool_calls:
                 clean_reply = turn_tokens.strip()
                 if not clean_reply and turn_thoughts:
@@ -664,6 +682,57 @@ class AIAgentEngine:
                     clean_reply = "I have processed your request. Everything is ready."
                     turn_tokens = clean_reply
                     yield {"event": "token_delta", "delta": turn_tokens, "request_id": request_id, "turn": current_turn}
+
+                # Detect if the model stated intent to continue, promised upcoming steps, or has unfinished plan steps
+                continuation_intent_match = re.search(
+                    r'(?i)\b('
+                    r'i\s+am\s+continuing|'
+                    r'i\s+will\s+now|'
+                    r'proceeding\s+to|'
+                    r'continuing\s+(?:at|with|to)|'
+                    r'let\s*(?:\'s|us|me)\s+now\s+(?:proceed|continue|implement|create|edit|run)|'
+                    r'now\s+i\s+(?:will|am\s+going\s+to)|'
+                    r'next\s+(?:step|i\s+will|we\s+will)|'
+                    r'moving\s+on\s+to\s+step|'
+                    r'step\s+\d+:\s*(?:proceeding|starting|continuing)|'
+                    r'in\s+the\s+next\s+turn|'
+                    r'i\s+am\s+going\s+to\s+execute'
+                    r')\b',
+                    clean_reply,
+                )
+
+                has_pending_plan_steps = False
+                active_plan_obj = getattr(self.session, "active_plan", None) if self.session else None
+                if active_plan_obj and isinstance(active_plan_obj, dict):
+                    plan_steps = active_plan_obj.get("steps") or []
+                    for stp in plan_steps:
+                        if isinstance(stp, dict) and stp.get("status") in ("in_progress", "pending"):
+                            has_pending_plan_steps = True
+                            break
+
+                # If continuation language was emitted or plan has pending steps, and we haven't exhausted turns:
+                # Do NOT cut off the stream! Seamlessly advance to the next turn to execute the tool actions.
+                if (continuation_intent_match or (has_pending_plan_steps and current_turn == 1)) and current_turn < max_turns:
+                    logger.info(
+                        "Continuation intent detected on turn %d (intent=%s, pending_steps=%s). Advancing turn to execute tools.",
+                        current_turn,
+                        bool(continuation_intent_match),
+                        has_pending_plan_steps,
+                    )
+                    formatted_messages.append({"role": "assistant", "content": turn_tokens})
+                    directive = (
+                        "[Autonomous Execution Directive]: You indicated you are continuing with the next step. "
+                        "Execute the necessary tool calls immediately (e.g., syte_write_file, syte_edit_file, syte_run_command, "
+                        "syte_update_plan_step). Do not output narrative promises without invoking the required tools."
+                    )
+                    formatted_messages.append({"role": "user", "content": directive})
+                    yield {
+                        "event": "status",
+                        "message": "Continuing execution with tools…",
+                        "turn": current_turn,
+                        "request_id": request_id,
+                    }
+                    continue
 
                 is_lazy = (
                     not clean_reply
