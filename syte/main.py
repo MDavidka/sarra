@@ -193,6 +193,14 @@ app.include_router(ai_router)
 from syte.stream_api import router as stream_router
 app.include_router(stream_router)
 
+# Also mount under /sycord prefix to support Sycord-pages upstream candidate endpoints
+app.include_router(api_router.router, prefix="/sycord/api")
+app.include_router(platform_api.router, prefix="/sycord/api")
+app.include_router(share_api.router, prefix="/sycord/api")
+app.include_router(ai_router, prefix="/sycord")
+app.include_router(stream_router, prefix="/sycord")
+
+
 
 class CreateTokenRequest(BaseModel):
     name: str = Field(default="default", min_length=1, max_length=80)

@@ -71,7 +71,19 @@ def stop_project(project_id: str, deploy_type: str = "shell") -> tuple[bool, str
         return True, "Already stopped."
     try:
         pid = int(pf.read_text().strip())
-        os.killpg(os.getpgid(pid), signal.SIGTERM)
+        try:
+            pgid = os.getpgid(pid)
+            os.killpg(pgid, signal.SIGTERM)
+            time.sleep(0.15)
+            try:
+                os.killpg(pgid, signal.SIGKILL)
+            except OSError:
+                pass
+        except OSError:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except OSError:
+                pass
         pf.unlink(missing_ok=True)
         return True, f"Stopped process {pid}."
     except (OSError, ValueError) as e:

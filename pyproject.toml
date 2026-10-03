@@ -26,3 +26,7 @@ syte = "syte.main:app"
 
 [tool.setuptools.packages.find]
 include = ["syte*"]
+
+[tool.vercel]
+entrypoint = "syte.main:app"
+

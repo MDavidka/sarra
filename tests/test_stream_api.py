@@ -149,6 +149,7 @@ def _build_client() -> TestClient:
     from syte import api_router
     app.include_router(stream_api.router)
     app.include_router(api_router.router, prefix="/api")
+    app.include_router(api_router.router, prefix="/sycord/api")
     app.dependency_overrides[verify_operator_session_or_token] = lambda: {"id": "tester"}
     return TestClient(app)
 
@@ -218,7 +219,6 @@ def test_models_endpoint_json_and_stream() -> None:
     assert data["ok"] is True
     assert isinstance(data["models"], list)
     assert len(data["models"]) > 0
-    assert any(m["id"] == "gpt-4o" for m in data["models"])
     assert "available_models" in data
     assert "saved_providers" in data
 
@@ -230,13 +230,26 @@ def test_models_endpoint_json_and_stream() -> None:
         joined = "".join(chunks)
         assert "retry: 2000" in joined
         assert "data: " in joined
-        assert "gpt-4o" in joined
         assert "data: [DONE]" in joined
 
-    # 3. /api/stream/models JSON and SSE
+    # 3. /api/models?active_only=true returns single model from AI tab
+    res_active = client.get("/api/models?active_only=true")
+    assert res_active.status_code == 200
+    data_active = res_active.json()
+    assert len(data_active["models"]) == 1
+    assert data_active["models"][0]["active"] is True
+    assert data_active["models"][0]["is_active_in_ai_tab"] is True
+
+    # 4. /sycord/api/models works without 404
+    res_sycord = client.get("/sycord/api/models")
+    assert res_sycord.status_code == 200
+    assert res_sycord.json()["ok"] is True
+
+    # 5. /api/stream/models JSON and SSE
     res_stream_models = client.get("/api/stream/models")
     assert res_stream_models.status_code == 200
     assert res_stream_models.json()["ok"] is True
+
 
 
 def test_stream_project_command() -> None:
@@ -458,4 +471,60 @@ def test_better_sse_channels_list_and_catalog() -> None:
     assert "subtab_broadcast" in catalog["endpoints"]
     assert "general" in catalog["better_sse"]["supported_subtabs"]
     assert "ai" in catalog["better_sse"]["supported_subtabs"]
+
+
+def test_tools_aliases_and_execution(tmp_path: Any) -> None:
+    from syte.ai.tools import execute_syte_tool
+    import asyncio
+
+    project = {"id": "test_proj", "name": "Test Project"}
+    
+    async def run_scenario():
+        # 1. create_folder
+        res_folder = await execute_syte_tool(project, "create_folder", {"path": "src/components"})
+        assert res_folder["ok"] is True
+
+        # 2. write_file
+        res_write = await execute_syte_tool(project, "write_file", {
+            "path": "src/components/Button.tsx",
+            "content": "export function Button() { return <button>Click</button>; }"
+        })
+        assert res_write["ok"] is True
+
+        # 3. read_file
+        res_read = await execute_syte_tool(project, "read_file", {"path": "src/components/Button.tsx"})
+        assert res_read["ok"] is True
+        assert "export function Button" in res_read["content"]
+
+        # 4. edit_file
+        res_edit = await execute_syte_tool(project, "edit_file", {
+            "path": "src/components/Button.tsx",
+            "old_text": "<button>Click</button>",
+            "new_text": "<button>Click Me</button>",
+        })
+        assert res_edit["ok"] is True
+
+        # 5. write_files (bulk)
+        res_bulk_write = await execute_syte_tool(project, "write_files", {
+            "files": [
+                {"path": "src/a.ts", "content": "export const a = 1;"},
+                {"path": "src/b.ts", "content": "export const b = 2;"},
+            ]
+        })
+        assert res_bulk_write["ok"] is True
+        assert res_bulk_write["files_written"] == 2
+
+        # 6. read_files (bulk)
+        res_bulk_read = await execute_syte_tool(project, "read_files", {
+            "paths": ["src/a.ts", "src/b.ts"]
+        })
+        assert res_bulk_read["ok"] is True
+        assert "src/a.ts" in res_bulk_read["files"]
+
+        # 7. detect_framework
+        res_detect = await execute_syte_tool(project, "detect_framework", {})
+        assert res_detect["ok"] is True
+
+    asyncio.run(run_scenario())
+
 

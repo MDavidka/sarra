@@ -1,6 +1,6 @@
 # Syte Platform API Reference (v2.4.0)
 
-This document contains the complete specification of all **113 backend API endpoints** available in the Syte deployment platform.
+This document contains the complete developer specification for all **113 backend API endpoints** available in the Syte deployment platform, including authentication, rate limits, headers, parameters, code samples, and response schemas.
 
 ## Table of Contents
 - [System & Health](#system--health) (4 endpoints)
@@ -22,10 +22,24 @@ This document contains the complete specification of all **113 backend API endpo
 ### `GET` /api/health
 **Health check** — Check API availability and core system uptime status.
 
+- **Authentication**: `Public (No Auth Required)`
+- **Content-Type**: `none`
+- **Rate Limit**: `120 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Accept` | `string` | No | `application/json` |
+
 #### Example Request (cURL)
 ```bash
 curl -X GET https://sycord.site:8787/api/health
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -48,11 +62,27 @@ curl -X GET https://sycord.site:8787/api/health
 ### `GET` /api/system
 **System hardware metrics** — Retrieve real-time host VM CPU, memory, disk usage, and OS kernel information.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Example Request (cURL)
 ```bash
 curl -X GET https://sycord.site:8787/api/system \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -87,11 +117,27 @@ curl -X GET https://sycord.site:8787/api/system \
 ### `GET` /api/system/update-info
 **Check release updates** — Query upstream GitHub repository for new release versions and changelog notes.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Example Request (cURL)
 ```bash
 curl -X GET https://sycord.site:8787/api/system/update-info \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -116,11 +162,27 @@ curl -X GET https://sycord.site:8787/api/system/update-info \
 ### `POST` /api/system/update
 **Trigger platform self-update** — Initiate background git pull, dependency install, and systemd service reload.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Example Request (cURL)
 ```bash
 curl -X POST https://sycord.site:8787/api/system/update \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -144,11 +206,27 @@ curl -X POST https://sycord.site:8787/api/system/update \
 ### `GET` /api/notifications/settings
 **Get notification settings** — Fetch alert configuration including webhook endpoints, Discord/Slack hooks, and email alerts.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Example Request (cURL)
 ```bash
 curl -X GET https://sycord.site:8787/api/notifications/settings \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -175,6 +253,17 @@ curl -X GET https://sycord.site:8787/api/notifications/settings \
 ### `PUT` /api/notifications/settings
 **Update notification settings** — Save webhook destinations and notification trigger policies.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
+
 #### Request Body (`application/json`)
 | Field | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -191,6 +280,13 @@ curl -X PUT https://sycord.site:8787/api/notifications/settings \
   -H "Content-Type: application/json" \
   -d '{"notify_on_deploy": true, "notify_on_fail": true}'
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -214,6 +310,16 @@ curl -X PUT https://sycord.site:8787/api/notifications/settings \
 ### `GET` /api/notifications
 **List notifications** — Retrieve in-app notifications and alert history with read/unread flags.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Query Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -225,6 +331,12 @@ curl -X PUT https://sycord.site:8787/api/notifications/settings \
 curl -X GET "https://sycord.site:8787/api/notifications?unread_only=false" \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -254,6 +366,17 @@ curl -X GET "https://sycord.site:8787/api/notifications?unread_only=false" \
 ### `POST` /api/notifications/read
 **Mark notifications read** — Mark one or all notifications as read to clear badge counts.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
+
 #### Request Body (`application/json`)
 | Field | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -266,6 +389,13 @@ curl -X POST https://sycord.site:8787/api/notifications/read \
   -H "Content-Type: application/json" \
   -d '{"notification_ids": ["ntf_01"]}'
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -286,11 +416,25 @@ curl -X POST https://sycord.site:8787/api/notifications/read \
 ### `GET` /api/notifications/push/vapid-public-key
 **Get VAPID public key** — Retrieve public VAPID key used for client Web Push subscription registration.
 
+- **Authentication**: `Public (No Auth Required)`
+- **Content-Type**: `none`
+- **Rate Limit**: `120 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Accept` | `string` | No | `application/json` |
+
 #### Example Request (cURL)
 ```bash
 curl -X GET https://sycord.site:8787/api/notifications/push/vapid-public-key \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -309,6 +453,17 @@ curl -X GET https://sycord.site:8787/api/notifications/push/vapid-public-key \
 ### `POST` /api/notifications/push-subscriptions
 **Register push subscription** — Save a browser ServiceWorker Web Push subscription payload for native push notifications.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
+
 #### Request Body (`application/json`)
 | Field | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -322,6 +477,13 @@ curl -X POST https://sycord.site:8787/api/notifications/push-subscriptions \
   -H "Content-Type: application/json" \
   -d '{"endpoint": "https://fcm.googleapis.com/fcm/send/...", "keys": {"p256dh": "...", "auth": "..."}}'
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -340,11 +502,27 @@ curl -X POST https://sycord.site:8787/api/notifications/push-subscriptions \
 ### `POST` /api/notifications/test
 **Send test notification** — Trigger immediate test notification across all enabled channels (Web Push, Webhook, Discord).
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Example Request (cURL)
 ```bash
 curl -X POST https://sycord.site:8787/api/notifications/test \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -370,10 +548,24 @@ curl -X POST https://sycord.site:8787/api/notifications/test \
 ### `GET` /api/auth/setup
 **Check setup status** — Check whether root administrator account has already been initialized.
 
+- **Authentication**: `Public (No Auth Required)`
+- **Content-Type**: `none`
+- **Rate Limit**: `120 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Accept` | `string` | No | `application/json` |
+
 #### Example Request (cURL)
 ```bash
 curl -X GET https://sycord.site:8787/api/auth/setup
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -392,6 +584,16 @@ curl -X GET https://sycord.site:8787/api/auth/setup
 ### `POST` /api/auth/setup
 **Initialize administrator** — Create primary administrator username and master password during initial deployment.
 
+- **Authentication**: `Public (No Auth Required)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `120 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
+
 #### Request Body (`application/json`)
 | Field | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -404,6 +606,12 @@ curl -X POST https://sycord.site:8787/api/auth/setup \
   -H "Content-Type: application/json" \
   -d '{"username": "admin", "password": "SuperSecretPassword123"}'
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -428,6 +636,16 @@ curl -X POST https://sycord.site:8787/api/auth/setup \
 ### `POST` /api/auth/login
 **User login** — Authenticate user credentials and issue session cookie or bearer token.
 
+- **Authentication**: `Public (No Auth Required)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `120 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
+
 #### Request Body (`application/json`)
 | Field | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -440,6 +658,12 @@ curl -X POST https://sycord.site:8787/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username": "admin", "password": "SuperSecretPassword123"}'
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -465,11 +689,27 @@ curl -X POST https://sycord.site:8787/api/auth/login \
 ### `GET` /api/auth/session
 **Inspect active session** — Validate session token or cookie and return authenticated user identity.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Example Request (cURL)
 ```bash
 curl -X GET https://sycord.site:8787/api/auth/session \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -494,11 +734,27 @@ curl -X GET https://sycord.site:8787/api/auth/session \
 ### `DELETE` /api/auth/session
 **Logout session** — Invalidate current session token and clear authentication cookie.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Example Request (cURL)
 ```bash
 curl -X DELETE https://sycord.site:8787/api/auth/session \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -517,11 +773,27 @@ curl -X DELETE https://sycord.site:8787/api/auth/session \
 ### `GET` /api/auth/profile
 **Get user profile** — Retrieve user profile, contact info, and preferences.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Example Request (cURL)
 ```bash
 curl -X GET https://sycord.site:8787/api/auth/profile \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -544,6 +816,17 @@ curl -X GET https://sycord.site:8787/api/auth/profile \
 ### `PUT` /api/auth/profile
 **Update user profile** — Update user password, email, and display preferences.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
+
 #### Request Body (`application/json`)
 | Field | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -558,6 +841,13 @@ curl -X PUT https://sycord.site:8787/api/auth/profile \
   -H "Content-Type: application/json" \
   -d '{"email": "ops@example.com"}'
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -576,11 +866,27 @@ curl -X PUT https://sycord.site:8787/api/auth/profile \
 ### `GET` /api/operator/session
 **Get operator session** — Check if an elevated maintenance operator session is currently active.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Example Request (cURL)
 ```bash
 curl -X GET https://sycord.site:8787/api/operator/session \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -601,6 +907,17 @@ curl -X GET https://sycord.site:8787/api/operator/session \
 ### `POST` /api/operator/session
 **Start operator session** — Elevate current session with operator secret to bypass project quotas and access root controls.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
+
 #### Request Body (`application/json`)
 | Field | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -613,6 +930,13 @@ curl -X POST https://sycord.site:8787/api/operator/session \
   -H "Content-Type: application/json" \
   -d '{"operator_key": "op_sec_999"}'
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -631,11 +955,27 @@ curl -X POST https://sycord.site:8787/api/operator/session \
 ### `DELETE` /api/operator/session
 **End operator session** — Revoke elevated operator privileges and return to normal permission scope.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Example Request (cURL)
 ```bash
 curl -X DELETE https://sycord.site:8787/api/operator/session \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -654,11 +994,27 @@ curl -X DELETE https://sycord.site:8787/api/operator/session \
 ### `GET` /api/tokens
 **List API tokens** — List all active programmatic API tokens with permissions and last used timestamps.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Example Request (cURL)
 ```bash
 curl -X GET https://sycord.site:8787/api/tokens \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -685,6 +1041,17 @@ curl -X GET https://sycord.site:8787/api/tokens \
 ### `POST` /api/tokens
 **Create API token** — Generate a new persistent API token for CI/CD pipelines and external integrations.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
+
 #### Request Body (`application/json`)
 | Field | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -698,6 +1065,13 @@ curl -X POST https://sycord.site:8787/api/tokens \
   -H "Content-Type: application/json" \
   -d '{"name": "GitHub Actions CI", "expires_in_days": 90}'
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `201` | `201 Created` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
 
 #### Response Schema (201 Created)
 | Field | Type | Description |
@@ -719,6 +1093,16 @@ curl -X POST https://sycord.site:8787/api/tokens \
 ### `DELETE` /api/tokens/{token_id}
 **Revoke API token** — Immediately revoke and permanently delete an API token.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -729,6 +1113,13 @@ curl -X POST https://sycord.site:8787/api/tokens \
 curl -X DELETE https://sycord.site:8787/api/tokens/tok_9918 \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -749,11 +1140,27 @@ curl -X DELETE https://sycord.site:8787/api/tokens/tok_9918 \
 ### `GET` /api/settings
 **Get platform settings** — Retrieve global system settings, networking defaults, and domain configuration.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Example Request (cURL)
 ```bash
 curl -X GET https://sycord.site:8787/api/settings \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -776,6 +1183,17 @@ curl -X GET https://sycord.site:8787/api/settings \
 ### `PUT` /api/settings
 **Save platform settings** — Update global system settings and networking defaults.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
+
 #### Request Body (`application/json`)
 | Field | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -789,6 +1207,13 @@ curl -X PUT https://sycord.site:8787/api/settings \
   -H "Content-Type: application/json" \
   -d '{"max_concurrent_builds": 4}'
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -807,11 +1232,27 @@ curl -X PUT https://sycord.site:8787/api/settings \
 ### `GET` /api/settings/cache
 **Get cache metrics** — Inspect disk usage by build caches, docker layers, and temporary file artifacts.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Example Request (cURL)
 ```bash
 curl -X GET https://sycord.site:8787/api/settings/cache \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -834,11 +1275,27 @@ curl -X GET https://sycord.site:8787/api/settings/cache \
 ### `POST` /api/settings/cache/clear
 **Clear system cache** — Purge build caches, temporary zip extractions, and unused Docker layers to free disk space.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Example Request (cURL)
 ```bash
 curl -X POST https://sycord.site:8787/api/settings/cache/clear \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -859,11 +1316,27 @@ curl -X POST https://sycord.site:8787/api/settings/cache/clear \
 ### `GET` /api/settings/github
 **Get GitHub App config** — Retrieve configured GitHub OAuth Client ID, App ID, and installation status.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Example Request (cURL)
 ```bash
 curl -X GET https://sycord.site:8787/api/settings/github \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -884,6 +1357,17 @@ curl -X GET https://sycord.site:8787/api/settings/github \
 ### `PUT` /api/settings/github
 **Update GitHub App config** — Save GitHub OAuth application credentials for repository imports and webhook triggers.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
+
 #### Request Body (`application/json`)
 | Field | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -897,6 +1381,13 @@ curl -X PUT https://sycord.site:8787/api/settings/github \
   -H "Content-Type: application/json" \
   -d '{"client_id": "Iv1.8941829abc", "client_secret": "sec_gh_8921"}'
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -915,11 +1406,27 @@ curl -X PUT https://sycord.site:8787/api/settings/github \
 ### `POST` /api/settings/github/test
 **Test GitHub credentials** — Validate GitHub OAuth credentials against GitHub REST API.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Example Request (cURL)
 ```bash
 curl -X POST https://sycord.site:8787/api/settings/github/test \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -939,11 +1446,27 @@ curl -X POST https://sycord.site:8787/api/settings/github/test \
 ### `GET` /api/github/status
 **Check GitHub link status** — Check if active user session is linked with a GitHub account.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Example Request (cURL)
 ```bash
 curl -X GET https://sycord.site:8787/api/github/status \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -964,6 +1487,16 @@ curl -X GET https://sycord.site:8787/api/github/status \
 ### `GET` /api/github/pulls
 **List project pull requests** — Fetch open pull requests from linked GitHub repository for preview environment generation.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Query Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -974,6 +1507,12 @@ curl -X GET https://sycord.site:8787/api/github/status \
 curl -X GET "https://sycord.site:8787/api/github/pulls?repo=MDavidka/sarra" \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -1000,6 +1539,17 @@ curl -X GET "https://sycord.site:8787/api/github/pulls?repo=MDavidka/sarra" \
 ### `POST` /api/github/pulls/{number}/merge
 **Merge GitHub pull request** — Trigger automated merge of approved pull request into target production branch.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -1017,6 +1567,14 @@ curl -X POST https://sycord.site:8787/api/github/pulls/515/merge \
   -H "Content-Type: application/json" \
   -d '{"merge_method": "squash"}'
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -1039,11 +1597,27 @@ curl -X POST https://sycord.site:8787/api/github/pulls/515/merge \
 ### `GET` /api/ssl
 **Global SSL status** — Check status of ACME Let's Encrypt certificates and TLS expiration dates.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Example Request (cURL)
 ```bash
 curl -X GET https://sycord.site:8787/api/ssl \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -1069,6 +1643,17 @@ curl -X GET https://sycord.site:8787/api/ssl \
 ### `POST` /api/ssl/resolve
 **Resolve DNS records** — Perform live DNS A and CNAME record resolution to test propagation before issuing SSL.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
+
 #### Request Body (`application/json`)
 | Field | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -1081,6 +1666,13 @@ curl -X POST https://sycord.site:8787/api/ssl/resolve \
   -H "Content-Type: application/json" \
   -d '{"domain": "app.sycord.site"}'
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -1103,6 +1695,17 @@ curl -X POST https://sycord.site:8787/api/ssl/resolve \
 ### `POST` /api/ssl/projects/{project_id}/custom-tls
 **Upload custom TLS certificate** — Upload custom SSL certificate and private key for enterprise domain hosting.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -1121,6 +1724,14 @@ curl -X POST https://sycord.site:8787/api/ssl/projects/proj_94821a/custom-tls \
   -H "Content-Type: application/json" \
   -d '{"certificate_pem": "-----BEGIN CERTIFICATE...", "private_key_pem": "-----BEGIN RSA PRIVATE KEY..."}'
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -1141,6 +1752,16 @@ curl -X POST https://sycord.site:8787/api/ssl/projects/proj_94821a/custom-tls \
 ### `GET` /api/certificates/guide
 **Get certificate guide** — Get required DNS CNAME/A record targets and automated ACME issuance guidance.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Query Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -1151,6 +1772,12 @@ curl -X POST https://sycord.site:8787/api/ssl/projects/proj_94821a/custom-tls \
 curl -X GET "https://sycord.site:8787/api/certificates/guide?domain=app.example.com" \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -1172,6 +1799,17 @@ curl -X GET "https://sycord.site:8787/api/certificates/guide?domain=app.example.
 ### `POST` /api/certificates/issue
 **Issue Let's Encrypt SSL** — Execute automated HTTP-01 or DNS-01 ACME challenge to issue Let's Encrypt SSL certificate.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
+
 #### Request Body (`application/json`)
 | Field | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -1184,6 +1822,13 @@ curl -X POST https://sycord.site:8787/api/certificates/issue \
   -H "Content-Type: application/json" \
   -d '{"domain": "app.example.com"}'
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -1208,11 +1853,27 @@ curl -X POST https://sycord.site:8787/api/certificates/issue \
 ### `GET` /api/projects
 **List all projects** — Retrieve an array of all hosted web applications and backend services.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Example Request (cURL)
 ```bash
 curl -X GET https://sycord.site:8787/api/projects \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -1239,6 +1900,17 @@ curl -X GET https://sycord.site:8787/api/projects \
 ### `POST` /api/projects
 **Create new project** — Create and initialize a new project workspace directory and configuration.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
+
 #### Request Body (`application/json`)
 | Field | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -1253,6 +1925,13 @@ curl -X POST https://sycord.site:8787/api/projects \
   -H "Content-Type: application/json" \
   -d '{"name": "my-api", "framework": "fastapi", "port": 8000}'
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `201` | `201 Created` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
 
 #### Response Schema (201 Created)
 | Field | Type | Description |
@@ -1276,6 +1955,16 @@ curl -X POST https://sycord.site:8787/api/projects \
 ### `GET` /api/projects/{project_id}
 **Get project details** — Retrieve complete runtime metadata, environment keys, domains, and health status for a project.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -1286,6 +1975,13 @@ curl -X POST https://sycord.site:8787/api/projects \
 curl -X GET https://sycord.site:8787/api/projects/proj_94821a \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -1314,6 +2010,17 @@ curl -X GET https://sycord.site:8787/api/projects/proj_94821a \
 ### `PUT` /api/projects/{project_id}
 **Update project settings** — Modify project configuration including assigned port, framework, and build scripts.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -1333,6 +2040,14 @@ curl -X PUT https://sycord.site:8787/api/projects/proj_94821a \
   -d '{"port": 8080}'
 ```
 
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
+
 #### Response Schema (200 OK)
 | Field | Type | Description |
 | :--- | :--- | :--- |
@@ -1350,6 +2065,16 @@ curl -X PUT https://sycord.site:8787/api/projects/proj_94821a \
 ### `DELETE` /api/projects/{project_id}
 **Delete project** — Permanently stop container, wipe workspace directory, remove domains, and delete project database record.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -1360,6 +2085,13 @@ curl -X PUT https://sycord.site:8787/api/projects/proj_94821a \
 curl -X DELETE https://sycord.site:8787/api/projects/proj_94821a \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -1378,6 +2110,16 @@ curl -X DELETE https://sycord.site:8787/api/projects/proj_94821a \
 ### `POST` /api/projects/{project_id}/start
 **Start project container** — Start background systemd/docker container process for project.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -1388,6 +2130,13 @@ curl -X DELETE https://sycord.site:8787/api/projects/proj_94821a \
 curl -X POST https://sycord.site:8787/api/projects/proj_94821a/start \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -1406,6 +2155,16 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/start \
 ### `POST` /api/projects/{project_id}/stop
 **Stop project container** — Gracefully terminate project container and halt process execution.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -1416,6 +2175,13 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/start \
 curl -X POST https://sycord.site:8787/api/projects/proj_94821a/stop \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -1434,6 +2200,17 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/stop \
 ### `POST` /api/projects/{project_id}/domain
 **Bind custom domain** — Bind custom apex or subdomain with automatic SSL certificate provisioning and reverse proxy routing.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -1451,6 +2228,14 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/domain \
   -H "Content-Type: application/json" \
   -d '{"domain": "docs.sycord.site"}'
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -1473,6 +2258,16 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/domain \
 ### `DELETE` /api/projects/{project_id}/domain
 **Unbind custom domain** — Remove custom domain binding and restore default platform subdomain routing.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -1483,6 +2278,13 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/domain \
 curl -X DELETE https://sycord.site:8787/api/projects/proj_94821a/domain \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -1501,6 +2303,17 @@ curl -X DELETE https://sycord.site:8787/api/projects/proj_94821a/domain \
 ### `PUT` /api/projects/{project_id}/environment
 **Upsert environment variables** — Securely set or update environment variables and secrets injected into runtime container.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -1518,6 +2331,14 @@ curl -X PUT https://sycord.site:8787/api/projects/proj_94821a/environment \
   -H "Content-Type: application/json" \
   -d '{"variables": {"DATABASE_URL": "postgres://...", "NODE_ENV": "production"}}'
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -1541,6 +2362,16 @@ curl -X PUT https://sycord.site:8787/api/projects/proj_94821a/environment \
 ### `DELETE` /api/projects/{project_id}/environment/{key}
 **Delete environment variable** — Remove a specific environment variable from project configuration.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -1552,6 +2383,13 @@ curl -X PUT https://sycord.site:8787/api/projects/proj_94821a/environment \
 curl -X DELETE https://sycord.site:8787/api/projects/proj_94821a/environment/DATABASE_URL \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -1570,6 +2408,16 @@ curl -X DELETE https://sycord.site:8787/api/projects/proj_94821a/environment/DAT
 ### `GET` /api/projects/{project_id}/health
 **Check project health probe** — Perform direct HTTP health probe on project listener port to check readiness.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -1580,6 +2428,13 @@ curl -X DELETE https://sycord.site:8787/api/projects/proj_94821a/environment/DAT
 curl -X GET https://sycord.site:8787/api/projects/proj_94821a/health \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -1599,6 +2454,17 @@ curl -X GET https://sycord.site:8787/api/projects/proj_94821a/health \
 
 ### `PUT` /api/projects/{project_id}/deployment-config
 **Update deployment config** — Configure build command, start script, install command, and root output directory.
+
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
 
 #### Path Parameters
 | Name | Type | Required | Description |
@@ -1621,6 +2487,14 @@ curl -X PUT https://sycord.site:8787/api/projects/proj_94821a/deployment-config 
   -d '{"build_command": "npm run build", "start_command": "npm run start"}'
 ```
 
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
+
 #### Response Schema (200 OK)
 | Field | Type | Description |
 | :--- | :--- | :--- |
@@ -1638,6 +2512,16 @@ curl -X PUT https://sycord.site:8787/api/projects/proj_94821a/deployment-config 
 ### `POST` /api/projects/{project_id}/analyze
 **Analyze project source** — Inspect workspace files to auto-detect framework, package manager, and required start commands.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -1648,6 +2532,13 @@ curl -X PUT https://sycord.site:8787/api/projects/proj_94821a/deployment-config 
 curl -X POST https://sycord.site:8787/api/projects/proj_94821a/analyze \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -1675,6 +2566,16 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/analyze \
 ### `POST` /api/projects/{project_id}/deploy-detected
 **Deploy detected framework** — Automatically apply detected build configuration and trigger initial deployment pipeline.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -1685,6 +2586,13 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/analyze \
 curl -X POST https://sycord.site:8787/api/projects/proj_94821a/deploy-detected \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -1707,6 +2615,16 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/deploy-detected \
 ### `GET` /api/projects/{project_id}/builds
 **List project builds** — Retrieve historical build records, git commit SHAs, build duration, and pass/fail statuses.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -1722,6 +2640,13 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/deploy-detected \
 curl -X GET https://sycord.site:8787/api/projects/proj_94821a/builds \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -1748,6 +2673,16 @@ curl -X GET https://sycord.site:8787/api/projects/proj_94821a/builds \
 ### `GET` /api/projects/{project_id}/builds/track
 **Track active build** — Poll or track progress of currently executing build step and status.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -1758,6 +2693,13 @@ curl -X GET https://sycord.site:8787/api/projects/proj_94821a/builds \
 curl -X GET https://sycord.site:8787/api/projects/proj_94821a/builds/track \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -1780,6 +2722,16 @@ curl -X GET https://sycord.site:8787/api/projects/proj_94821a/builds/track \
 ### `POST` /api/projects/{project_id}/builds/trigger
 **Trigger new build** — Enqueue an immediate new build and deployment execution for the project.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -1790,6 +2742,13 @@ curl -X GET https://sycord.site:8787/api/projects/proj_94821a/builds/track \
 curl -X POST https://sycord.site:8787/api/projects/proj_94821a/builds/trigger \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `201` | `201 Created` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (201 Created)
 | Field | Type | Description |
@@ -1810,6 +2769,16 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/builds/trigger \
 ### `GET` /api/projects/{project_id}/builds/{build_id}/logs
 **Get build run logs** — Retrieve complete build execution log output for a specific build ID.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -1821,6 +2790,13 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/builds/trigger \
 curl -X GET https://sycord.site:8787/api/projects/proj_94821a/builds/bld_77491/logs \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -1839,6 +2815,16 @@ curl -X GET https://sycord.site:8787/api/projects/proj_94821a/builds/bld_77491/l
 ### `GET` /api/projects/{project_id}/deployments/{build_id}/logs
 **Get deployment container logs** — Retrieve runtime stdout/stderr log output from container during specific deployment execution.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -1850,6 +2836,13 @@ curl -X GET https://sycord.site:8787/api/projects/proj_94821a/builds/bld_77491/l
 curl -X GET https://sycord.site:8787/api/projects/proj_94821a/deployments/bld_77491/logs \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -1868,6 +2861,16 @@ curl -X GET https://sycord.site:8787/api/projects/proj_94821a/deployments/bld_77
 ### `POST` /api/projects/{project_id}/deploy
 **Issue immediate deploy** — Trigger immediate atomic production deployment without rebuild if artifact is fresh.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -1878,6 +2881,13 @@ curl -X GET https://sycord.site:8787/api/projects/proj_94821a/deployments/bld_77
 curl -X POST https://sycord.site:8787/api/projects/proj_94821a/deploy \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -1898,6 +2908,16 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/deploy \
 ### `GET` /api/projects/{project_id}/deployments
 **List deployment revisions** — Retrieve deployment history list with commit tags, active production pointers, and rollback targets.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -1908,6 +2928,13 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/deploy \
 curl -X GET https://sycord.site:8787/api/projects/proj_94821a/deployments \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -1939,6 +2966,16 @@ curl -X GET https://sycord.site:8787/api/projects/proj_94821a/deployments \
 ### `POST` /api/projects/{project_id}/deployments/{run_id}/rollback
 **Rollback deployment** — Instantly switch active production traffic back to a previous healthy deployment snapshot.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -1950,6 +2987,13 @@ curl -X GET https://sycord.site:8787/api/projects/proj_94821a/deployments \
 curl -X POST https://sycord.site:8787/api/projects/proj_94821a/deployments/dep_19480/rollback \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -1970,6 +3014,16 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/deployments/dep_1
 ### `GET` /api/projects/{project_id}/logs
 **Get container logs** — Fetch recent stdout and stderr lines from the running project container.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -1985,6 +3039,13 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/deployments/dep_1
 curl -X GET "https://sycord.site:8787/api/projects/proj_94821a/logs?lines=100" \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -2003,6 +3064,16 @@ curl -X GET "https://sycord.site:8787/api/projects/proj_94821a/logs?lines=100" \
 ### `GET` /api/projects/{project_id}/logs/stream
 **Stream container logs (SSE)** — Open real-time Server-Sent Events (SSE) connection to stream live container logs.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `text/event-stream`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -2013,6 +3084,13 @@ curl -X GET "https://sycord.site:8787/api/projects/proj_94821a/logs?lines=100" \
 curl -N -X GET https://sycord.site:8787/api/projects/proj_94821a/logs/stream \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -2033,6 +3111,16 @@ data: {"line": "[server] Cache hit for /static/bundle.js"}
 ### `POST` /api/projects/{project_id}/update
 **Pull Git update and rebuild** — Fetch latest commits from linked Git branch, reinstall dependencies, and restart project.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -2043,6 +3131,13 @@ data: {"line": "[server] Cache hit for /static/bundle.js"}
 curl -X POST https://sycord.site:8787/api/projects/proj_94821a/update \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -2065,6 +3160,16 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/update \
 ### `GET` /api/projects/{project_id}/redirects
 **List redirect rules** — Retrieve all configured HTTP redirection and reverse proxy URL rewrite rules.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -2075,6 +3180,13 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/update \
 curl -X GET https://sycord.site:8787/api/projects/proj_94821a/redirects \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -2101,6 +3213,17 @@ curl -X GET https://sycord.site:8787/api/projects/proj_94821a/redirects \
 ### `POST` /api/projects/{project_id}/redirects
 **Create redirect rule** — Add a new URL redirect or proxy rewrite rule with regex pattern matching.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -2121,6 +3244,14 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/redirects \
   -d '{"source_path": "/legacy", "target_url": "/new-v2", "status_code": 301}'
 ```
 
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `201` | `201 Created` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
+
 #### Response Schema (201 Created)
 | Field | Type | Description |
 | :--- | :--- | :--- |
@@ -2139,6 +3270,17 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/redirects \
 
 ### `PUT` /api/projects/{project_id}/redirects/{redirect_id}
 **Update redirect rule** — Update source path, destination target, or status code of an existing redirect rule.
+
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
 
 #### Path Parameters
 | Name | Type | Required | Description |
@@ -2161,6 +3303,14 @@ curl -X PUT https://sycord.site:8787/api/projects/proj_94821a/redirects/red_01 \
   -d '{"source_path": "/old-docs", "target_url": "/docs", "status_code": 308}'
 ```
 
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
+
 #### Response Schema (200 OK)
 | Field | Type | Description |
 | :--- | :--- | :--- |
@@ -2177,6 +3327,17 @@ curl -X PUT https://sycord.site:8787/api/projects/proj_94821a/redirects/red_01 \
 
 ### `PATCH` /api/projects/{project_id}/redirects/{redirect_id}
 **Toggle redirect rule status** — Enable or disable a redirect rule without modifying its configuration.
+
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
 
 #### Path Parameters
 | Name | Type | Required | Description |
@@ -2197,6 +3358,14 @@ curl -X PATCH https://sycord.site:8787/api/projects/proj_94821a/redirects/red_01
   -d '{"enabled": true}'
 ```
 
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
+
 #### Response Schema (200 OK)
 | Field | Type | Description |
 | :--- | :--- | :--- |
@@ -2215,6 +3384,16 @@ curl -X PATCH https://sycord.site:8787/api/projects/proj_94821a/redirects/red_01
 ### `DELETE` /api/projects/{project_id}/redirects/{redirect_id}
 **Delete redirect rule** — Remove a redirect rule from the edge proxy router.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -2226,6 +3405,13 @@ curl -X PATCH https://sycord.site:8787/api/projects/proj_94821a/redirects/red_01
 curl -X DELETE https://sycord.site:8787/api/projects/proj_94821a/redirects/red_01 \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -2243,6 +3429,17 @@ curl -X DELETE https://sycord.site:8787/api/projects/proj_94821a/redirects/red_0
 
 ### `POST` /api/projects/{project_id}/redirects/reorder
 **Reorder redirect rules** — Set the sequential evaluation priority order for routing rules.
+
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
 
 #### Path Parameters
 | Name | Type | Required | Description |
@@ -2262,6 +3459,14 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/redirects/reorder
   -d '{"ordered_ids": ["red_02", "red_01"]}'
 ```
 
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
+
 #### Response Schema (200 OK)
 | Field | Type | Description |
 | :--- | :--- | :--- |
@@ -2278,6 +3483,17 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/redirects/reorder
 
 ### `POST` /api/projects/{project_id}/redirects/bulk
 **Bulk update redirect rules** — Add or replace multiple redirect rules in a single atomic transaction.
+
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
 
 #### Path Parameters
 | Name | Type | Required | Description |
@@ -2296,6 +3512,14 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/redirects/bulk \
   -H "Content-Type: application/json" \
   -d '{"rules": [{"source_path": "/a", "target_url": "/b", "status_code": 301}]}'
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -2316,6 +3540,17 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/redirects/bulk \
 ### `POST` /api/projects/{project_id}/redirects/test
 **Test redirect URL matching** — Simulate and test how a specific request URL resolves against current redirect rules.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -2333,6 +3568,14 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/redirects/test \
   -H "Content-Type: application/json" \
   -d '{"test_url": "/old-docs/intro"}'
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -2356,6 +3599,17 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/redirects/test \
 ### `POST` /api/projects/{project_id}/redirects/import
 **Import redirects file** — Import redirect rules from a `_redirects` file, Netlify format, or JSON array.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -2373,6 +3627,14 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/redirects/import 
   -H "Content-Type: application/json" \
   -d '{"raw_content": "/old /new 301\n/home / 302"}'
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -2394,6 +3656,16 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/redirects/import 
 ### `GET` /api/projects/{project_id}/stats
 **Real-time project stats** — Fetch real-time CPU percentage, memory consumption in MB, and active network connections.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -2404,6 +3676,13 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/redirects/import 
 curl -X GET https://sycord.site:8787/api/projects/proj_94821a/stats \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -2426,6 +3705,16 @@ curl -X GET https://sycord.site:8787/api/projects/proj_94821a/stats \
 ### `GET` /api/projects/{project_id}/performance
 **Historical performance charts** — Retrieve time-series performance data points over the last 24 hours / 7 days for graphing.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -2441,6 +3730,13 @@ curl -X GET https://sycord.site:8787/api/projects/proj_94821a/stats \
 curl -X GET "https://sycord.site:8787/api/projects/proj_94821a/performance?range=24h" \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -2470,6 +3766,16 @@ curl -X GET "https://sycord.site:8787/api/projects/proj_94821a/performance?range
 ### `GET` /api/projects/{project_id}/app-logs
 **Application runtime logs** — Fetch parsed application standard output and error log streams with severity levels.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -2480,6 +3786,13 @@ curl -X GET "https://sycord.site:8787/api/projects/proj_94821a/performance?range
 curl -X GET https://sycord.site:8787/api/projects/proj_94821a/app-logs \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -2504,6 +3817,16 @@ curl -X GET https://sycord.site:8787/api/projects/proj_94821a/app-logs \
 ### `GET` /api/projects/{project_id}/router-logs
 **HTTP edge proxy access logs** — Fetch reverse proxy HTTP access logs including client IP, status code, response time, and user agent.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -2519,6 +3842,13 @@ curl -X GET https://sycord.site:8787/api/projects/proj_94821a/app-logs \
 curl -X GET https://sycord.site:8787/api/projects/proj_94821a/router-logs \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -2546,6 +3876,16 @@ curl -X GET https://sycord.site:8787/api/projects/proj_94821a/router-logs \
 ### `GET` /api/projects/{project_id}/visitors
 **Visitor geographic telemetry** — Get aggregate geographic visitor countries, unique IP counts, and referrer distribution.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -2556,6 +3896,13 @@ curl -X GET https://sycord.site:8787/api/projects/proj_94821a/router-logs \
 curl -X GET https://sycord.site:8787/api/projects/proj_94821a/visitors \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -2581,6 +3928,16 @@ curl -X GET https://sycord.site:8787/api/projects/proj_94821a/visitors \
 ### `GET` /api/projects/{project_id}/analytics
 **HTTP status & latency metrics** — Breakdown of HTTP 2xx, 3xx, 4xx, 5xx status codes, p95 latency, and total bandwidth transferred.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -2591,6 +3948,13 @@ curl -X GET https://sycord.site:8787/api/projects/proj_94821a/visitors \
 curl -X GET https://sycord.site:8787/api/projects/proj_94821a/analytics \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -2620,6 +3984,16 @@ curl -X GET https://sycord.site:8787/api/projects/proj_94821a/analytics \
 ### `GET` /api/projects/{project_id}/release
 **Get release workspace** — Retrieve deployment environments (production, staging), policies, approval workflows, and active restore points.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -2630,6 +4004,13 @@ curl -X GET https://sycord.site:8787/api/projects/proj_94821a/analytics \
 curl -X GET https://sycord.site:8787/api/projects/proj_94821a/release \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -2664,6 +4045,17 @@ curl -X GET https://sycord.site:8787/api/projects/proj_94821a/release \
 ### `PUT` /api/projects/{project_id}/release/environments/{environment_id}
 **Update release environment** — Configure environment branch targets, auto-deploy toggles, and variable overrides.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -2684,6 +4076,14 @@ curl -X PUT https://sycord.site:8787/api/projects/proj_94821a/release/environmen
   -d '{"target_branch": "main", "auto_deploy": false}'
 ```
 
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
+
 #### Response Schema (200 OK)
 | Field | Type | Description |
 | :--- | :--- | :--- |
@@ -2700,6 +4100,17 @@ curl -X PUT https://sycord.site:8787/api/projects/proj_94821a/release/environmen
 
 ### `PUT` /api/projects/{project_id}/release/policy
 **Update release policy** — Set deployment guardrails, required peer approvals, and pre-deploy smoke test requirements.
+
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
 
 #### Path Parameters
 | Name | Type | Required | Description |
@@ -2720,6 +4131,14 @@ curl -X PUT https://sycord.site:8787/api/projects/proj_94821a/release/policy \
   -d '{"required_approvals": 1, "enforce_tests": true}'
 ```
 
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
+
 #### Response Schema (200 OK)
 | Field | Type | Description |
 | :--- | :--- | :--- |
@@ -2736,6 +4155,17 @@ curl -X PUT https://sycord.site:8787/api/projects/proj_94821a/release/policy \
 
 ### `POST` /api/projects/{project_id}/release/team
 **Upsert release team member** — Add or update team member roles and deployment approval permissions.
+
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
 
 #### Path Parameters
 | Name | Type | Required | Description |
@@ -2756,6 +4186,14 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/release/team \
   -d '{"user_id": "usr_david", "role": "reviewer"}'
 ```
 
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
+
 #### Response Schema (200 OK)
 | Field | Type | Description |
 | :--- | :--- | :--- |
@@ -2775,6 +4213,16 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/release/team \
 ### `DELETE` /api/projects/{project_id}/release/team/{member_id}
 **Remove release team member** — Revoke deployment approval authority from a user.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -2786,6 +4234,13 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/release/team \
 curl -X DELETE https://sycord.site:8787/api/projects/proj_94821a/release/team/mem_81 \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -2803,6 +4258,17 @@ curl -X DELETE https://sycord.site:8787/api/projects/proj_94821a/release/team/me
 
 ### `POST` /api/projects/{project_id}/release/approvals
 **Request release approval** — Submit a formal release deployment request to team reviewers.
+
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
 
 #### Path Parameters
 | Name | Type | Required | Description |
@@ -2824,6 +4290,14 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/release/approvals
   -d '{"target_env": "production", "commit_sha": "a19f201", "notes": "Bug fixes"}'
 ```
 
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `201` | `201 Created` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
+
 #### Response Schema (201 Created)
 | Field | Type | Description |
 | :--- | :--- | :--- |
@@ -2842,6 +4316,17 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/release/approvals
 
 ### `POST` /api/projects/{project_id}/release/approvals/{approval_id}/decision
 **Submit approval decision** — Approve or reject a pending release deployment request.
+
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
 
 #### Path Parameters
 | Name | Type | Required | Description |
@@ -2863,6 +4348,14 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/release/approvals
   -d '{"decision": "approved", "comment": "Verified and passed QA"}'
 ```
 
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
+
 #### Response Schema (200 OK)
 | Field | Type | Description |
 | :--- | :--- | :--- |
@@ -2881,6 +4374,17 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/release/approvals
 ### `POST` /api/projects/{project_id}/release/restore-points
 **Create restore snapshot** — Create an immutable system snapshot of workspace files, database, and container image for rapid recovery.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -2898,6 +4402,14 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/release/restore-p
   -H "Content-Type: application/json" \
   -d '{"label": "Pre-v2.0 migration"}'
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `201` | `201 Created` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
 
 #### Response Schema (201 Created)
 | Field | Type | Description |
@@ -2919,6 +4431,16 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/release/restore-p
 ### `POST` /api/projects/{project_id}/release/restore-points/{restore_point_id}/verify
 **Verify restore snapshot** — Verify checksum integrity and restore capability of a saved snapshot archive.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -2930,6 +4452,13 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/release/restore-p
 curl -X POST https://sycord.site:8787/api/projects/proj_94821a/release/restore-points/snp_94812/verify \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -2949,6 +4478,17 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/release/restore-p
 ### `POST` /api/projects/{project_id}/release/preview/start
 **Start release preview** — Spawn an isolated ephemeral sandbox preview for validating a proposed release.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -2966,6 +4506,14 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/release/preview/s
   -H "Content-Type: application/json" \
   -d '{"commit_sha": "a19f201"}'
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -2987,6 +4535,16 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/release/preview/s
 ### `POST` /api/projects/{project_id}/release/preview/stop
 **Stop release preview** — Terminate and tear down an ephemeral preview container.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -2997,6 +4555,13 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/release/preview/s
 curl -X POST https://sycord.site:8787/api/projects/proj_94821a/release/preview/stop \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -3015,6 +4580,17 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/release/preview/s
 ### `POST` /api/projects/{project_id}/release/deploy
 **Execute release deploy** — Execute approved release deployment with zero downtime swap.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -3032,6 +4608,14 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/release/deploy \
   -H "Content-Type: application/json" \
   -d '{"approval_id": "appr_9918"}'
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -3052,6 +4636,16 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/release/deploy \
 ### `POST` /api/projects/{project_id}/preview/start
 **Start interactive preview** — Start interactive live preview sandbox container for immediate browser testing.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -3062,6 +4656,13 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/release/deploy \
 curl -X POST https://sycord.site:8787/api/projects/proj_94821a/preview/start \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -3082,6 +4683,16 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/preview/start \
 ### `POST` /api/projects/{project_id}/preview/stop
 **Stop interactive preview** — Halt and tear down interactive sandbox preview session.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -3092,6 +4703,13 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/preview/start \
 curl -X POST https://sycord.site:8787/api/projects/proj_94821a/preview/stop \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -3110,6 +4728,16 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/preview/stop \
 ### `GET` /api/projects/{project_id}/preview/status
 **Get preview status** — Check if sandbox preview process is running, responsive, and ready for iframe rendering.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -3120,6 +4748,13 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/preview/stop \
 curl -X GET https://sycord.site:8787/api/projects/proj_94821a/preview/status \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -3141,6 +4776,16 @@ curl -X GET https://sycord.site:8787/api/projects/proj_94821a/preview/status \
 ### `GET` /api/projects/{project_id}/preview/iframe-check
 **Check preview iframe headers** — Inspect X-Frame-Options and Content-Security-Policy headers on target preview port.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -3151,6 +4796,13 @@ curl -X GET https://sycord.site:8787/api/projects/proj_94821a/preview/status \
 curl -X GET https://sycord.site:8787/api/projects/proj_94821a/preview/iframe-check \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -3169,6 +4821,16 @@ curl -X GET https://sycord.site:8787/api/projects/proj_94821a/preview/iframe-che
 ### `GET` /api/projects/{project_id}/preview/logs/stream
 **Stream preview logs (SSE)** — Real-time SSE event stream of stdout logs from sandbox preview server.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `text/event-stream`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -3179,6 +4841,13 @@ curl -X GET https://sycord.site:8787/api/projects/proj_94821a/preview/iframe-che
 curl -N -X GET https://sycord.site:8787/api/projects/proj_94821a/preview/logs/stream \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -3199,11 +4868,27 @@ data: {"preview_log": "Compiled 42 modules in 120ms"}
 ### `GET` /api/projects/git/github/status
 **GitHub connection status** — Check if user has linked their personal or organization GitHub account.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Example Request (cURL)
 ```bash
 curl -X GET https://sycord.site:8787/api/projects/git/github/status \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -3224,6 +4909,17 @@ curl -X GET https://sycord.site:8787/api/projects/git/github/status \
 ### `PUT` /api/projects/git/github/config
 **Configure GitHub OAuth** — Save GitHub App Client ID and Secret for repository imports.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
+
 #### Request Body (`application/json`)
 | Field | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -3237,6 +4933,13 @@ curl -X PUT https://sycord.site:8787/api/projects/git/github/config \
   -H "Content-Type: application/json" \
   -d '{"client_id": "Iv1.8941829abc", "client_secret": "sec_gh_8921"}'
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -3255,11 +4958,27 @@ curl -X PUT https://sycord.site:8787/api/projects/git/github/config \
 ### `GET` /api/projects/git/github/connect
 **Initiate GitHub OAuth** — Generate OAuth redirect URL to authenticate with GitHub and grant repo permissions.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Example Request (cURL)
 ```bash
 curl -X GET https://sycord.site:8787/api/projects/git/github/connect \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -3278,6 +4997,16 @@ curl -X GET https://sycord.site:8787/api/projects/git/github/connect \
 ### `GET` /api/projects/git/github/callback
 **Handle GitHub callback** — Exchange temporary OAuth code for persistent user access token.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Query Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -3289,6 +5018,12 @@ curl -X GET https://sycord.site:8787/api/projects/git/github/connect \
 curl -X GET "https://sycord.site:8787/api/projects/git/github/callback?code=gh_code_8192&state=nonce_99" \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -3309,11 +5044,27 @@ curl -X GET "https://sycord.site:8787/api/projects/git/github/callback?code=gh_c
 ### `DELETE` /api/projects/git/github/disconnect
 **Disconnect GitHub account** — Revoke stored GitHub OAuth tokens and disconnect linked account.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Example Request (cURL)
 ```bash
 curl -X DELETE https://sycord.site:8787/api/projects/git/github/disconnect \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -3332,11 +5083,27 @@ curl -X DELETE https://sycord.site:8787/api/projects/git/github/disconnect \
 ### `GET` /api/projects/git/github/repositories
 **List GitHub repositories** — Fetch public and private repositories accessible via linked GitHub token.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Example Request (cURL)
 ```bash
 curl -X GET https://sycord.site:8787/api/projects/git/github/repositories \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -3362,6 +5129,16 @@ curl -X GET https://sycord.site:8787/api/projects/git/github/repositories \
 ### `GET` /api/projects/git/github/repositories/{repository:path}/branches
 **List repository branches** — Fetch all git branches for a specific GitHub repository.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -3372,6 +5149,13 @@ curl -X GET https://sycord.site:8787/api/projects/git/github/repositories \
 curl -X GET https://sycord.site:8787/api/projects/git/github/repositories/MDavidka/sarra/branches \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -3403,6 +5187,17 @@ curl -X GET https://sycord.site:8787/api/projects/git/github/repositories/MDavid
 ### `POST` /api/projects/import/github
 **Import GitHub repository** — Clone repository from GitHub into a new project workspace and setup automatic deployment webhooks.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
+
 #### Request Body (`application/json`)
 | Field | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -3417,6 +5212,13 @@ curl -X POST https://sycord.site:8787/api/projects/import/github \
   -H "Content-Type: application/json" \
   -d '{"repo": "MDavidka/sarra", "branch": "main"}'
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `201` | `201 Created` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
 
 #### Response Schema (201 Created)
 | Field | Type | Description |
@@ -3438,6 +5240,17 @@ curl -X POST https://sycord.site:8787/api/projects/import/github \
 ### `POST` /api/projects/import/repository
 **Import public Git repository** — Clone any public Git repository via HTTPS URL into a fresh workspace.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
+
 #### Request Body (`application/json`)
 | Field | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -3451,6 +5264,13 @@ curl -X POST https://sycord.site:8787/api/projects/import/repository \
   -H "Content-Type: application/json" \
   -d '{"git_url": "https://github.com/vercel/next.js.git", "branch": "canary"}'
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `201` | `201 Created` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
 
 #### Response Schema (201 Created)
 | Field | Type | Description |
@@ -3471,6 +5291,17 @@ curl -X POST https://sycord.site:8787/api/projects/import/repository \
 ### `POST` /api/projects/import/zip
 **Upload project ZIP archive** — Upload and unpack a ZIP archive of source code directly into project workspace.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `multipart/form-data`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `multipart/form-data` |
+| `Accept` | `string` | No | `application/json` |
+
 #### Request Body (`multipart/form-data`)
 | Field | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -3483,6 +5314,13 @@ curl -X POST https://sycord.site:8787/api/projects/import/zip \
   -H "Authorization: Bearer <token>" \
   -F "file=@project-source.zip"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `201` | `201 Created` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
 
 #### Response Schema (201 Created)
 | Field | Type | Description |
@@ -3504,6 +5342,16 @@ curl -X POST https://sycord.site:8787/api/projects/import/zip \
 ### `GET` /api/projects/{project_id}/workspace/files
 **List workspace file tree** — Retrieve hierarchical file tree and directory structure of project workspace.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -3519,6 +5367,13 @@ curl -X POST https://sycord.site:8787/api/projects/import/zip \
 curl -X GET https://sycord.site:8787/api/projects/proj_94821a/workspace/files \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -3549,6 +5404,16 @@ curl -X GET https://sycord.site:8787/api/projects/proj_94821a/workspace/files \
 ### `GET` /api/projects/{project_id}/workspace/file
 **Read workspace file** — Read UTF-8 text content of a specific source code file.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `none`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -3564,6 +5429,13 @@ curl -X GET https://sycord.site:8787/api/projects/proj_94821a/workspace/files \
 curl -X GET "https://sycord.site:8787/api/projects/proj_94821a/workspace/file?path=package.json" \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -3585,6 +5457,17 @@ curl -X GET "https://sycord.site:8787/api/projects/proj_94821a/workspace/file?pa
 ### `POST` /api/projects/{project_id}/workspace/file
 **Write workspace file** — Save or update text content of a file in the workspace.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -3603,6 +5486,14 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/workspace/file \
   -H "Content-Type: application/json" \
   -d '{"path": "config.json", "content": "{\"port\": 3000}"}'
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -3623,6 +5514,17 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/workspace/file \
 ### `POST` /api/projects/{project_id}/workspace/mkdir
 **Create folder in workspace** — Create a new subdirectory directory in project workspace.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -3640,6 +5542,14 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/workspace/mkdir \
   -H "Content-Type: application/json" \
   -d '{"path": "src/components"}'
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -3659,6 +5569,17 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/workspace/mkdir \
 ### `DELETE` /api/projects/{project_id}/workspace/file
 **Delete workspace file or folder** — Permanently delete a file or directory from the workspace.
 
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `application/json`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `application/json` |
+| `Accept` | `string` | No | `application/json` |
+
 #### Path Parameters
 | Name | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -3674,6 +5595,13 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/workspace/mkdir \
 curl -X DELETE "https://sycord.site:8787/api/projects/proj_94821a/workspace/file?path=temp.log" \
   -H "Authorization: Bearer <token>"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |
@@ -3691,6 +5619,17 @@ curl -X DELETE "https://sycord.site:8787/api/projects/proj_94821a/workspace/file
 
 ### `POST` /api/projects/{project_id}/workspace/upload
 **Upload workspace file** — Upload a binary or text file to a specific destination in project workspace.
+
+- **Authentication**: `Bearer Token (JWT / API Token)`
+- **Content-Type**: `multipart/form-data`
+- **Rate Limit**: `60 req/min`
+
+#### Request Headers
+| Header | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Authorization` | `string` | **Yes** | Bearer authentication token (`Bearer <token>`) |
+| `Content-Type` | `string` | **Yes** | `multipart/form-data` |
+| `Accept` | `string` | No | `application/json` |
 
 #### Path Parameters
 | Name | Type | Required | Description |
@@ -3710,6 +5649,14 @@ curl -X POST https://sycord.site:8787/api/projects/proj_94821a/workspace/upload 
   -F "file=@logo.png" \
   -F "destination_path=public/"
 ```
+
+#### HTTP Status Codes
+| Status Code | Meaning | Description |
+| :--- | :--- | :--- |
+| `200` | `200 OK` | Request succeeded. |
+| `401` | `Unauthorized` | Missing or expired authorization token. |
+| `404` | `Not Found` | Target resource identifier was not found. |
+| `400` | `Bad Request` | Request payload failed syntax or schema validation. |
 
 #### Response Schema (200 OK)
 | Field | Type | Description |

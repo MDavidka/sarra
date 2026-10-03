@@ -67,20 +67,20 @@ def collect_project_routes(
     projects: list[dict],
 ) -> tuple[list[CaddyRoute], list[CaddyRoute]]:
     """Split production and preview routes from project records."""
-    production: list[CaddyRoute] = []
-    preview: list[CaddyRoute] = []
+    production_map: dict[str, CaddyRoute] = {}
+    preview_map: dict[str, CaddyRoute] = {}
     for project in projects:
         name = sanitize_caddy_label(project.get("name") or project.get("id", "project"))
         domain = normalize_domain(project.get("domain") or "")
         port = project.get("port")
         if domain and port and is_safe_caddy_hostname(domain):
-            production.append(CaddyRoute(domain, int(port), name, "production"))
+            production_map[domain] = CaddyRoute(domain, int(port), name, "production")
 
         preview_domain = normalize_domain(project.get("preview_domain") or "")
         preview_port = project.get("preview_port")
         if preview_domain and preview_port and is_safe_caddy_hostname(preview_domain):
-            preview.append(CaddyRoute(preview_domain, int(preview_port), name, "preview"))
-    return production, preview
+            preview_map[preview_domain] = CaddyRoute(preview_domain, int(preview_port), name, "preview")
+    return list(production_map.values()), list(preview_map.values())
 
 
 def collect_custom_tls_routes(projects: list[dict]) -> list[CaddyRoute]:
@@ -89,15 +89,15 @@ def collect_custom_tls_routes(projects: list[dict]) -> list[CaddyRoute]:
     These render as standalone host blocks so an app can pin its own custom
     domain + certificate independently of the shared wildcard zone.
     """
-    custom: list[CaddyRoute] = []
+    custom_map: dict[str, CaddyRoute] = {}
     for project in projects:
         domain = normalize_domain(project.get("custom_tls_domain") or "")
         port = project.get("port")
         enabled = project.get("custom_tls_enabled")
         if domain and port and is_safe_caddy_hostname(domain) and enabled:
             name = sanitize_caddy_label(project.get("name") or project.get("id", "project"))
-            custom.append(CaddyRoute(domain, int(port), name, "custom"))
-    return custom
+            custom_map[domain] = CaddyRoute(domain, int(port), name, "custom")
+    return list(custom_map.values())
 
 
 def render_custom_tls_block(route: CaddyRoute) -> list[str]:
@@ -123,11 +123,8 @@ from syte.preview_iframe import PREVIEW_STRIP_HEADERS
 
 
 def preview_cors_origin(gui_domain: str = "") -> str:
-    """Single allowed CORS origin for preview fetches (never '*')."""
-    gui = normalize_domain(gui_domain or "")
-    if gui:
-        return f"https://{gui}"
-    return "https://sycord.com"
+    """Allow dynamic origin reflection so preview works on sycord.com, sycord.site, and localhost."""
+    return "{header.Origin}"
 
 
 def preview_iframe_header_lines(
@@ -136,8 +133,8 @@ def preview_iframe_header_lines(
     *,
     cors_origin: str | None = None,
 ) -> list[str]:
-    origin = cors_origin or preview_cors_origin()
-    origin = origin.replace('"', "").replace("\n", "").replace("\r", "") or "https://sycord.com"
+    origin = cors_origin or "{header.Origin}"
+    origin = origin.replace('"', "").replace("\n", "").replace("\r", "") or "{header.Origin}"
     lines = [f"{indent}header {{"]
     for name in PREVIEW_STRIP_HEADERS:
         if name == "Content-Security-Policy":
@@ -146,6 +143,10 @@ def preview_iframe_header_lines(
     lines.extend([
         f"{indent}    Cross-Origin-Resource-Policy cross-origin",
         f"{indent}    Access-Control-Allow-Origin {origin}",
+        f"{indent}    Access-Control-Allow-Credentials true",
+        f"{indent}    Access-Control-Allow-Methods 'GET, POST, OPTIONS, PUT, DELETE, HEAD'",
+        f"{indent}    Access-Control-Allow-Headers '*'",
+        f"{indent}    Vary Origin",
         f'{indent}    Content-Security-Policy "{frame_csp}"',
         f"{indent}}}",
     ])
