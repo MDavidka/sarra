@@ -108,7 +108,6 @@
           <div class="coolify-nav-section">
             <p class="nav-section-label">Overview</p>
             <button type="button" class="nav-sublink active" data-view="dashboard" id="nav-dashboard"><i data-lucide="home"></i><span>Home</span></button>
-            <button type="button" class="nav-sublink" data-view="ai" id="nav-ai"><i data-lucide="bot"></i><span>AI</span></button>
             <button type="button" class="nav-sublink" data-view="share-it"><i data-lucide="share-2"></i><span>Share It</span></button>
             <button type="button" class="nav-sublink" data-view="platform" data-platform-page="overview"><i data-lucide="layout-dashboard"></i><span>Overview</span></button>
             <button type="button" class="nav-sublink" data-view="platform" data-platform-page="remote-servers"><i data-lucide="server"></i><span>Servers</span><span id="server-nav-performance" class="nav-server-performance" role="progressbar" aria-label="Server performance unavailable" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span></span></span></button>
@@ -264,110 +263,7 @@
           </div>
         </section>
 
-        <!-- AI BUILDER HOME VIEW (Autonomous OpenCode AI Workspace) -->
-        <section id="view-ai" class="view">
-          <div class="svc-ai-workspace" id="svc-ai-workspace">
-            <!-- OpenCode Styled Dark Header -->
-            <header class="svc-ai-header">
-              <div class="svc-ai-header-left">
-                <button type="button" class="svc-ai-icon-btn" id="svc-ai-mobile-menu-btn" aria-label="Menu">
-                  <i data-lucide="menu"></i>
-                </button>
-                <div class="svc-ai-session-title" id="svc-ai-session-title">Session</div>
-              </div>
-              <div class="svc-ai-header-right">
-                <!-- Repository Pill Selector -->
-                <div class="svc-ai-repo-pill" id="svc-ai-repo-pill-btn" title="Switch project repository">
-                  <span class="svc-ai-repo-name" id="svc-ai-header-repo-name">sarra</span>
-                  <i data-lucide="chevron-down" class="svc-ai-chevron"></i>
-                  <i data-lucide="github" class="svc-ai-github-icon"></i>
-                  <select id="svc-ai-project-select" class="svc-ai-hidden-select" aria-label="Select Target Project">
-                    <!-- Populated dynamically -->
-                  </select>
-                </div>
 
-                <button type="button" class="svc-ai-credits-pill" id="svc-ai-credits-pill-btn" title="AI Generation Credits ($5.00 Starter Credit · Click for usage)">
-                  <i data-lucide="coins"></i>
-                  <span id="svc-ai-credits-badge-val">$5.00</span>
-                  <span class="svc-ai-credits-total">/ $5.00</span>
-                </button>
-                <button type="button" class="svc-ai-icon-btn" id="svc-ai-deep-focus-btn" title="Deep Focus · Project Memory">
-                  <i data-lucide="brain"></i>
-                </button>
-                <button type="button" class="svc-ai-icon-btn" id="svc-ai-debug-btn" title="Download AI Diagnostic JSON Bundle">
-                  <i data-lucide="bug"></i>
-                </button>
-                <button type="button" class="svc-ai-icon-btn" id="svc-ai-settings-btn" title="AI Builder Settings & Models">
-                  <i data-lucide="settings-2"></i>
-                </button>
-                <button type="button" class="svc-ai-icon-btn" id="svc-ai-clear-btn" title="Clear chat history">
-                  <i data-lucide="trash-2"></i>
-                </button>
-              </div>
-            </header>
-
-            <!-- Chat Messages Container / OpenCode Activity Stream -->
-            <div class="svc-ai-messages-container" id="svc-ai-messages-list">
-              <!-- Populated dynamically -->
-            </div>
-
-            <!-- Bottom Input Composer Card -->
-            <footer class="svc-ai-composer-wrapper">
-              <div class="svc-ai-slash-menu" id="svc-ai-slash-menu" style="display:none;">
-                <div class="svc-ai-slash-header">
-                  <i data-lucide="sparkles"></i>
-                  <span>Quick Slash Commands</span>
-                </div>
-                <div class="svc-ai-slash-list" id="svc-ai-slash-list">
-                  <!-- Injected dynamically -->
-                </div>
-              </div>
-
-              <!-- Attachments Tray for Mass File Uploads & Context -->
-              <div id="svc-ai-attachments-tray" class="svc-ai-attachments-tray" style="display:none;">
-                <div class="svc-ai-tray-header">
-                  <span class="svc-ai-tray-title"><i data-lucide="paperclip"></i> Attached for AI Understanding (<span id="svc-ai-attached-count">0</span>):</span>
-                  <button type="button" class="svc-ai-tray-clear" id="svc-ai-tray-clear-btn">Clear all</button>
-                </div>
-                <div class="svc-ai-tray-list" id="svc-ai-attached-chips-list"></div>
-              </div>
-
-              <input type="file" id="svc-ai-file-input" multiple style="display:none;" accept=".zip,.xlsx,.xls,.docx,.doc,.pdf,.csv,.tsv,.json,.yaml,.yml,.xml,.txt,.md,.py,.js,.ts,.tsx,.jsx,.html,.css,*/*">
-
-              <form class="svc-ai-composer-card" id="svc-ai-chat-form">
-                <textarea
-                  id="svc-ai-input"
-                  class="svc-ai-composer-textarea"
-                  placeholder="Describe what you want to build, debug, or understand. (Type / for commands, click paperclip icon or drop files to attach)"
-                  rows="2"
-                  autocomplete="off"
-                ></textarea>
-
-                <div class="svc-ai-composer-bottom-bar">
-                  <div class="svc-ai-composer-actions-left">
-                    <button type="button" class="svc-ai-composer-btn" id="svc-ai-attach-btn" title="Attach files (.zip, Excel, Word, PDF, CSV, code)">
-                      <i data-lucide="paperclip"></i>
-                    </button>
-                    <button type="button" class="svc-ai-model-pill" id="svc-ai-model-selector-btn" title="Switch AI model">
-                      <span class="svc-ai-model-provider-icon"><i data-lucide="cpu"></i></span>
-                      <span class="svc-ai-model-name-text" id="svc-ai-input-model-label">gpt-4o</span>
-                      <i data-lucide="chevron-down" class="svc-ai-chevron-small"></i>
-                    </button>
-                  </div>
-
-                  <div class="svc-ai-composer-actions-right">
-                    <button type="button" class="svc-ai-composer-btn" id="svc-ai-mic-btn" title="Voice Input">
-                      <i data-lucide="mic"></i>
-                    </button>
-                    <button type="submit" class="svc-ai-send-round-btn" id="svc-ai-send-btn" title="Send message (Enter)">
-                      <i data-lucide="arrow-up"></i>
-                    </button>
-                  </div>
-                </div>
-              </form>
-            </footer>
-          </div>
-        </section>
 
         <section id="view-new-service" class="view">
           <div class="svc-new-project-screen">

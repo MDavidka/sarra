@@ -1531,12 +1531,18 @@ async def api_agent_access_project(
     project = await get_project(uuid)
     if not project:
         _http_error(404, "not_found", "Project not found")
-    return {
-        "ok": True,
-        "uuid": uuid,
-        "domain": project.get("domain") or "",
-        "direct_url": build_direct_url(project.get("port") or 0),
-        "status": "ready",
-    }
+    action = str(body.get("action") or "status").strip()
+    url = body.get("url")
+    lines = int(body.get("lines") or 200)
+    include_screenshot = bool(body.get("include_screenshot", False))
+    from syte.preview_access import run_access_action
+    result = await run_access_action(
+        uuid,
+        action,
+        url=url,
+        lines=lines,
+        include_screenshot=include_screenshot,
+    )
+    return result
 
 
