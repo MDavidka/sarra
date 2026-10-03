@@ -511,7 +511,9 @@ class AIAgentEngine:
             "   - Follow the plan step-by-step. As you begin each step, call `syte_update_plan_step` with status='in_progress'. When finished, call `syte_update_plan_step` with status='completed'.\n"
             "   - Incorporate any uploaded files in `uploads/` (`syte_read_file`).\n"
             "3. **VERIFY PHASE**:\n"
-            "   - Run AST security/syntax check (`syte_security_lint_scan`) and verify the preview server.\n"
+            "   - Run AST security/syntax check (`syte_security_lint_scan`).\n"
+            "   - ALWAYS start and verify the live development preview server with `syte_start_preview` whenever web/frontend code was scaffolded or edited.\n"
+            "   - Verify that the preview dev server is running and clearly share the live preview URL in your response so the user can immediately open and view the site.\n"
             "4. **DELIVER (MANDATORY COMMUNICATION STANDARD)**:\n"
             "   - **NEVER return lazy, blunt, single-word answers (e.g., 'Done.', 'OK.', 'Finished.', 'Completed.', or blank messages).**\n"
             "   - **ALWAYS provide a clear, helpful, and natural response** explaining exactly what was performed (e.g., 'I have created the plan, implemented the requested components, and verified that the preview server is running.', details of files created/edited, commands executed, and outcome).\n"
@@ -1125,6 +1127,24 @@ class AIAgentEngine:
                         "command": cmd_target,
                         "duration_ms": tool_duration_ms,
                         "ok": bool(tool_result.get("ok", True)),
+                        "request_id": request_id,
+                        "turn": current_turn,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+
+                # Emit dedicated preview event when preview server starts successfully
+                if tool_name == "syte_start_preview" and tool_result.get("ok"):
+                    p_url = tool_result.get("preview_url") or ""
+                    p_dom = tool_result.get("preview_domain") or ""
+                    p_port = tool_result.get("preview_port")
+                    yield {
+                        "event": "preview_ready",
+                        "event_type": "preview_ready",
+                        "preview_url": p_url,
+                        "preview_domain": p_dom,
+                        "preview_port": p_port,
+                        "url": p_url,
+                        "status": "ready",
                         "request_id": request_id,
                         "turn": current_turn,
                         "timestamp": datetime.now(timezone.utc).isoformat(),

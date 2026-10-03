@@ -23,6 +23,7 @@ PREVIEW_STRIP_HEADERS = (
 
 _PROBE_CACHE: dict[str, tuple[float, bool]] = {}
 _PROBE_CACHE_TTL_SEC = 30.0
+_PROBE_NEGATIVE_CACHE_TTL_SEC = 2.0
 
 
 def clear_https_probe_cache(url: str = "") -> None:
@@ -148,7 +149,8 @@ def probe_https_available(url: str, timeout: float = 2.0) -> bool:
         return False
     now = time.monotonic()
     cached = _PROBE_CACHE.get(url)
-    if cached and (now - cached[0]) < _PROBE_CACHE_TTL_SEC:
+    ttl = _PROBE_CACHE_TTL_SEC if (cached and cached[1]) else _PROBE_NEGATIVE_CACHE_TTL_SEC
+    if cached and (now - cached[0]) < ttl:
         return cached[1]
     ok = False
     try:

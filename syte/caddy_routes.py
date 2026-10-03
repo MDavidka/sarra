@@ -123,11 +123,8 @@ from syte.preview_iframe import PREVIEW_STRIP_HEADERS
 
 
 def preview_cors_origin(gui_domain: str = "") -> str:
-    """Single allowed CORS origin for preview fetches (never '*')."""
-    gui = normalize_domain(gui_domain or "")
-    if gui:
-        return f"https://{gui}"
-    return "https://sycord.com"
+    """Allow dynamic origin reflection so preview works on sycord.com, sycord.site, and localhost."""
+    return "{header.Origin}"
 
 
 def preview_iframe_header_lines(
@@ -136,8 +133,8 @@ def preview_iframe_header_lines(
     *,
     cors_origin: str | None = None,
 ) -> list[str]:
-    origin = cors_origin or preview_cors_origin()
-    origin = origin.replace('"', "").replace("\n", "").replace("\r", "") or "https://sycord.com"
+    origin = cors_origin or "{header.Origin}"
+    origin = origin.replace('"', "").replace("\n", "").replace("\r", "") or "{header.Origin}"
     lines = [f"{indent}header {{"]
     for name in PREVIEW_STRIP_HEADERS:
         if name == "Content-Security-Policy":
@@ -146,6 +143,10 @@ def preview_iframe_header_lines(
     lines.extend([
         f"{indent}    Cross-Origin-Resource-Policy cross-origin",
         f"{indent}    Access-Control-Allow-Origin {origin}",
+        f"{indent}    Access-Control-Allow-Credentials true",
+        f"{indent}    Access-Control-Allow-Methods 'GET, POST, OPTIONS, PUT, DELETE, HEAD'",
+        f"{indent}    Access-Control-Allow-Headers '*'",
+        f"{indent}    Vary Origin",
         f'{indent}    Content-Security-Policy "{frame_csp}"',
         f"{indent}}}",
     ])
